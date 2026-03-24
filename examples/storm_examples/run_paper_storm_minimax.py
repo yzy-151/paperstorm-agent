@@ -15,6 +15,8 @@ Example:
 
 import logging
 import os
+import sys
+import warnings
 from argparse import ArgumentParser
 
 from knowledge_storm import (
@@ -30,6 +32,61 @@ from examples.storm_examples.run_storm_wiki_minimax import (
     get_output_dir_name,
     get_topic_for_storm,
 )
+
+
+LOGGER = logging.getLogger("paperstorm")
+
+
+class PaperStormStdoutFilter:
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, text):
+        if "Provider List: https://docs.litellm.ai/docs/providers" in text:
+            return len(text)
+        return self.stream.write(text)
+
+    def flush(self):
+        return self.stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+class PaperStormNoiseFilter(logging.Filter):
+    def filter(self, record):
+        message = record.getMessage()
+        if (
+            "Error occurs when processing https://en.wikipedia.org/wiki/" in message
+            and "'NoneType' object has no attribute 'text'" in message
+        ):
+            return False
+        return True
+
+
+def configure_paperstorm_logging(verbose: bool = False):
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=level, format="%(name)s : %(levelname)-8s : %(message)s")
+
+    noise_filter = PaperStormNoiseFilter()
+    root_logger = logging.getLogger()
+    if not any(isinstance(item, PaperStormNoiseFilter) for item in root_logger.filters):
+        root_logger.addFilter(noise_filter)
+    for handler in root_logger.handlers:
+        if not any(isinstance(item, PaperStormNoiseFilter) for item in handler.filters):
+            handler.addFilter(noise_filter)
+
+    for logger_name in ("LiteLLM", "litellm", "httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+    if not verbose and not isinstance(sys.stdout, PaperStormStdoutFilter):
+        sys.stdout = PaperStormStdoutFilter(sys.stdout)
+
+    warnings.filterwarnings(
+        "ignore",
+        message=r".*Pydantic serializer warnings.*",
+        category=UserWarning,
+    )
 
 
 def build_lm_settings(args):
@@ -116,7 +173,23 @@ def build_paper_retriever(args):
 
 
 def main(args):
-    load_api_key(toml_file_path="secrets.toml")
+    configure_paperstorm_logging(verbose=args.verbose)
+    if os.path.exists("secrets.toml"):
+        load_api_key(toml_file_path="secrets.toml")
+
+    settings = build_lm_settings(args)
+    topic = args.topic or input("Topic: ")
+    topic_for_storm = get_topic_for_storm(
+        topic, output_language=args.output_language
+    )
+    output_dir_name = get_output_dir_name(topic)
+    article_dir = os.path.join(args.output_dir, output_dir_name)
+
+    LOGGER.info("Starting PaperStorm run")
+    LOGGER.info("Topic: %s", topic)
+    LOGGER.info("LLM: %s (%s)", settings["model"], args.llm_provider)
+    LOGGER.info("Retriever: %s", args.retriever)
+    LOGGER.info("Output directory: %s", article_dir)
 
     lm_configs = build_lm_configs(args)
     engine_args = STORMWikiRunnerArguments(
@@ -128,12 +201,6 @@ def main(args):
     )
     rm = build_paper_retriever(args)
     runner = STORMWikiRunner(engine_args, lm_configs, rm)
-
-    topic = args.topic or input("Topic: ")
-    topic_for_storm = get_topic_for_storm(
-        topic, output_language=args.output_language
-    )
-    output_dir_name = get_output_dir_name(topic)
 
     try:
         runner.run(
@@ -147,6 +214,10 @@ def main(args):
         )
         runner.post_run()
         runner.summary()
+        LOGGER.info("Key outputs:")
+        LOGGER.info("  conversation: %s", os.path.join(article_dir, "conversation_log.json"))
+        LOGGER.info("  raw search:   %s", os.path.join(article_dir, "raw_search_results.json"))
+        LOGGER.info("  outline:      %s", os.path.join(article_dir, "storm_gen_outline.txt"))
     except Exception as e:
         logging.exception(f"An error occurred: {str(e)}")
         raise
@@ -180,5 +251,6 @@ if __name__ == "__main__":
     parser.add_argument("--do-generate-article", action="store_true")
     parser.add_argument("--do-polish-article", action="store_true")
     parser.add_argument("--remove-duplicate", action="store_true")
+    parser.add_argument("--verbose", action="store_true")
 
     main(parser.parse_args())

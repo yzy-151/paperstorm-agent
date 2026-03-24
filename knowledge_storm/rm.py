@@ -11,6 +11,8 @@ from dsp import backoff_hdlr, giveup_hdlr
 
 from .utils import WebPageHelper
 
+logger = logging.getLogger(__name__)
+
 
 class ArxivRM(dspy.Retrieve):
     """Retrieve paper metadata from the public arXiv API."""
@@ -144,7 +146,7 @@ class ArxivRM(dspy.Retrieve):
             try:
                 results = self._parse_response(self.request(query))
             except Exception as e:
-                logging.error(f"Error occurs when searching arXiv query {query}: {e}")
+                logger.info("Skipping failed arXiv query %r: %s", query, e)
                 continue
 
             for result in results:
