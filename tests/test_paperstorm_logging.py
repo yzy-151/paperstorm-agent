@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from knowledge_storm.rm import ArxivRM
+from knowledge_storm.storm_wiki.modules.storm_dataclass import StormInformationTable
 
 
 class PaperStormLoggingTest(unittest.TestCase):
@@ -112,6 +113,15 @@ class PaperStormLoggingTest(unittest.TestCase):
             root_logger.removeHandler(handler)
 
         self.assertEqual(stream.getvalue(), "")
+
+    def test_empty_information_table_retrieval_returns_no_information(self):
+        table = StormInformationTable(conversations=[])
+        table.prepare_table_for_retrieval()
+
+        self.assertEqual(
+            table.retrieve_information("cnn network architecture", search_top_k=3),
+            [],
+        )
 
 
 if __name__ == "__main__":

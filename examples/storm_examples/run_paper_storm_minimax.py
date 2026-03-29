@@ -76,7 +76,14 @@ def configure_paperstorm_logging(verbose: bool = False):
         if not any(isinstance(item, PaperStormNoiseFilter) for item in handler.filters):
             handler.addFilter(noise_filter)
 
-    for logger_name in ("LiteLLM", "litellm", "httpx", "httpcore"):
+    for logger_name in (
+        "LiteLLM",
+        "litellm",
+        "httpx",
+        "httpcore",
+        "sentence_transformers",
+        "sentence_transformers.base.model",
+    ):
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
     if not verbose and not isinstance(sys.stdout, PaperStormStdoutFilter):
