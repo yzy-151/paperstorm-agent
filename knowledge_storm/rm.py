@@ -57,6 +57,86 @@ class ArxivRM(dspy.Retrieve):
     def _normalize_text(text):
         return " ".join((text or "").split())
 
+    @staticmethod
+    def _normalize_query_for_arxiv(query):
+        query = " ".join((query or "").split())
+        if not query:
+            return ""
+
+        normalized = query
+        replacements = {
+            "无源互调": "passive intermodulation",
+            "神经网络": "neural network",
+            "抑制": "suppression",
+            "射频": "radio frequency",
+        }
+        for source, target in replacements.items():
+            normalized = normalized.replace(source, f" {target} ")
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+
+        lower_query = normalized.lower()
+        has_pim = re.search(r"\bpim\b", lower_query) is not None
+        passive_context_terms = (
+            "passive intermodulation",
+            "intermodulation",
+            "suppression",
+            "mitigation",
+            "radio frequency",
+            " rf",
+            "antenna",
+            "microwave",
+            "neural network",
+        )
+        memory_context_terms = (
+            "processing-in-memory",
+            "processing in memory",
+            "dram",
+            " ram",
+            "memory system",
+        )
+
+        if has_pim and any(term in lower_query for term in passive_context_terms):
+            normalized = re.sub(
+                r"\bpim\b", "passive intermodulation", normalized, flags=re.I
+            )
+        elif has_pim and any(term in lower_query for term in memory_context_terms):
+            return ""
+
+        return re.sub(r"\s+", " ", normalized).strip()
+
+    @staticmethod
+    def _is_result_relevant_to_query(query, result):
+        query = (query or "").lower()
+        if "passive intermodulation" not in query:
+            return True
+
+        haystack = " ".join(
+            [
+                result.get("title") or "",
+                result.get("description") or "",
+                " ".join(result.get("snippets") or []),
+            ]
+        ).lower()
+        passive_terms = (
+            "passive intermodulation",
+            "intermodulation",
+            "radio frequency",
+            "rf ",
+            "antenna",
+            "microwave",
+        )
+        off_topic_terms = (
+            "processing-in-memory",
+            "processing in memory",
+            "dram",
+            " ram ",
+            "memory system",
+            "product information management",
+        )
+        return any(term in haystack for term in passive_terms) and not any(
+            term in haystack for term in off_topic_terms
+        )
+
     def _parse_response(self, response_text: str):
         namespace = {
             "atom": "http://www.w3.org/2005/Atom",
@@ -137,7 +217,12 @@ class ArxivRM(dspy.Retrieve):
             if isinstance(query_or_queries, str)
             else query_or_queries
         )
-        queries = [query.strip() for query in queries if query and query.strip()]
+        queries = [
+            self._normalize_query_for_arxiv(query)
+            for query in queries
+            if query and query.strip()
+        ]
+        queries = [query for query in queries if query]
         self.usage += len(queries)
 
         collected_results = []
@@ -151,7 +236,12 @@ class ArxivRM(dspy.Retrieve):
 
             for result in results:
                 url = result["url"]
-                if url in seen_urls or url in exclude_urls or not self.is_valid_source(url):
+                if (
+                    url in seen_urls
+                    or url in exclude_urls
+                    or not self.is_valid_source(url)
+                    or not self._is_result_relevant_to_query(query, result)
+                ):
                     continue
                 collected_results.append(result)
                 seen_urls.add(url)

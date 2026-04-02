@@ -212,3 +212,77 @@ RAG/Agent pipeline 的每个阶段都要考虑“上游没有产物”的情况�
 - 如何验证；
 - 你应该学到什么；
 - 面试中可以怎么讲。
+
+## 2026-07-21：PIM 歧义消解与 arXiv 检索质量优化
+
+### 现象
+
+当 topic 是“PIM 神经网络抑制”时，用户真实意图是：
+
+```text
+Passive Intermodulation，中文是无源互调，属于射频/天线/通信系统问题。
+```
+
+但 arXiv 检索可能返回：
+
+```text
+Processing-in-Memory
+RAM / DRAM system
+Product Information Management
+```
+
+这些结果虽然也可能缩写为 PIM，但和“无源互调抑制”完全不是一个领域。
+
+### 根因
+
+PIM 是高度歧义缩写。LLM 生成 query 时如果只写：
+
+```text
+PIM neural network suppression
+PIM system
+PIM RAM
+```
+
+arXiv 并不知道这里的 PIM 是 passive intermodulation。搜索引擎会按统计相关性召回其它领域的 PIM 论文。
+
+这不是单纯的“模型不聪明”，而是工具调用前缺少领域消歧。
+
+### 改进
+
+在 `ArxivRM` 层增加确定性的 query 规范化和结果过滤：
+
+- 中文关键词英文化：
+  - `无源互调` → `passive intermodulation`
+  - `神经网络` → `neural network`
+  - `抑制` → `suppression`
+  - `射频` → `radio frequency`
+- 当 query 中出现 PIM，并且上下文包含 suppression、RF、antenna、neural network 等词时，将 PIM 扩展为 `passive intermodulation`；
+- 当 query 明确是 RAM、DRAM、processing-in-memory 方向时，直接跳过；
+- 当 query 已经消歧为 passive intermodulation 时，过滤掉 title/abstract 中明显是 processing-in-memory、RAM、product information management 的结果。
+
+### 验证
+
+新增回归测试：
+
+- `pim 神经网络抑制` 会被规范化为 `passive intermodulation neural network suppression`；
+- 返回结果中保留 passive intermodulation 论文；
+- 过滤 processing-in-memory / RAM 论文；
+- `PIM RAM processing-in-memory system` 不再请求 arXiv。
+
+测试结果：
+
+```text
+27 tests OK
+```
+
+### 你应该学到什么
+
+1. 缩写词是检索系统里的高风险输入。
+2. LLM 生成 query 后，不能直接丢给外部搜索 API。
+3. 对专业领域缩写，要做 query expansion / disambiguation。
+4. 检索质量不能只靠 prompt，要在工具层做确定性约束。
+5. 结果端也要过滤，因为即使 query 正确，搜索引擎仍可能召回跑题文档。
+
+### 面试可以怎么讲
+
+> 我在 PaperStorm 里处理过专业缩写导致的检索跑题问题。比如 PIM 在通信领域指 passive intermodulation，但在计算机体系结构里也指 processing-in-memory。原系统直接把 LLM 生成的 PIM query 发给 arXiv，容易召回 RAM/DRAM 论文。我在 ArxivRM 层做了 query expansion 和领域消歧：在 RF、suppression、neural network 上下文中把 PIM 扩展为 passive intermodulation，并过滤 processing-in-memory、product information management 等跑题结果，同时用回归测试锁住这个行为。这个改动体现了 Agent 工具调用前的输入规范化和检索质量控制。

@@ -26,6 +26,41 @@ ARXIV_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+ARXIV_PIM_AMBIGUOUS_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2601.00001v1</id>
+    <updated>2026-01-02T00:00:00Z</updated>
+    <published>2026-01-01T00:00:00Z</published>
+    <title>Neural Network Suppression of Passive Intermodulation in RF Front Ends</title>
+    <summary>
+      We study passive intermodulation mitigation using neural network cancellers
+      for radio frequency systems and antenna feed networks.
+    </summary>
+    <author><name>Alice RF</name></author>
+    <arxiv:primary_category term="eess.SP" />
+    <category term="eess.SP" />
+    <link href="http://arxiv.org/abs/2601.00001v1" rel="alternate" type="text/html" />
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2601.00002v1</id>
+    <updated>2026-01-02T00:00:00Z</updated>
+    <published>2026-01-01T00:00:00Z</published>
+    <title>PIM: Processing-in-Memory System for Efficient RAM Access</title>
+    <summary>
+      This paper presents a processing-in-memory architecture for DRAM and RAM
+      acceleration in computer systems.
+    </summary>
+    <author><name>Bob Memory</name></author>
+    <arxiv:primary_category term="cs.AR" />
+    <category term="cs.AR" />
+    <link href="http://arxiv.org/abs/2601.00002v1" rel="alternate" type="text/html" />
+  </entry>
+</feed>
+"""
+
+
 class PaperStormRetrieversTest(unittest.TestCase):
     def test_arxiv_rm_maps_atom_entries_to_storm_results(self):
         rm = ArxivRM(k=1)
@@ -53,6 +88,28 @@ class PaperStormRetrieversTest(unittest.TestCase):
         rm.request = lambda query: calls.append(query) or ARXIV_SAMPLE
 
         results = rm.forward(["", "   "])
+
+        self.assertEqual(results, [])
+        self.assertEqual(calls, [])
+
+    def test_arxiv_rm_disambiguates_pim_as_passive_intermodulation(self):
+        rm = ArxivRM(k=2)
+        calls = []
+        rm.request = lambda query: calls.append(query) or ARXIV_PIM_AMBIGUOUS_SAMPLE
+
+        results = rm.forward("pim 神经网络抑制")
+
+        self.assertEqual(calls, ["passive intermodulation neural network suppression"])
+        self.assertEqual(len(results), 1)
+        self.assertIn("Passive Intermodulation", results[0]["title"])
+        self.assertNotIn("Processing-in-Memory", results[0]["title"])
+
+    def test_arxiv_rm_skips_memory_pim_queries_when_using_paperstorm(self):
+        rm = ArxivRM(k=1)
+        calls = []
+        rm.request = lambda query: calls.append(query) or ARXIV_SAMPLE
+
+        results = rm.forward("PIM RAM processing-in-memory system")
 
         self.assertEqual(results, [])
         self.assertEqual(calls, [])
