@@ -286,3 +286,98 @@ arXiv 并不知道这里的 PIM 是 passive intermodulation。搜索引擎会按
 ### 面试可以怎么讲
 
 > 我在 PaperStorm 里处理过专业缩写导致的检索跑题问题。比如 PIM 在通信领域指 passive intermodulation，但在计算机体系结构里也指 processing-in-memory。原系统直接把 LLM 生成的 PIM query 发给 arXiv，容易召回 RAM/DRAM 论文。我在 ArxivRM 层做了 query expansion 和领域消歧：在 RF、suppression、neural network 上下文中把 PIM 扩展为 passive intermodulation，并过滤 processing-in-memory、product information management 等跑题结果，同时用回归测试锁住这个行为。这个改动体现了 Agent 工具调用前的输入规范化和检索质量控制。
+
+## 2026-07-21：PaperStorm Runtime Trace / Hook 雏形
+
+### 为什么做
+
+通用 Agent Harness 岗位关注的不只是“Agent 能跑”，而是：
+
+- 一次 Agentic Loop 具体经历了哪些步骤；
+- 哪个工具被调用；
+- 每次工具调用耗时多久；
+- 哪些 query 成功，哪些 query 失败；
+- 最终写出了哪些产物；
+- 出错时是否能从日志里复盘原因。
+
+如果只有终端日志，信息很快会被刷掉，也不方便程序分析。因此需要结构化 trace。
+
+### 本次改进
+
+新增轻量运行时 trace 能力：
+
+- 每次运行默认生成 `paperstorm_trace.jsonl`；
+- 每次运行默认生成 `run_summary.json`；
+- 增加 `PaperStormTraceRecorder`，统一记录事件；
+- 增加 `TracedRetrievalModel`，包装底层检索器；
+- 新增 `--disable-trace`，需要时可以关闭 trace。
+
+当前记录的事件包括：
+
+```text
+run_start
+retrieval_start
+retrieval_end
+retrieval_error
+artifact_written
+run_end
+```
+
+`paperstorm_trace.jsonl` 是逐行 JSON，每行一个事件，适合后续分析：
+
+```json
+{"event": "retrieval_start", "retriever": "ArxivRM", "queries": ["passive intermodulation"]}
+{"event": "retrieval_end", "result_count": 3, "duration_sec": 1.25}
+```
+
+`run_summary.json` 汇总一次运行：
+
+```json
+{
+  "success": true,
+  "duration_sec": 42.1,
+  "retrieval_queries": 6,
+  "retrieval_success": 6,
+  "retrieval_failed": 0,
+  "artifacts": ["storm_gen_outline.txt"]
+}
+```
+
+### 设计取舍
+
+这次没有直接侵入 DSPy/LiteLLM 内部去追踪每一次 LLM 调用，而是先在 PaperStorm runner 和 retriever 边界做 trace。
+
+原因：
+
+- runner 边界稳定，风险低；
+- retriever 是明确的 tool calling 边界；
+- 先保证可用的 trace，再逐步深入 LLM 调用层；
+- 这更符合工程里的渐进式 instrumentation。
+
+### 验证
+
+新增测试覆盖：
+
+- trace recorder 能写 JSONL 事件；
+- trace recorder 能写 summary；
+- traced retriever 能记录 retrieval_start / retrieval_end；
+- traced retriever 出错时能记录 retrieval_error；
+- 原有日志、检索、query 清洗测试不回归。
+
+测试结果：
+
+```text
+29 tests OK
+```
+
+### 你应该学到什么
+
+1. Hook/Trace 是 Agent Runtime 的基础设施，不是普通 print。
+2. Agent Harness 要能回答“这次执行发生了什么”。
+3. 工具调用边界是最适合做 trace 的第一层。
+4. JSONL 适合记录事件流，JSON summary 适合记录运行摘要。
+5. 可观测性应该结构化，方便之后做自动分析和问题定位。
+
+### 面试可以怎么讲
+
+> 我在 PaperStorm 里补了轻量 Agent Runtime Trace。每次运行会生成 paperstorm_trace.jsonl 和 run_summary.json，记录 run_start、retrieval_start、retrieval_end、retrieval_error、artifact_written、run_end 等事件。检索器通过 wrapper 方式接入 trace，不侵入原有 ArxivRM/LocalPDFRM 逻辑。这样可以复盘一次 Agentic Loop 中工具调用了什么 query、耗时多久、返回多少结果、哪里失败，属于 Agent Harness 里的 Hook / Observability / Runtime Debugging 能力。
