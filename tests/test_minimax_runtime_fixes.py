@@ -94,6 +94,28 @@ class MinimaxRuntimeFixesTest(unittest.TestCase):
             ["RAG 原理", "vector database"],
         )
 
+    def test_clean_search_queries_removes_structured_output_noise(self):
+        raw_queries = """```json
+queries": [
+CNN 卷积神经网络 原理 结构
+CNN network architecture explanation
+以下是根据您的需求，从行动规划角度转化的搜索查询：
+**Queries:**
+```markdown
+好的，作为理论基础专家，我将生成用于搜索引擎的高效查询语句。
+GoogLeNet Inception module 2014
+]
+```"""
+
+        self.assertEqual(
+            clean_search_queries(raw_queries, max_search_queries=4),
+            [
+                "CNN 卷积神经网络 原理 结构",
+                "CNN network architecture explanation",
+                "GoogLeNet Inception module 2014",
+            ],
+        )
+
     def test_write_str_uses_utf8(self):
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "article.txt"
