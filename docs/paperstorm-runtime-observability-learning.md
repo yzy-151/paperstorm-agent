@@ -381,3 +381,87 @@ run_end
 ### 面试可以怎么讲
 
 > 我在 PaperStorm 里补了轻量 Agent Runtime Trace。每次运行会生成 paperstorm_trace.jsonl 和 run_summary.json，记录 run_start、retrieval_start、retrieval_end、retrieval_error、artifact_written、run_end 等事件。检索器通过 wrapper 方式接入 trace，不侵入原有 ArxivRM/LocalPDFRM 逻辑。这样可以复盘一次 Agentic Loop 中工具调用了什么 query、耗时多久、返回多少结果、哪里失败，属于 Agent Harness 里的 Hook / Observability / Runtime Debugging 能力。
+
+## 2026-07-21：PaperStorm Tool Schema 抽象
+
+### 为什么做
+
+Agent Harness 里的工具系统不能只是内部 Python 类。一个工具要能被 Agent Runtime 发现、描述、校验和调用，需要有稳定的 schema：
+
+- 工具叫什么；
+- 工具解决什么问题；
+- 输入参数是什么；
+- 输出结构是什么；
+- 调用失败如何表示；
+- 后续如何映射到 MCP Tool。
+
+这一步是 MCP 前置工作。先有稳定 Tool Schema，后面 MCP server 只是把这些工具按协议暴露出去。
+
+### 本次改进
+
+新增 `knowledge_storm/paperstorm_tools.py`：
+
+- `PaperStormTool`：统一工具基类；
+- `RetrievalTool`：检索类工具适配器；
+- `ArxivSearchTool`：把 `ArxivRM` 包成 schema tool；
+- `LocalPDFSearchTool`：把 `LocalPDFRM` 包成 schema tool；
+- `list_paperstorm_tools()`：后续给 MCP server 做工具发现。
+
+每个工具都提供：
+
+```python
+tool.name
+tool.description
+tool.input_schema
+tool.output_schema
+tool.to_schema()
+tool.run(arguments)
+```
+
+示例 schema：
+
+```json
+{
+  "name": "arxiv_search",
+  "description": "Search paper metadata from arXiv.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string"},
+      "top_k": {"type": "integer"}
+    },
+    "required": ["query"]
+  }
+}
+```
+
+### Trace 事件扩展
+
+Runtime trace 原来只有检索专用事件：
+
+```text
+retrieval_start
+retrieval_end
+retrieval_error
+```
+
+这次补了更通用的工具事件：
+
+```text
+tool_start
+tool_end
+tool_error
+```
+
+这样后续不管是 arXiv、本地 PDF、MCP 工具、文件读取工具，还是其它工具，都可以走同一套 trace 语义。
+
+### 你应该学到什么
+
+1. Tool Calling 不只是“调一个函数”，还需要 schema。
+2. Tool Schema 是 MCP、OpenAI function calling、LangGraph tool node 等机制的共同基础。
+3. 工具层要和具体实现解耦：Agent Runtime 面对的是 tool schema，不应该直接依赖内部类。
+4. Trace 事件应该从 retrieval 逐步抽象到 tool，更符合通用 Agent Harness。
+
+### 面试可以怎么讲
+
+> 我在 PaperStorm 里把内部检索器抽象成统一 Tool Schema。ArxivRM 和 LocalPDFRM 不再只是 Python 类，而是被适配成带 name、description、input_schema、output_schema 和 run(arguments) 的工具对象。这样后续可以直接映射到 MCP Tool 或其它 Agent Runtime 的 Function Calling 接口。同时我把 trace 从 retrieval_start/end 扩展到通用 tool_start/tool_end/tool_error，让工具调用可观测性不局限于检索器。
