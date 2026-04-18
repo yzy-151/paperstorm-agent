@@ -465,3 +465,89 @@ tool_error
 ### 面试可以怎么讲
 
 > 我在 PaperStorm 里把内部检索器抽象成统一 Tool Schema。ArxivRM 和 LocalPDFRM 不再只是 Python 类，而是被适配成带 name、description、input_schema、output_schema 和 run(arguments) 的工具对象。这样后续可以直接映射到 MCP Tool 或其它 Agent Runtime 的 Function Calling 接口。同时我把 trace 从 retrieval_start/end 扩展到通用 tool_start/tool_end/tool_error，让工具调用可观测性不局限于检索器。
+
+## 2026-07-21：PaperStorm MCP Server Demo
+
+### 为什么做
+
+岗位 JD 里提到 MCP，本质上是在问你是否理解“Agent Runtime 如何发现和调用外部能力”。上一阶段我们已经有了 `PaperStormTool` 和 schema，但那只是项目内部的 Python 抽象；这次补一个最小 MCP 风格 stdio server，把内部工具暴露成协议入口。
+
+这一步的价值不是“炫协议”，而是把 PaperStorm 从普通脚本推进到 Agent Harness 方向：
+
+- 工具可以被 runtime 列出来；
+- 工具可以通过统一请求调用；
+- 工具错误可以结构化返回；
+- 后续可以接入 MCP client、Agent 框架或自研 runtime。
+
+### 本次改进
+
+新增 `examples/storm_examples/paperstorm_mcp_server.py`，提供一个轻量 MCP-style JSON-RPC stdio server：
+
+- `tools/list`：返回当前可用工具 schema；
+- `tools/call`：按工具名调用 `arxiv_search` 或 `local_pdf_search`；
+- `build_tool_registry()`：从 `list_paperstorm_tools()` 构建工具注册表；
+- `handle_jsonrpc_request()`：把 JSON-RPC 请求路由到具体工具；
+- `serve_stdio()`：从标准输入读请求，从标准输出写响应。
+
+调用形态大致如下：
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/list"}
+```
+
+工具调用示例：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "arxiv_search",
+    "arguments": {
+      "query": "passive intermodulation suppression",
+      "top_k": 2
+    }
+  }
+}
+```
+
+### 错误处理
+
+这次没有让工具调用异常直接炸掉进程，而是返回 JSON-RPC 风格错误：
+
+- 未知工具：`-32602 Invalid params`；
+- 未知方法：`-32601 Method not found`；
+- 请求格式错误：`-32600 Invalid request`；
+- 工具内部异常：`-32603 Internal error`。
+
+这是 Agent Runtime 很重要的一点：工具失败不应该等于整个 Agent 进程崩溃。runtime 要能把失败作为结构化事件交给上层策略处理，例如重试、换工具、压缩上下文后继续、或者向用户解释失败原因。
+
+### 验证
+
+新增测试 `tests/test_paperstorm_mcp_server.py`：
+
+- `tools/list` 能返回注册工具 schema；
+- `tools/call` 能调用注册工具；
+- 未知工具返回结构化 JSON-RPC error；
+- 默认工具注册表包含 `arxiv_search`。
+
+测试过程按 TDD 做：
+
+1. 先写测试；
+2. 运行测试，确认因为 `paperstorm_mcp_server` 模块不存在而失败；
+3. 再实现最小 server；
+4. 重新运行测试通过；
+5. 最后跑 PaperStorm 相关回归测试。
+
+### 你应该学到什么
+
+1. MCP 可以理解成“工具发现 + 工具调用 + 结构化协议”的组合。
+2. Tool Schema 是静态描述，MCP server 是运行时入口。
+3. Agent Harness 里工具系统至少要有 registry、schema、call dispatcher、error model。
+4. stdio JSON-RPC 是很多本地工具协议的简单通信方式，适合做轻量集成。
+5. 面向 Agent 的工具失败要结构化返回，不能只靠异常栈。
+
+### 面试可以怎么讲
+
+> 我在 PaperStorm 里做了一个最小 MCP-style stdio server。原本 PaperStorm 的检索器只是内部 Python 类，我先把它们抽象成 Tool Schema，然后通过 `tools/list` 暴露工具发现，通过 `tools/call` 统一调用 arXiv 和本地 PDF 检索。server 使用 JSON-RPC 风格响应，并把未知工具、参数错误、内部异常结构化返回。这个改动让我理解了 Agent Harness 里的工具注册、schema 描述、dispatcher、错误模型和 MCP 接入边界。
