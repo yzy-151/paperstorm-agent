@@ -551,3 +551,139 @@ tool_error
 ### 面试可以怎么讲
 
 > 我在 PaperStorm 里做了一个最小 MCP-style stdio server。原本 PaperStorm 的检索器只是内部 Python 类，我先把它们抽象成 Tool Schema，然后通过 `tools/list` 暴露工具发现，通过 `tools/call` 统一调用 arXiv 和本地 PDF 检索。server 使用 JSON-RPC 风格响应，并把未知工具、参数错误、内部异常结构化返回。这个改动让我理解了 Agent Harness 里的工具注册、schema 描述、dispatcher、错误模型和 MCP 接入边界。
+
+## 2026-07-21：PaperStorm Eval Harness v1
+
+### 为什么做
+
+Agent 不能只靠“看起来还不错”来判断效果。PaperStorm 已经有检索、生成、trace 和 MCP 工具入口，但还缺一个问题：
+
+```text
+这次 Agent 做得好不好？改完以后有没有真的变好？
+```
+
+如果没有评估系统，每次优化 query、retriever、prompt、trace 或工具调用，只能凭主观感受判断。Eval Harness 的目标是把一次 PaperStorm 运行变成可量化、可复盘、可比较的 scorecard。
+
+### 本次改进
+
+新增规则评估模块：
+
+```text
+knowledge_storm/paperstorm_eval.py
+examples/storm_examples/evaluate_paperstorm_run.py
+examples/storm_examples/paperstorm_eval_cases.json
+tests/test_paperstorm_eval.py
+```
+
+评估脚本读取一次运行目录：
+
+```text
+raw_search_results.json
+storm_gen_outline.txt
+storm_gen_article_polished.txt
+paperstorm_trace.jsonl
+run_summary.json
+```
+
+输出：
+
+```text
+scorecard.json
+scorecard.md
+```
+
+第一版没有引入 LLM Judge，而是使用规则评分。原因是规则评估更稳定、便宜、可解释，也更适合先做工程闭环。
+
+### 评分维度
+
+当前总分 100 分，主要由这些部分组成：
+
+- `task_completion`：是否有文章、大纲、检索结果、成功 summary；
+- `retrieval_quality`：期望关键词覆盖率和来源数量；
+- `offtopic_penalty`：跑题结果占比惩罚；
+- `article_quality`：文章长度、关键词覆盖、中文比例；
+- `runtime_observability`：是否有 trace、run_start/run_end、retrieval/tool 事件。
+
+PIM case 中，正向关键词包括：
+
+```text
+passive intermodulation
+intermodulation
+RF
+radio frequency
+neural network
+suppression
+cancellation
+```
+
+负向关键词包括：
+
+```text
+processing-in-memory
+DRAM
+RAM
+product information management
+```
+
+这样可以量化 “PIM 神经网络抑制” 是否被正确理解成无源互调，而不是跑到内存系统方向。
+
+### 一个重要细节
+
+跑题惩罚不是简单按负向关键词数量扣分，而是按“跑题结果占比”扣分。
+
+原因：一篇 processing-in-memory 论文里可能同时出现 RAM、DRAM、processing-in-memory。如果按关键词重复扣分，一篇跑题结果就会被扣满，不利于衡量整体检索质量。因此 v1 使用：
+
+```text
+offtopic_penalty = 15 * 跑题结果数 / 检索结果数
+```
+
+这更符合检索评估里 precision / off-topic rate 的直觉。
+
+### 如何运行
+
+示例：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\evaluate_paperstorm_run.py `
+  --run-dir .\results\paperstorm_zh\PIM `
+  --case-file examples\storm_examples\paperstorm_eval_cases.json `
+  --topic "pim 神经网络抑制"
+```
+
+运行后查看：
+
+```text
+scorecard.json
+scorecard.md
+```
+
+### 验证
+
+新增测试覆盖：
+
+- 完整运行目录能得到较高分数；
+- 缺少大纲、trace、检索结果时会被扣分；
+- `scorecard.json` 和 `scorecard.md` 能正确写出；
+- 跑题关键词会进入 `forbidden_hits`；
+- 中文文章允许保留英文专业术语，不强行要求纯中文。
+
+测试过程仍按 TDD：
+
+1. 先写 `tests/test_paperstorm_eval.py`；
+2. 运行测试，确认 `knowledge_storm.paperstorm_eval` 模块不存在；
+3. 实现最小规则评分模块；
+4. 发现跑题惩罚过粗，改成按跑题结果占比；
+5. 调整中文比例测试，使其适配论文中英文术语混写。
+
+### 你应该学到什么
+
+1. Agent Eval 要结合任务定义，不能盲套通用 benchmark。
+2. 论文调研 Agent 的评价要同时看检索、生成和运行链路。
+3. 第一版 eval 不一定要 LLM Judge，规则指标更稳定可解释。
+4. `expected_keywords` 和 `forbidden_keywords` 可以把领域知识注入评估。
+5. Trace 不只是日志，也可以作为 benchmark 输入。
+6. 评估指标本身也需要调试，不能让一个坏指标误导优化方向。
+
+### 面试可以怎么讲
+
+> 我给 PaperStorm 做了一个规则版 Eval Harness。它读取一次 Agent 运行产物，包括 raw_search_results、outline、polished article、paperstorm_trace 和 run_summary，然后输出 scorecard.json 与 scorecard.md。评分维度包括任务完成度、检索相关性、跑题率、文章可用性和 runtime 可观测性。比如 PIM 任务中，我把 passive intermodulation/RF/neural network 作为正向关键词，把 processing-in-memory/RAM/DRAM 作为负向关键词，用跑题结果占比量化检索偏题问题。这样每次改 retriever、prompt 或 tool runtime，都能通过 benchmark 判断是否真的变好。
