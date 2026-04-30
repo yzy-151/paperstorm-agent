@@ -179,11 +179,21 @@ class PaperStormLoggingTest(unittest.TestCase):
 
         self.assertEqual(
             [event["event"] for event in events],
-            ["retrieval_start", "retrieval_end", "retrieval_start", "retrieval_error"],
+            [
+                "tool_start",
+                "retrieval_start",
+                "retrieval_end",
+                "tool_end",
+                "tool_start",
+                "retrieval_start",
+                "retrieval_error",
+                "tool_error",
+            ],
         )
-        self.assertEqual(events[0]["queries"], ["pim"])
-        self.assertEqual(events[1]["result_count"], 1)
-        self.assertEqual(events[3]["error_type"], "RuntimeError")
+        self.assertEqual(events[0]["tool_name"], "DummyRM")
+        self.assertEqual(events[1]["queries"], ["pim"])
+        self.assertEqual(events[2]["result_count"], 1)
+        self.assertEqual(events[7]["error_type"], "RuntimeError")
 
 
 if __name__ == "__main__":

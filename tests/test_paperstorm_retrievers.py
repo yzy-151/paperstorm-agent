@@ -210,6 +210,47 @@ class PaperStormRetrieversTest(unittest.TestCase):
         self.assertGreaterEqual(limits["outline_gen"], 1800)
         self.assertGreaterEqual(limits["article_gen"], 1800)
 
+    def test_arxiv_search_tool_exposes_schema_and_runs(self):
+        from knowledge_storm.paperstorm_tools import ArxivSearchTool
+
+        rm = ArxivRM(k=1)
+        rm.request = lambda query: ARXIV_SAMPLE
+        tool = ArxivSearchTool(rm=rm)
+
+        result = tool.run({"query": "retrieval augmented generation", "top_k": 1})
+
+        self.assertEqual(tool.name, "arxiv_search")
+        self.assertIn("input_schema", tool.to_schema())
+        self.assertEqual(tool.to_schema()["input_schema"]["required"], ["query"])
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(
+            result["results"][0]["title"], "Retrieval Augmented Generation Evaluation"
+        )
+
+    def test_local_pdf_search_tool_exposes_schema_and_runs(self):
+        from knowledge_storm.paperstorm_tools import LocalPDFSearchTool
+
+        rm = LocalPDFRM(
+            documents=[
+                {
+                    "title": "PIM Neural Canceller",
+                    "path": "papers/pim.pdf",
+                    "text": "Passive intermodulation can be mitigated by neural network cancellers.",
+                }
+            ],
+            k=1,
+            chunk_size=80,
+            chunk_overlap=0,
+        )
+        tool = LocalPDFSearchTool(rm=rm)
+
+        result = tool.run({"query": "neural network cancellers", "top_k": 1})
+
+        self.assertEqual(tool.name, "local_pdf_search")
+        self.assertEqual(tool.to_schema()["input_schema"]["required"], ["query"])
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(result["results"][0]["meta"]["source_type"], "local_pdf")
+
 
 if __name__ == "__main__":
     unittest.main()

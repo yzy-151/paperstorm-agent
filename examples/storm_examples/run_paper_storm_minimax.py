@@ -139,6 +139,12 @@ class TracedRetrievalModel:
         )
         started = time.time()
         self.trace_recorder.emit(
+            "tool_start",
+            tool_name=self.retriever_name,
+            tool_type="retriever",
+            arguments={"queries": queries},
+        )
+        self.trace_recorder.emit(
             "retrieval_start",
             retriever=self.retriever_name,
             queries=queries,
@@ -157,11 +163,26 @@ class TracedRetrievalModel:
                 error_type=type(e).__name__,
                 error=str(e),
             )
+            self.trace_recorder.emit(
+                "tool_error",
+                tool_name=self.retriever_name,
+                tool_type="retriever",
+                duration_sec=round(time.time() - started, 4),
+                error_type=type(e).__name__,
+                error=str(e),
+            )
             raise
         self.trace_recorder.emit(
             "retrieval_end",
             retriever=self.retriever_name,
             queries=queries,
+            duration_sec=round(time.time() - started, 4),
+            result_count=len(results),
+        )
+        self.trace_recorder.emit(
+            "tool_end",
+            tool_name=self.retriever_name,
+            tool_type="retriever",
             duration_sec=round(time.time() - started, 4),
             result_count=len(results),
         )

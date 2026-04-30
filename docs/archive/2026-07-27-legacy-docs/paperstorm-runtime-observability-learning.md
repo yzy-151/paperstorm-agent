@@ -381,3 +381,309 @@ run_end
 ### 面试可以怎么讲
 
 > 我在 PaperStorm 里补了轻量 Agent Runtime Trace。每次运行会生成 paperstorm_trace.jsonl 和 run_summary.json，记录 run_start、retrieval_start、retrieval_end、retrieval_error、artifact_written、run_end 等事件。检索器通过 wrapper 方式接入 trace，不侵入原有 ArxivRM/LocalPDFRM 逻辑。这样可以复盘一次 Agentic Loop 中工具调用了什么 query、耗时多久、返回多少结果、哪里失败，属于 Agent Harness 里的 Hook / Observability / Runtime Debugging 能力。
+
+## 2026-07-21：PaperStorm Tool Schema 抽象
+
+### 为什么做
+
+Agent Harness 里的工具系统不能只是内部 Python 类。一个工具要能被 Agent Runtime 发现、描述、校验和调用，需要有稳定的 schema：
+
+- 工具叫什么；
+- 工具解决什么问题；
+- 输入参数是什么；
+- 输出结构是什么；
+- 调用失败如何表示；
+- 后续如何映射到 MCP Tool。
+
+这一步是 MCP 前置工作。先有稳定 Tool Schema，后面 MCP server 只是把这些工具按协议暴露出去。
+
+### 本次改进
+
+新增 `knowledge_storm/paperstorm_tools.py`：
+
+- `PaperStormTool`：统一工具基类；
+- `RetrievalTool`：检索类工具适配器；
+- `ArxivSearchTool`：把 `ArxivRM` 包成 schema tool；
+- `LocalPDFSearchTool`：把 `LocalPDFRM` 包成 schema tool；
+- `list_paperstorm_tools()`：后续给 MCP server 做工具发现。
+
+每个工具都提供：
+
+```python
+tool.name
+tool.description
+tool.input_schema
+tool.output_schema
+tool.to_schema()
+tool.run(arguments)
+```
+
+示例 schema：
+
+```json
+{
+  "name": "arxiv_search",
+  "description": "Search paper metadata from arXiv.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string"},
+      "top_k": {"type": "integer"}
+    },
+    "required": ["query"]
+  }
+}
+```
+
+### Trace 事件扩展
+
+Runtime trace 原来只有检索专用事件：
+
+```text
+retrieval_start
+retrieval_end
+retrieval_error
+```
+
+这次补了更通用的工具事件：
+
+```text
+tool_start
+tool_end
+tool_error
+```
+
+这样后续不管是 arXiv、本地 PDF、MCP 工具、文件读取工具，还是其它工具，都可以走同一套 trace 语义。
+
+### 你应该学到什么
+
+1. Tool Calling 不只是“调一个函数”，还需要 schema。
+2. Tool Schema 是 MCP、OpenAI function calling、LangGraph tool node 等机制的共同基础。
+3. 工具层要和具体实现解耦：Agent Runtime 面对的是 tool schema，不应该直接依赖内部类。
+4. Trace 事件应该从 retrieval 逐步抽象到 tool，更符合通用 Agent Harness。
+
+### 面试可以怎么讲
+
+> 我在 PaperStorm 里把内部检索器抽象成统一 Tool Schema。ArxivRM 和 LocalPDFRM 不再只是 Python 类，而是被适配成带 name、description、input_schema、output_schema 和 run(arguments) 的工具对象。这样后续可以直接映射到 MCP Tool 或其它 Agent Runtime 的 Function Calling 接口。同时我把 trace 从 retrieval_start/end 扩展到通用 tool_start/tool_end/tool_error，让工具调用可观测性不局限于检索器。
+
+## 2026-07-21：PaperStorm MCP Server Demo
+
+### 为什么做
+
+岗位 JD 里提到 MCP，本质上是在问你是否理解“Agent Runtime 如何发现和调用外部能力”。上一阶段我们已经有了 `PaperStormTool` 和 schema，但那只是项目内部的 Python 抽象；这次补一个最小 MCP 风格 stdio server，把内部工具暴露成协议入口。
+
+这一步的价值不是“炫协议”，而是把 PaperStorm 从普通脚本推进到 Agent Harness 方向：
+
+- 工具可以被 runtime 列出来；
+- 工具可以通过统一请求调用；
+- 工具错误可以结构化返回；
+- 后续可以接入 MCP client、Agent 框架或自研 runtime。
+
+### 本次改进
+
+新增 `examples/storm_examples/paperstorm_mcp_server.py`，提供一个轻量 MCP-style JSON-RPC stdio server：
+
+- `tools/list`：返回当前可用工具 schema；
+- `tools/call`：按工具名调用 `arxiv_search` 或 `local_pdf_search`；
+- `build_tool_registry()`：从 `list_paperstorm_tools()` 构建工具注册表；
+- `handle_jsonrpc_request()`：把 JSON-RPC 请求路由到具体工具；
+- `serve_stdio()`：从标准输入读请求，从标准输出写响应。
+
+调用形态大致如下：
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/list"}
+```
+
+工具调用示例：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "arxiv_search",
+    "arguments": {
+      "query": "passive intermodulation suppression",
+      "top_k": 2
+    }
+  }
+}
+```
+
+### 错误处理
+
+这次没有让工具调用异常直接炸掉进程，而是返回 JSON-RPC 风格错误：
+
+- 未知工具：`-32602 Invalid params`；
+- 未知方法：`-32601 Method not found`；
+- 请求格式错误：`-32600 Invalid request`；
+- 工具内部异常：`-32603 Internal error`。
+
+这是 Agent Runtime 很重要的一点：工具失败不应该等于整个 Agent 进程崩溃。runtime 要能把失败作为结构化事件交给上层策略处理，例如重试、换工具、压缩上下文后继续、或者向用户解释失败原因。
+
+### 验证
+
+新增测试 `tests/test_paperstorm_mcp_server.py`：
+
+- `tools/list` 能返回注册工具 schema；
+- `tools/call` 能调用注册工具；
+- 未知工具返回结构化 JSON-RPC error；
+- 默认工具注册表包含 `arxiv_search`。
+
+测试过程按 TDD 做：
+
+1. 先写测试；
+2. 运行测试，确认因为 `paperstorm_mcp_server` 模块不存在而失败；
+3. 再实现最小 server；
+4. 重新运行测试通过；
+5. 最后跑 PaperStorm 相关回归测试。
+
+### 你应该学到什么
+
+1. MCP 可以理解成“工具发现 + 工具调用 + 结构化协议”的组合。
+2. Tool Schema 是静态描述，MCP server 是运行时入口。
+3. Agent Harness 里工具系统至少要有 registry、schema、call dispatcher、error model。
+4. stdio JSON-RPC 是很多本地工具协议的简单通信方式，适合做轻量集成。
+5. 面向 Agent 的工具失败要结构化返回，不能只靠异常栈。
+
+### 面试可以怎么讲
+
+> 我在 PaperStorm 里做了一个最小 MCP-style stdio server。原本 PaperStorm 的检索器只是内部 Python 类，我先把它们抽象成 Tool Schema，然后通过 `tools/list` 暴露工具发现，通过 `tools/call` 统一调用 arXiv 和本地 PDF 检索。server 使用 JSON-RPC 风格响应，并把未知工具、参数错误、内部异常结构化返回。这个改动让我理解了 Agent Harness 里的工具注册、schema 描述、dispatcher、错误模型和 MCP 接入边界。
+
+## 2026-07-21：PaperStorm Eval Harness v1
+
+### 为什么做
+
+Agent 不能只靠“看起来还不错”来判断效果。PaperStorm 已经有检索、生成、trace 和 MCP 工具入口，但还缺一个问题：
+
+```text
+这次 Agent 做得好不好？改完以后有没有真的变好？
+```
+
+如果没有评估系统，每次优化 query、retriever、prompt、trace 或工具调用，只能凭主观感受判断。Eval Harness 的目标是把一次 PaperStorm 运行变成可量化、可复盘、可比较的 scorecard。
+
+### 本次改进
+
+新增规则评估模块：
+
+```text
+knowledge_storm/paperstorm_eval.py
+examples/storm_examples/evaluate_paperstorm_run.py
+examples/storm_examples/paperstorm_eval_cases.json
+tests/test_paperstorm_eval.py
+```
+
+评估脚本读取一次运行目录：
+
+```text
+raw_search_results.json
+storm_gen_outline.txt
+storm_gen_article_polished.txt
+paperstorm_trace.jsonl
+run_summary.json
+```
+
+输出：
+
+```text
+scorecard.json
+scorecard.md
+```
+
+第一版没有引入 LLM Judge，而是使用规则评分。原因是规则评估更稳定、便宜、可解释，也更适合先做工程闭环。
+
+### 评分维度
+
+当前总分 100 分，主要由这些部分组成：
+
+- `task_completion`：是否有文章、大纲、检索结果、成功 summary；
+- `retrieval_quality`：期望关键词覆盖率和来源数量；
+- `offtopic_penalty`：跑题结果占比惩罚；
+- `article_quality`：文章长度、关键词覆盖、中文比例；
+- `runtime_observability`：是否有 trace、run_start/run_end、retrieval/tool 事件。
+
+PIM case 中，正向关键词包括：
+
+```text
+passive intermodulation
+intermodulation
+RF
+radio frequency
+neural network
+suppression
+cancellation
+```
+
+负向关键词包括：
+
+```text
+processing-in-memory
+DRAM
+RAM
+product information management
+```
+
+这样可以量化 “PIM 神经网络抑制” 是否被正确理解成无源互调，而不是跑到内存系统方向。
+
+### 一个重要细节
+
+跑题惩罚不是简单按负向关键词数量扣分，而是按“跑题结果占比”扣分。
+
+原因：一篇 processing-in-memory 论文里可能同时出现 RAM、DRAM、processing-in-memory。如果按关键词重复扣分，一篇跑题结果就会被扣满，不利于衡量整体检索质量。因此 v1 使用：
+
+```text
+offtopic_penalty = 15 * 跑题结果数 / 检索结果数
+```
+
+这更符合检索评估里 precision / off-topic rate 的直觉。
+
+### 如何运行
+
+示例：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\evaluate_paperstorm_run.py `
+  --run-dir .\results\paperstorm_zh\PIM `
+  --case-file examples\storm_examples\paperstorm_eval_cases.json `
+  --topic "pim 神经网络抑制"
+```
+
+运行后查看：
+
+```text
+scorecard.json
+scorecard.md
+```
+
+### 验证
+
+新增测试覆盖：
+
+- 完整运行目录能得到较高分数；
+- 缺少大纲、trace、检索结果时会被扣分；
+- `scorecard.json` 和 `scorecard.md` 能正确写出；
+- 跑题关键词会进入 `forbidden_hits`；
+- 中文文章允许保留英文专业术语，不强行要求纯中文。
+
+测试过程仍按 TDD：
+
+1. 先写 `tests/test_paperstorm_eval.py`；
+2. 运行测试，确认 `knowledge_storm.paperstorm_eval` 模块不存在；
+3. 实现最小规则评分模块；
+4. 发现跑题惩罚过粗，改成按跑题结果占比；
+5. 调整中文比例测试，使其适配论文中英文术语混写。
+
+### 你应该学到什么
+
+1. Agent Eval 要结合任务定义，不能盲套通用 benchmark。
+2. 论文调研 Agent 的评价要同时看检索、生成和运行链路。
+3. 第一版 eval 不一定要 LLM Judge，规则指标更稳定可解释。
+4. `expected_keywords` 和 `forbidden_keywords` 可以把领域知识注入评估。
+5. Trace 不只是日志，也可以作为 benchmark 输入。
+6. 评估指标本身也需要调试，不能让一个坏指标误导优化方向。
+
+### 面试可以怎么讲
+
+> 我给 PaperStorm 做了一个规则版 Eval Harness。它读取一次 Agent 运行产物，包括 raw_search_results、outline、polished article、paperstorm_trace 和 run_summary，然后输出 scorecard.json 与 scorecard.md。评分维度包括任务完成度、检索相关性、跑题率、文章可用性和 runtime 可观测性。比如 PIM 任务中，我把 passive intermodulation/RF/neural network 作为正向关键词，把 processing-in-memory/RAM/DRAM 作为负向关键词，用跑题结果占比量化检索偏题问题。这样每次改 retriever、prompt 或 tool runtime，都能通过 benchmark 判断是否真的变好。
