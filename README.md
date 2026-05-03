@@ -8,6 +8,12 @@
 README_STORM_OFFICIAL.md
 ```
 
+当前 GitHub 仓库：
+
+```text
+https://github.com/yzy-151/paperstorm-agent
+```
+
 当前 README 记录本 fork 的中文项目定位、运行方式、版本计划和求职展示重点。
 
 ## 1. 项目定位

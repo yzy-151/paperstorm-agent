@@ -62,7 +62,7 @@ C:\Users\yzy\Desktop\简历类\HITSZ_Resume\claude.md
 
 ```text
 origin  https://github.com/stanford-oval/storm.git
-fork    https://github.com/yzy-151/storm.git
+fork    https://github.com/yzy-151/paperstorm-agent.git
 ```
 
 规则：
@@ -91,7 +91,36 @@ $env:HTTP_PROXY='http://127.0.0.1:7890'
 $env:HTTPS_PROXY='http://127.0.0.1:7890'
 ```
 
-## 4. 分支命名规范
+## 4. GitHub 仓库与分支规范
+
+当前 GitHub fork 已改名为：
+
+```text
+https://github.com/yzy-151/paperstorm-agent
+```
+
+当前保留的 PaperStorm 主线分支：
+
+```text
+main
+version/v0.1.2-docs-roadmap
+feature/paperstorm-eval-harness
+```
+
+已删除的历史阶段远程分支：
+
+```text
+codex/minimax-agent-storm
+feature/paperstorm-query-quality
+feature/paperstorm-retrieval-quality
+feature/paperstorm-runtime-tracing
+feature/paperstorm-tool-schema
+feature/paperstorm-mcp-server
+```
+
+如果 fork 中还残留继承自 Stanford 官方仓库的旧分支，删除前必须再次向 Master 列明分支名并获得确认。
+
+## 5. 分支命名规范
 
 后续每次功能更新都建新分支，带版本号：
 
@@ -105,7 +134,7 @@ version/v1.0-agent-platform-demo
 
 不要继续随意创建 `feature/xxx` 分支，除非只是很小的修复。版本型功能统一用 `version/`。
 
-## 5. 文档维护规则
+## 6. 文档维护规则
 
 后续只维护三份核心文档：
 
@@ -133,7 +162,7 @@ README_STORM_OFFICIAL.md
 README.md
 ```
 
-## 6. 每次更新必须做什么
+## 7. 每次更新必须做什么
 
 每次代码或文档有实质更新，必须同步维护：
 
@@ -155,7 +184,7 @@ README.md
    - 应该怎么回答
    - 不该夸大的边界
 
-## 7. 必跑测试
+## 8. 必跑测试
 
 当前推荐回归：
 
@@ -185,7 +214,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m py_compile `
   examples\storm_examples\paperstorm_mcp_server.py
 ```
 
-## 8. 当前已有核心能力
+## 9. 当前已有核心能力
 
 已完成：
 
@@ -202,7 +231,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m py_compile `
 - MCP-style stdio server。
 - Eval Harness v1。
 
-## 9. GitHub 清理注意
+## 10. GitHub 清理注意
 
 远程已有较多分支。删除远程分支前必须先给 Master 列出：
 
@@ -217,13 +246,13 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m py_compile `
 git push fork --delete <branch>
 ```
 
-GitHub 仓库改名也需要 Master 确认目标名称。建议名称：
+GitHub 仓库已按 Master 确认改名为：
 
 ```text
 paperstorm-agent
 ```
 
-## 10. 安全边界
+## 11. 安全边界
 
 - 不要写入真实 API key。
 - 不要把 `run_config.json` 中的敏感字段恢复成明文。

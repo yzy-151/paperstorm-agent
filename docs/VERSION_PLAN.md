@@ -76,6 +76,56 @@ tests/test_paperstorm_mcp_server.py
 tests/test_paperstorm_eval.py
 ```
 
+### v0.1.2：文档归并与中文 README
+
+状态：已完成。
+
+核心能力：
+
+- 保留官方 STORM README 为 `README_STORM_OFFICIAL.md`。
+- 将项目 README 改为中文 `PaperStorm Agent` 首页。
+- 将 `docs` 根目录收敛为三份主文档：
+  - `OPERATION_GUIDE.md`
+  - `VERSION_PLAN.md`
+  - `RESUME_INTERVIEW_PLAN.md`
+- 旧文档归档到 `docs/archive/2026-07-27-legacy-docs/`。
+- 根据 Agent 岗 JD 和面试经历，明确后续版本主线：RAG、Memory、Multi-Agent、MCP、Eval、前端展示。
+
+分支：
+
+```text
+version/v0.1.2-docs-roadmap
+```
+
+### v0.1.3：GitHub 改名与分支治理
+
+状态：进行中。
+
+已完成：
+
+- GitHub 仓库从 `yzy-151/storm` 改名为 `yzy-151/paperstorm-agent`。
+- 本地 `fork` remote 更新为 `https://github.com/yzy-151/paperstorm-agent.git`。
+- `version/v0.1.2-docs-roadmap` 已合并进 `fork/main`。
+- 已删除旧阶段远程分支：
+  - `codex/minimax-agent-storm`
+  - `feature/paperstorm-query-quality`
+  - `feature/paperstorm-retrieval-quality`
+  - `feature/paperstorm-runtime-tracing`
+  - `feature/paperstorm-tool-schema`
+  - `feature/paperstorm-mcp-server`
+
+保留：
+
+```text
+main
+version/v0.1.2-docs-roadmap
+feature/paperstorm-eval-harness
+```
+
+待确认：
+
+- 是否删除 fork 中继承自 Stanford 官方仓库的旧分支，例如 `dev-gemini`、`dev-chinese`、`costorm-integration` 等。
+
 ## 3. v0.2：RAG 质量与 Memory 模块
 
 目标：把 PaperStorm 从“检索后生成文章”升级为“带记忆和可评估检索质量的论文 RAG Agent”。
