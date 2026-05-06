@@ -104,6 +104,7 @@ https://github.com/yzy-151/paperstorm-agent
 ```text
 main
 version/v0.1.2-docs-roadmap
+version/v0.1.3-github-rename
 feature/paperstorm-eval-harness
 ```
 
@@ -118,7 +119,21 @@ feature/paperstorm-tool-schema
 feature/paperstorm-mcp-server
 ```
 
-如果 fork 中还残留继承自 Stanford 官方仓库的旧分支，删除前必须再次向 Master 列明分支名并获得确认。
+已删除的 Stanford 官方继承远程分支：
+
+```text
+NAACL-2024-code-backup
+costorm-integration
+dependabot/pip/litellm-1.61.15
+dev-chinese
+dev-code-formatter
+dev-gemini
+dev-multilingual
+dev-python-pkg
+yijia-patch-azuremodel
+```
+
+后续 GitHub 上应只保留 PaperStorm Agent 相关分支。若再次出现无关分支，删除前仍需向 Master 列明分支名并获得确认。
 
 ## 5. 分支命名规范
 

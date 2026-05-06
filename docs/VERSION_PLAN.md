@@ -99,7 +99,7 @@ version/v0.1.2-docs-roadmap
 
 ### v0.1.3：GitHub 改名与分支治理
 
-状态：进行中。
+状态：已完成。
 
 已完成：
 
@@ -119,12 +119,44 @@ version/v0.1.2-docs-roadmap
 ```text
 main
 version/v0.1.2-docs-roadmap
+version/v0.1.3-github-rename
 feature/paperstorm-eval-harness
 ```
 
-待确认：
+已删除 Stanford 官方继承分支：
 
-- 是否删除 fork 中继承自 Stanford 官方仓库的旧分支，例如 `dev-gemini`、`dev-chinese`、`costorm-integration` 等。
+```text
+NAACL-2024-code-backup
+costorm-integration
+dependabot/pip/litellm-1.61.15
+dev-chinese
+dev-code-formatter
+dev-gemini
+dev-multilingual
+dev-python-pkg
+yijia-patch-azuremodel
+```
+
+### v0.1.4：远程分支清理记录
+
+状态：已完成。
+
+本次完成：
+
+- 根据 Master 明确确认，删除 fork 中 9 个继承自 Stanford 官方仓库、与 PaperStorm Agent 无关的远程分支。
+- 核对 GitHub 远程分支，当前仅保留：
+
+```text
+main
+version/v0.1.2-docs-roadmap
+version/v0.1.3-github-rename
+feature/paperstorm-eval-harness
+```
+
+维护规则：
+
+- 后续每次推送新功能都使用 `version/vX.Y-主题` 分支。
+- 合并到 main 后，保留最近 1 到 2 个关键版本分支即可，历史过渡分支可在确认后删除。
 
 ## 3. v0.2：RAG 质量与 Memory 模块
 
