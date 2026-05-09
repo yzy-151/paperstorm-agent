@@ -230,14 +230,32 @@ PaperStorm 可以演进成一个垂直 Agent 构建平台 demo：
 
 ### 知识库平台
 
+企业内部文档知识库 Agent 是非常真实的落地场景。很多企业会把制度文档、研发文档、接口文档、故障手册、产品手册、客户支持文档放进知识库，让 Agent 做检索问答、引用溯源、流程辅助和问题定位。
+
+所以 PaperStorm 做“普通知识库 QA”不会降低项目格调。会降低格调的是只做一个没有评测、没有引用、没有审计的“上传 PDF 聊天”demo。
+
+正确定位应该是：
+
+```text
+企业内部文档 / 论文资料知识库 Agent：支持文档导入、chunk metadata、检索审计、引用溯源、memory、scorecard 和前端 trace 展示。
+```
+
 v0.4 后重点展示：
 
 - 文档导入。
 - chunk/metadata。
+- 普通知识库 QA。
 - query planning。
 - 检索审计。
 - memory recall。
 - scorecard 评估。
+- 引用来源和召回片段展示。
+
+面试可说：
+
+```text
+PaperStorm 最早是论文调研 Agent，但底层能力可以迁移到企业内部文档知识库。论文、研发文档、接口文档本质上都需要解析、切块、metadata、检索、rerank、引用溯源和评测。我的规划不是做泛聊天，而是把知识库 QA 做成可审计 RAG：每次回答都能看到召回片段、来源、过滤原因和 scorecard。
+```
 
 ### 生产级 Agent 系统
 
@@ -256,7 +274,39 @@ v0.4 后重点展示：
 - timeout policy。
 - concurrent runs。
 - task status。
+- rate limit。
+- stress test report。
 - frontend timeline。
+
+高并发回答边界：
+
+```text
+当前 PaperStorm 还不是线上高并发系统。后续会按工程路径推进：先 FastAPI task_id 和状态隔离，再单 worker 后台执行，再加任务队列、并发数限制、timeout/retry、rate limit 和 fake runner 压测。真正生产级还需要鉴权、权限、监控告警、分布式队列和成本治理。
+```
+
+### Q11：做普通知识库 QA 会不会降低项目水平？
+
+推荐回答：
+
+```text
+不会，企业内部文档知识库 Agent 是真实需求。关键在于不要只做“上传 PDF 问答”的 demo，而要做企业知识库需要的工程能力：文档导入、chunk metadata、混合检索、rerank、引用溯源、权限/版本意识、检索审计、评测指标和前端可观测。PaperStorm 的优势是已经有论文 RAG、LocalPDF、trace、MCP 和 eval，普通知识库 QA 可以作为平台能力补齐，亮点仍然放在 Memory、Multi-Agent、MCP 和 Eval 上。
+```
+
+### Q12：内部文档知识库 Agent 和 PaperStorm 有什么关系？
+
+推荐回答：
+
+```text
+两者底层链路相同：文档解析、chunk、metadata、query planning、retrieval、context assembly、grounded generation、citation 和 eval。区别是 PaperStorm 的领域对象是论文和调研报告，企业知识库的对象是内部文档、接口文档、故障手册和产品文档。PaperStorm 后续可以把论文知识库抽象成通用 KB 层，再保留论文调研作为一个 Agent template。
+```
+
+### Q13：高并发怎么做？难点是什么？
+
+推荐回答：
+
+```text
+我会分阶段做，不会一上来声称高并发。第一阶段 FastAPI task_id，保证每个任务状态、output_dir、trace、scorecard 隔离；第二阶段后台 worker 和队列，限制 max_concurrent_tasks；第三阶段给 LLM、检索、embedding 工具加 timeout/retry/rate limit；第四阶段用 fake runner 做压测，统计平均延迟、P95、失败率和 retry 次数。难点是外部 API 限流、embedding 模型复用、文件写入隔离、阻塞调用与 async 混用、失败任务状态恢复。
+```
 
 ## 7. 简历投递策略
 

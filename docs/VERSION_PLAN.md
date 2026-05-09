@@ -158,6 +158,29 @@ feature/paperstorm-eval-harness
 - 后续每次推送新功能都使用 `version/vX.Y-主题` 分支。
 - 合并到 main 后，保留最近 1 到 2 个关键版本分支即可，历史过渡分支可在确认后删除。
 
+### v0.1.5：知识库 QA 与并发能力规划
+
+状态：已完成。
+
+本次是计划更新，不是功能实现。
+
+核心决策：
+
+- 普通知识库 QA 要做，但不能做成“上传 PDF 后简单聊天”的低价值 demo。
+- PaperStorm 的知识库方向要定位为企业内部文档 / 论文资料知识库 Agent，强调文档治理、检索审计、引用溯源、memory、评测和服务稳定性。
+- 高并发能力放入后续实验计划，但分阶段推进，先做 task_id 和状态隔离，再做 worker、队列、限流和压测。
+
+为什么要做普通知识库 QA：
+
+- 企业内部文档知识库 Agent 是真实高频场景：制度文档、研发文档、接口文档、故障手册、产品手册、知识库平台。
+- 面试中 RAG 全流程、知识库存储、chunk、metadata、BM25/向量混合检索、rerank、权限、评测、幻觉治理都是高频问题。
+- PaperStorm 本身已有 arXiv / LocalPDF / Information schema / Eval Harness，适合自然演进到知识库平台。
+
+边界：
+
+- 不把普通 QA 当成最终亮点，而是作为企业知识库 Agent 的基础能力。
+- 真正的项目亮点仍然是：RAG 审计、Memory、多 Agent、MCP、Eval、服务化和前端可视化。
+
 ## 3. v0.2：RAG 质量与 Memory 模块
 
 目标：把 PaperStorm 从“检索后生成文章”升级为“带记忆和可评估检索质量的论文 RAG Agent”。
@@ -184,11 +207,19 @@ feature/paperstorm-eval-harness
    - 增加 citation coverage。
    - 增加 answer groundedness 的规则版检查。
 
+5. Knowledge Base QA v0
+   - 在论文调研结果和本地 PDF chunks 上提供基础问答接口。
+   - 回答必须返回引用来源和命中文档片段。
+   - 支持“仅根据知识库回答，不足则说明缺信息”。
+   - 记录每次 QA 的 query、召回 chunks、answer 和 groundedness 检查结果。
+
 ### 验收标准
 
 - 能解释一次运行中每条 query 的来源。
 - 能看到哪些论文被过滤以及原因。
 - 同一 topic 第二次运行可以复用 memory 中的领域消歧信息。
+- 能对已导入 PDF / 已调研 topic 做基础知识库问答。
+- QA 输出包含引用来源，不允许无来源回答。
 - 至少 3 个 eval cases。
 - 测试不少于 45 个。
 
@@ -235,7 +266,7 @@ feature/paperstorm-eval-harness
 设计多角色论文调研 Agent 编排，将规划、检索、记忆、批判、写作和评估拆分为独立 Agent，并通过中心化 orchestrator 记录 agent_trace，实现多 Agent 协作链路可观测。
 ```
 
-## 5. v0.4：知识库平台化与服务 API
+## 5. v0.4：知识库平台化、服务 API 与并发基础
 
 目标：靠近企业级知识库平台和 Agent 构建平台。
 
@@ -245,15 +276,21 @@ feature/paperstorm-eval-harness
 - 任务提交：`POST /research-tasks`。
 - 状态查询：`GET /research-tasks/{task_id}`。
 - 报告读取：`GET /research-tasks/{task_id}/article`。
+- 知识库问答：`POST /knowledge-bases/{kb_id}/query`。
+- 文档导入：`POST /knowledge-bases/{kb_id}/documents`。
 - 知识库导入：PDF / Markdown / arXiv。
 - 本地任务状态存储。
 - 敏感信息脱敏。
+- 单 worker 后台执行，支持 queued / running / succeeded / failed。
+- 每个 task_id 独立 output_dir、trace、summary、scorecard，避免多任务文件串写。
 
 ### 验收标准
 
 - 不真实调用 LLM 的 API 层测试可通过。
 - 支持 task_id、queued/running/succeeded/failed 状态。
 - 支持读取 scorecard。
+- 支持对样例知识库执行一次带引用 QA。
+- 同时提交多个 fake task 时状态文件互不覆盖。
 - 测试不少于 55 个。
 
 ### 简历价值
@@ -264,6 +301,43 @@ feature/paperstorm-eval-harness
 将 PaperStorm 命令行 pipeline 服务化为 FastAPI Agent API，支持任务提交、状态追踪、报告读取、scorecard 获取和错误脱敏，为后续前端展示和企业知识库平台化奠定基础。
 ```
 
+## 5.1 v0.4.1：并发、限流与稳定性实验
+
+目标：补齐企业级 Agent 系统中“多任务并发”和“稳定性保障”的面试素材。
+
+### 功能目标
+
+- 支持可配置并发数，例如 `max_concurrent_tasks`。
+- 增加任务队列，超过并发上限的任务进入 queued。
+- 对 LLM / arXiv / embedding 等外部或重资源工具设置 timeout、retry、rate limit。
+- 复用 embedding model / retriever 资源，避免每个任务重复加载。
+- 记录任务级 latency、tool latency、失败率、retry 次数。
+- 增加简单压测脚本，使用 fake runner 模拟 10 / 50 / 100 个任务。
+
+### 难点
+
+- LLM API 和 arXiv 容易触发限流，不能无限并发。
+- 多任务同时写 `results/`，必须做好任务路径隔离。
+- trace、summary、scorecard 必须按 task_id 隔离。
+- Python 线程、asyncio、阻塞式 LLM/检索调用混用时容易造成假并发。
+- embedding 模型加载重，需要缓存和复用。
+- 失败任务必须有结构化错误状态，不能卡在 running。
+
+### 验收标准
+
+- fake runner 并发测试可稳定通过。
+- 多任务输出目录互不覆盖。
+- 每个任务都有独立 trace 和 summary。
+- 压测报告输出平均耗时、P95 latency、失败率和 retry 次数。
+
+### 简历价值
+
+可写：
+
+```text
+为 PaperStorm Agent API 增加任务队列、并发数限制、timeout/retry、任务级 trace 与压测报告，使用 fake runner 验证多任务状态隔离、文件隔离和错误恢复，为生产级 Agent 稳定性保障提供实验依据。
+```
+
 ## 6. v0.5：前端展示 Demo
 
 目标：像 `nonlinear-nn-agent` 最后要做前端一样，PaperStorm 也需要可展示界面。
@@ -271,12 +345,15 @@ feature/paperstorm-eval-harness
 ### 功能目标
 
 - 前端输入 topic / PDF 目录。
+- 前端创建/选择知识库。
+- 前端进行知识库 QA。
 - 展示任务状态。
 - 展示 query plan。
 - 展示检索结果与过滤原因。
 - 展示 memory 摘要。
 - 展示 trace 时间线。
 - 展示最终文章和 scorecard。
+- 展示并发任务队列、运行中任务和失败任务。
 
 技术建议：
 
@@ -290,6 +367,7 @@ FastAPI + 简单 HTML/React/Vite
 
 - 一键启动本地 demo。
 - 能展示一次已完成 run 的 report、trace、scorecard。
+- 能展示一次知识库 QA 的召回来源与引用片段。
 - 不依赖真实 API key 也能用样例数据预览。
 
 ### 简历价值
@@ -309,12 +387,14 @@ FastAPI + 简单 HTML/React/Vite
 做到：
 
 - RAG 知识库。
+- 普通知识库 QA。
 - Memory。
 - 多 Agent 编排。
 - Tool Schema / MCP。
 - Runtime Trace。
 - Eval Harness。
 - API 服务化。
+- 并发任务队列与压测报告。
 - 前端展示。
 - README 中文文档。
 - 简历问答文档。
@@ -323,7 +403,7 @@ FastAPI + 简单 HTML/React/Vite
 
 - 多租户。
 - 权限系统。
-- 高并发线上服务。
+- 真正高并发线上服务。
 - 云部署。
 - 企业级监控告警。
 
