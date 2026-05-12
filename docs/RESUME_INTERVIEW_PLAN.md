@@ -80,12 +80,15 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 新增 Runtime Trace，输出 `paperstorm_trace.jsonl` 与 `run_summary.json`，记录工具调用、耗时、结果数量、失败原因和产物路径，使 Agent 执行链路可复盘。
 - 抽象 `PaperStormTool` schema，将 arXiv / Local PDF 检索封装为可发现、可调用工具，并实现 MCP-style stdio server 支持 `tools/list`、`tools/call` 和结构化错误返回。
 - 实现规则版 Eval Harness，读取检索结果、文章、trace 和 summary 输出 `scorecard.json/md`，从任务完成度、检索相关性、跑题率、文章质量和 runtime 可观测性评估 Agent 效果。
+- 设计 `PaperStormMemoryStore` 三层记忆、`compress_context` 上下文压缩和 `PaperStormKnowledgeBase` 问答模块，将调研产物转化为可问答知识库，并要求 QA 返回 citations、grounded 和 evidence。
+- 新增 `PaperStormRuntimeSession`，统一 tool registry、tool call trace 和 working memory 写入，形成轻量 Agent Runtime 雏形。
 
 压缩版 bullet：
 
 - 基于 Stanford STORM 二次开发 PaperStorm Agent，接入 DeepSeek/MiniMax、arXiv 与本地 PDF 检索，复用多阶段 RAG 流程生成中文论文综述。
 - 实现 query 清洗、PIM 歧义消解、空检索防护、外部 API 失败降级和 JSONL runtime trace，提升 Agent 工具链稳定性与可观测性。
 - 抽象 Tool Schema 并实现 MCP-style server 与 Eval Harness，支持工具发现/调用、结构化错误和 scorecard 评估。
+- 增加三层记忆、上下文压缩、知识库 QA 和轻量 Runtime Session，使调研结果可追踪、可问答、可评估。
 
 ## 4. Nonlinear NN Agent 简历项目描述
 
@@ -149,13 +152,29 @@ Agentic Experiment Harness for Nonlinear System Modeling
 当前回答：
 
 ```text
-短期记忆保存一次运行内的 persona、query、已读论文、已过滤论文和当前 outline；长期记忆保存跨运行的 topic summary、paper summary、缩写消歧规则和用户偏好。原始 trace 和 summary 分开存，trace 用于审计，memory 用于下次召回。
+我把记忆拆成 working、episodic、semantic 和 preferences。working 保存一次任务中的工具调用和当前上下文；episodic 保存一次运行经历，例如某个 topic 容易召回哪些跑题结果；semantic 保存可复用知识，例如 PIM 在射频场景中指 passive intermodulation；preferences 保存用户偏好，例如中文输出。trace 用来复盘执行链路，memory 用来影响后续检索和问答，两者职责分开。
 ```
 
 项目状态：
 
 ```text
-Nonlinear 已有 SessionStore 和 context_summary 字段；PaperStorm v0.2 将实现 Memory Store v1。
+Nonlinear 已有 SessionStore 和 context_summary 字段；PaperStorm v0.2 已实现 `PaperStormMemoryStore`、`compress_context` 和 `PaperStormRuntimeSession`，下一步会把 HookManager 和统一 trace schema 做完整。
+```
+
+### Q3.1：上下文压缩怎么做，如何避免压缩丢关键信息？
+
+答题素材：
+
+```text
+我没有把压缩理解成简单截断，而是输出结构化摘要、保留事实、约束和 validation。比如 PaperStorm 的 compress_context 会检查 expected_keywords 是否仍然保留，同时检查 forbidden_keywords 是否混入摘要。这样可以解释压缩后的上下文是否还能约束下一步工具调用和生成。
+```
+
+### Q3.2：为什么要做知识库 QA，会不会降低项目格调？
+
+答题素材：
+
+```text
+普通聊天式 QA 价值不高，但企业内部文档知识库 Agent 是真实需求。我的做法不是套一个聊天壳，而是把 PaperStorm 调研产物和本地 PDF 检索结果作为证据层，QA 必须返回 citations、grounded 和 evidence，并纳入 Eval Harness 检查。这能对应企业知识库平台、RAG grounded answer 和可追踪问答链路。
 ```
 
 ### Q4：工具调用失败怎么办？

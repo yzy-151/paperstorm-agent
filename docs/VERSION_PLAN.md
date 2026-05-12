@@ -181,89 +181,132 @@ feature/paperstorm-eval-harness
 - 不把普通 QA 当成最终亮点，而是作为企业知识库 Agent 的基础能力。
 - 真正的项目亮点仍然是：RAG 审计、Memory、多 Agent、MCP、Eval、服务化和前端可视化。
 
-## 3. v0.2：RAG 质量与 Memory 模块
+## 3. v0.2：Memory / Context Compression / QA 闭环
 
-目标：把 PaperStorm 从“检索后生成文章”升级为“带记忆和可评估检索质量的论文 RAG Agent”。
+状态：已完成第一阶段。
 
-### 功能目标
+目标：把 PaperStorm 从“只生成调研文章”推进到“可基于调研产物做知识库问答，并能解释上下文、记忆、工具调用和 QA 评估”的 Agent 原型。
 
-1. Query Planner
-   - 区分探索型 query、定义型 query、方法型 query、评测型 query。
-   - 保存每条 query 的来源、persona、轮次和意图。
+### 已完成能力
 
-2. Memory Store v1
-   - 短期记忆：一次运行中的 persona、query、已读论文、已拒绝跑题论文。
-   - 长期记忆：跨运行保存 topic summary、paper summary、已知缩写消歧规则。
-   - 存储格式先用本地 JSON/JSONL，不急着上数据库。
+1. Memory Store v1
+   - 新增 `knowledge_storm/paperstorm_memory.py`。
+   - 提供 working / episodic / semantic 三层记忆。
+   - 提供 preferences，用于保存输出语言、领域偏好等用户偏好。
+   - 支持 JSON 持久化和按 query 检索相关记忆。
 
-3. RAG 审计
-   - 记录每条检索结果为什么保留/过滤。
-   - 输出 `retrieval_audit.json`。
-   - 支持 `expected_keywords` / `forbidden_keywords` 规则。
+2. Context Compression v1
+   - 新增 `compress_context`。
+   - 输入多轮 message，输出结构化摘要、保留事实、约束和校验结果。
+   - 支持 `expected_keywords` / `forbidden_keywords`，用于检查压缩后是否保留关键约束、是否混入跑题信息。
+   - 面试表达重点：上下文压缩不是简单截断，而是带约束校验的结构化压缩。
 
-4. Eval Harness v2
-   - 增加 retrieval precision@k。
-   - 增加 off-topic rate。
-   - 增加 citation coverage。
-   - 增加 answer groundedness 的规则版检查。
+3. Knowledge Base QA v0
+   - 新增 `knowledge_storm/paperstorm_qa.py`。
+   - 从一次 PaperStorm run directory 加载 `storm_gen_article*.txt` 和 `raw_search_results.json`。
+   - 支持基于文章段落和检索结果的问答。
+   - 输出 answer、citations、grounded、memory_context、evidence。
+   - 回答会尽量引用已有证据，避免纯无来源生成。
 
-5. Knowledge Base QA v0
-   - 在论文调研结果和本地 PDF chunks 上提供基础问答接口。
-   - 回答必须返回引用来源和命中文档片段。
-   - 支持“仅根据知识库回答，不足则说明缺信息”。
-   - 记录每次 QA 的 query、召回 chunks、answer 和 groundedness 检查结果。
+4. Tool 封装
+   - 新增 `KnowledgeBaseQATool`。
+   - 工具名：`kb_qa`。
+   - 输入：`run_dir`、`question`、`top_k`。
+   - 输出：`answer`、`citations`、`grounded`、`memory_context`。
+   - 已接入 `list_paperstorm_tools`，因此 MCP-style server 可以发现该工具。
 
-### 验收标准
+5. 轻量 Runtime Session
+   - 新增 `knowledge_storm/paperstorm_runtime.py`。
+   - 提供 `PaperStormRuntimeSession`。
+   - 负责 tool registry、tool call、trace event 写入、working memory 写入。
+   - 当前保持轻量，不重构 STORM 主流程，作为 v0.3 Hook/Runtime 的基础。
 
-- 能解释一次运行中每条 query 的来源。
-- 能看到哪些论文被过滤以及原因。
-- 同一 topic 第二次运行可以复用 memory 中的领域消歧信息。
-- 能对已导入 PDF / 已调研 topic 做基础知识库问答。
-- QA 输出包含引用来源，不允许无来源回答。
-- 至少 3 个 eval cases。
-- 测试不少于 45 个。
+6. Eval Harness v2 局部推进
+   - 新增 `evaluate_qa_artifact`。
+   - 对 `qa_answer.json` 检查 QA 是否存在、是否有引用、是否 grounded、关键词覆盖和跑题关键词。
+   - 输出 qa_quality、forbidden_penalty、citation_count、chinese_char_ratio 等指标。
+
+7. 测试
+   - 新增 `tests/test_paperstorm_memory_qa.py`。
+   - 覆盖三层记忆、上下文压缩、QA、QA tool、QA eval、runtime session trace。
+   - 当前总测试数从 38 增加到 44。
+
+### 本版没有强行做的内容
+
+- 没有把 STORM 原主流程整体改成新 runtime 驱动，避免一次性重构风险过大。
+- 没有实现完整 Query Planner，后续放到 v0.3/v0.4。
+- 没有实现完整 retrieval_audit.json，后续和 Critic/Planner 一起做。
+- 没有上数据库，memory 先保持 JSON 本地持久化，便于测试和面试讲清楚边界。
+
+### 本版验收标准
+
+- `PaperStormMemoryStore` 能保存 working / episodic / semantic / preferences。
+- `compress_context` 能输出压缩摘要和关键词校验。
+- `PaperStormKnowledgeBase` 能从 run artifacts 回答问题并返回引用。
+- `kb_qa` 工具能通过统一 tool schema 暴露。
+- `PaperStormRuntimeSession` 能调用工具并写入 trace。
+- `evaluate_qa_artifact` 能给 QA 结果打分。
+- 新增测试和既有测试全部通过。
 
 ### 简历价值
 
 可写：
 
 ```text
-为 PaperStorm 增加 Memory Store 与 RAG 审计链路，记录 query intent、检索来源、过滤原因和跨任务 topic summary，并基于 precision@k、off-topic rate、citation coverage 评估检索质量。
+为 PaperStorm Agent 增加三层记忆、上下文压缩、知识库问答和轻量 Runtime Session，将论文调研产物转化为可问答知识库；通过 Tool Schema 暴露 kb_qa 工具，并扩展 Eval Harness 检查回答引用、groundedness、关键词覆盖和跑题风险。
 ```
 
-## 4. v0.3：Multi-Agent 论文调研协作
+面试可讲：
 
-目标：把 STORM 原有多视角对话思想显式工程化，形成可解释的 Multi-Agent 调研编排。
+```text
+我没有把知识库问答做成一个假的聊天壳，而是复用了 PaperStorm 调研阶段沉淀的文章和检索结果，把它们转成可检索证据，再要求 QA 返回 citations 和 grounded 字段。同时把 tool call 通过轻量 runtime 记录到 JSONL trace，并写入 working memory，这样能解释一次回答是如何由工具、证据和记忆共同产生的。
+```
 
-### Agent 角色建议
+## 4. v0.3：Runtime / Hook / Trace 标准化
 
-- `PlannerAgent`：拆解调研任务，生成 query plan。
-- `RetrieverAgent`：执行 arXiv / LocalPDF / Web 检索。
-- `CriticAgent`：识别跑题、重复、引用不足。
-- `MemoryAgent`：维护 topic memory、paper memory、缩写规则。
-- `WriterAgent`：生成 outline 和 article。
-- `EvaluatorAgent`：运行 scorecard 并给出改进建议。
+目标：把 v0.2 的轻量 `PaperStormRuntimeSession` 扩展为更像 Agent Harness 的 runtime 层，为后续 Multi-Agent 和服务化做底座。
 
 ### 功能目标
 
-- 明确每个 Agent 的输入、输出和状态字段。
-- 记录多 Agent 消息流。
-- 支持中心化 orchestrator。
-- 先不做复杂并发，优先保证可审计。
+1. ToolRegistry
+   - 将 `list_paperstorm_tools` 升级为可注册、可查询、可校验的 registry。
+   - 每个 tool 都有 name、description、input_schema、output_schema、timeout、retry policy。
+   - 面试重点：工具不是散落函数，而是有统一生命周期和 schema 的组件。
+
+2. HookManager
+   - 支持 `before_tool_call`、`after_tool_call`、`on_tool_error`。
+   - 支持 `on_memory_write`、`on_context_compress`、`on_eval_finish`。
+   - 默认 hook 写 trace，后续可接 metrics、告警、调试面板。
+
+3. Unified Trace
+   - 统一事件字段：`run_id`、`task_id`、`stage`、`tool`、`status`、`duration_sec`、`input_summary`、`output_summary`、`error`。
+   - trace 覆盖 research、retrieval、qa、memory、compression、eval。
+   - 输出仍采用 JSONL，便于流式查看和后续前端时间线展示。
+
+4. RuntimeSession v2
+   - 管理 run_id、task_id、tool registry、memory store、trace recorder。
+   - 提供 `call_tool`、`write_memory`、`compress_context`、`evaluate` 统一入口。
+   - 不要求一次性替换 STORM 内部 engine，先包住新增能力和外部工具。
+
+5. Runtime 文档与面试素材
+   - 补一张架构图或 mermaid 流程图。
+   - 明确 workflow、runtime、agent 的区别。
+   - 写入 `RESUME_INTERVIEW_PLAN.md` 的标准回答。
 
 ### 验收标准
 
-- 输出 `agent_trace.jsonl`。
-- 每个 Agent 的决策可在 trace 中复盘。
-- 至少一个 case 展示 CriticAgent 发现 PIM 跑题结果。
-- Eval 能比较单 Agent 与 Multi-Agent 流程的结果差异。
+- 所有 PaperStormTool 都能通过 ToolRegistry 注册和调用。
+- Hook 能记录成功、失败、耗时和错误摘要。
+- trace 字段统一，能按 run_id/task_id/stage/tool 追踪一次执行。
+- Memory、QA、Eval 都走 runtime 入口完成至少一个单元测试 case。
+- 测试不少于 55 个。
 
 ### 简历价值
 
 可写：
 
 ```text
-设计多角色论文调研 Agent 编排，将规划、检索、记忆、批判、写作和评估拆分为独立 Agent，并通过中心化 orchestrator 记录 agent_trace，实现多 Agent 协作链路可观测。
+将 PaperStorm 的 RAG/QA 工具链抽象为轻量 Agent Runtime，设计 ToolRegistry、HookManager、RuntimeSession 和统一 JSONL trace，实现工具调用、记忆写入、上下文压缩和评估链路的可观测与可扩展。
 ```
 
 ## 5. v0.4：知识库平台化、服务 API 与并发基础

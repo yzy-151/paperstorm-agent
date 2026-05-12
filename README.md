@@ -25,8 +25,9 @@ PaperStorm Agent 的目标不是从零重写 STORM，而是在成熟 Deep Resear
 - LLM query 清洗与领域消歧。
 - Runtime Trace / Hook。
 - Tool Schema 与 MCP-style 工具入口。
+- Memory、Context Compression 与知识库问答。
 - Eval Harness 量化评估 Agent 运行质量。
-- 后续补 Memory、Multi-Agent、知识库服务化和前端展示。
+- 后续补 Multi-Agent、知识库服务化、高并发实验和前端展示。
 
 与另一个项目 `nonlinear-nn-agent` 的分工：
 
@@ -64,6 +65,15 @@ research -> outline -> article -> polish
 - `paperstorm_mcp_server.py`：MCP-style stdio server，支持 `tools/list` 和 `tools/call`。
 - `paperstorm_eval.py`：规则版 Eval Harness，输出 `scorecard.json` 和 `scorecard.md`。
 
+### v0.2：Memory / Context Compression / QA
+
+- `PaperStormMemoryStore`：提供 working / episodic / semantic 三层记忆和用户偏好保存。
+- `compress_context`：把长上下文压缩为结构化摘要，并检查期望关键词和禁止关键词。
+- `PaperStormKnowledgeBase`：从一次 PaperStorm 运行目录加载文章和检索结果，支持基于证据的问答。
+- `KnowledgeBaseQATool`：将知识库问答封装为标准 `PaperStormTool`，可被 MCP-style server 发现和调用。
+- `PaperStormRuntimeSession`：轻量 runtime session，统一管理 tool registry、trace 写入和 working memory。
+- `evaluate_qa_artifact`：对 `qa_answer.json` 进行规则版 QA 评估，检查引用、groundedness、关键词覆盖和跑题内容。
+
 ## 3. 关键文件
 
 运行入口：
@@ -80,6 +90,9 @@ examples/storm_examples/evaluate_paperstorm_run.py
 knowledge_storm/rm.py
 knowledge_storm/paperstorm_tools.py
 knowledge_storm/paperstorm_eval.py
+knowledge_storm/paperstorm_memory.py
+knowledge_storm/paperstorm_qa.py
+knowledge_storm/paperstorm_runtime.py
 ```
 
 测试：
@@ -90,6 +103,7 @@ tests/test_paperstorm_retrievers.py
 tests/test_paperstorm_logging.py
 tests/test_paperstorm_mcp_server.py
 tests/test_paperstorm_eval.py
+tests/test_paperstorm_memory_qa.py
 ```
 
 维护文档：

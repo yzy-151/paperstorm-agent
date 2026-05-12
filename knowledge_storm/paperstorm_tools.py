@@ -1,5 +1,6 @@
 from typing import Dict, Any
 
+from .paperstorm_qa import PaperStormKnowledgeBase
 from .rm import ArxivRM, LocalPDFRM
 
 
@@ -99,8 +100,59 @@ class LocalPDFSearchTool(RetrievalTool):
         super().__init__(rm=rm or LocalPDFRM(pdf_dir=pdf_dir))
 
 
+class KnowledgeBaseQATool(PaperStormTool):
+    name = "kb_qa"
+    description = (
+        "Answer a question from an existing PaperStorm run directory using generated "
+        "article text and saved retrieval results."
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "run_dir": {
+                "type": "string",
+                "description": "PaperStorm topic output directory containing article and retrieval artifacts.",
+            },
+            "question": {
+                "type": "string",
+                "description": "User question to answer from the run artifacts.",
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "Maximum evidence items to use.",
+                "default": 3,
+            },
+        },
+        "required": ["run_dir", "question"],
+    }
+    output_schema = {
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string"},
+            "citations": {"type": "array", "items": {"type": "object"}},
+            "grounded": {"type": "boolean"},
+            "memory_context": {"type": "object"},
+        },
+        "required": ["answer", "citations", "grounded"],
+    }
+
+    def run(self, arguments: Dict[str, Any]):
+        arguments = arguments or {}
+        run_dir = arguments.get("run_dir")
+        question = arguments.get("question")
+        if not run_dir or not str(run_dir).strip():
+            raise ValueError("Tool argument 'run_dir' is required.")
+        if not question or not str(question).strip():
+            raise ValueError("Tool argument 'question' is required.")
+        kb = PaperStormKnowledgeBase.from_run_dir(run_dir)
+        return kb.answer_question(
+            question=str(question),
+            top_k=int(arguments.get("top_k") or 3),
+        )
+
+
 def list_paperstorm_tools(pdf_dir=None):
-    tools = [ArxivSearchTool()]
+    tools = [ArxivSearchTool(), KnowledgeBaseQATool()]
     if pdf_dir:
         tools.append(LocalPDFSearchTool(pdf_dir=pdf_dir))
     return tools
