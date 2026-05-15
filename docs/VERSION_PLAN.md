@@ -264,42 +264,46 @@ feature/paperstorm-eval-harness
 
 ## 4. v0.3：Runtime / Hook / Trace 标准化
 
+状态：已完成。
+
 目标：把 v0.2 的轻量 `PaperStormRuntimeSession` 扩展为更像 Agent Harness 的 runtime 层，为后续 Multi-Agent 和服务化做底座。
 
-### 功能目标
+### 已完成能力
 
 1. ToolRegistry
-   - 将 `list_paperstorm_tools` 升级为可注册、可查询、可校验的 registry。
-   - 每个 tool 都有 name、description、input_schema、output_schema、timeout、retry policy。
+   - 新增 `ToolRegistry`。
+   - 支持工具注册、查询、schema 列表和 required argument 校验。
+   - `paperstorm_mcp_server.py` 已接入 `ToolRegistry`，MCP 工具发现和 runtime 工具调用共用同一注册模型。
    - 面试重点：工具不是散落函数，而是有统一生命周期和 schema 的组件。
 
 2. HookManager
-   - 支持 `before_tool_call`、`after_tool_call`、`on_tool_error`。
-   - 支持 `on_memory_write`、`on_context_compress`、`on_eval_finish`。
-   - 默认 hook 写 trace，后续可接 metrics、告警、调试面板。
+   - 新增 `HookManager`。
+   - 支持 `before_tool_call`、`after_tool_call`、`on_tool_error`、`on_context_compress`。
+   - 后续可继续扩展 `on_memory_write`、`on_eval_finish`、metrics、告警和调试面板。
 
 3. Unified Trace
+   - 新增 `RuntimeEvent`。
    - 统一事件字段：`run_id`、`task_id`、`stage`、`tool`、`status`、`duration_sec`、`input_summary`、`output_summary`、`error`。
-   - trace 覆盖 research、retrieval、qa、memory、compression、eval。
+   - trace 当前覆盖 tool call、tool error 和 context compression。
    - 输出仍采用 JSONL，便于流式查看和后续前端时间线展示。
 
 4. RuntimeSession v2
    - 管理 run_id、task_id、tool registry、memory store、trace recorder。
-   - 提供 `call_tool`、`write_memory`、`compress_context`、`evaluate` 统一入口。
+   - 提供 `call_tool` 和 `compress_context` 统一入口。
    - 不要求一次性替换 STORM 内部 engine，先包住新增能力和外部工具。
 
-5. Runtime 文档与面试素材
-   - 补一张架构图或 mermaid 流程图。
-   - 明确 workflow、runtime、agent 的区别。
-   - 写入 `RESUME_INTERVIEW_PLAN.md` 的标准回答。
+5. 测试
+   - 新增 `tests/test_paperstorm_runtime.py`。
+   - 覆盖 ToolRegistry、HookManager、统一 trace、工具错误和压缩 hook。
+   - MCP server 增加 ToolRegistry 兼容测试。
 
 ### 验收标准
 
 - 所有 PaperStormTool 都能通过 ToolRegistry 注册和调用。
 - Hook 能记录成功、失败、耗时和错误摘要。
 - trace 字段统一，能按 run_id/task_id/stage/tool 追踪一次执行。
-- Memory、QA、Eval 都走 runtime 入口完成至少一个单元测试 case。
-- 测试不少于 55 个。
+- QA 和 context compression 都能通过 runtime 入口完成单元测试 case。
+- 新增和既有测试全部通过。
 
 ### 简历价值
 
@@ -309,7 +313,53 @@ feature/paperstorm-eval-harness
 将 PaperStorm 的 RAG/QA 工具链抽象为轻量 Agent Runtime，设计 ToolRegistry、HookManager、RuntimeSession 和统一 JSONL trace，实现工具调用、记忆写入、上下文压缩和评估链路的可观测与可扩展。
 ```
 
-## 5. v0.4：知识库平台化、服务 API 与并发基础
+### 本版没有强行做的内容
+
+- 没有把完整 STORM engine 改造成 runtime 驱动，避免大范围侵入。
+- 没有做 async、timeout、retry policy，后续和服务化/并发一起做更合适。
+- 没有做完整 Multi-Agent，下一版在 runtime 底座上补 Planner/Retriever/Critic/Evaluator。
+
+## 5. v0.4：Multi-Agent 论文调研协作
+
+目标：把 STORM 原有多视角对话思想显式工程化，形成可解释的 Multi-Agent 调研编排。
+
+### Agent 角色建议
+
+- `PlannerAgent`：拆解调研任务，生成 query plan。
+- `RetrieverAgent`：执行 arXiv / LocalPDF / Web 检索。
+- `CriticAgent`：识别跑题、重复、引用不足。
+- `MemoryAgent`：维护 topic memory、paper memory、缩写规则。
+- `WriterAgent`：生成 outline 和 article。
+- `EvaluatorAgent`：运行 scorecard 并给出改进建议。
+
+### 功能目标
+
+- 明确每个 Agent 的输入、输出和状态字段。
+- 使用 v0.3 `PaperStormRuntimeSession` 记录 agent/tool 事件。
+- 输出 `agent_trace.jsonl` 或在统一 trace 中增加 `agent` 字段。
+- 支持中心化 orchestrator。
+- 先不做复杂并发，优先保证可审计。
+- 至少一个 case 展示 CriticAgent 发现 PIM 跑题结果。
+- Eval 能比较普通流程与 Multi-Agent 流程的结果差异。
+
+### 验收标准
+
+- 每个 Agent 的决策可在 trace 中复盘。
+- Planner 能生成 query plan。
+- Critic 能给检索结果打保留/过滤理由。
+- MemoryAgent 能读写 semantic/episodic memory。
+- EvaluatorAgent 能输出 scorecard 和改进建议。
+- 测试不少于 60 个。
+
+### 简历价值
+
+可写：
+
+```text
+设计多角色论文调研 Agent 编排，将规划、检索、记忆、批判、写作和评估拆分为独立 Agent，并通过中心化 orchestrator 和统一 trace 记录 agent/tool 决策链路，实现多 Agent 协作过程可观测。
+```
+
+## 6. v0.5：知识库平台化、服务 API 与并发基础
 
 目标：靠近企业级知识库平台和 Agent 构建平台。
 
@@ -344,7 +394,7 @@ feature/paperstorm-eval-harness
 将 PaperStorm 命令行 pipeline 服务化为 FastAPI Agent API，支持任务提交、状态追踪、报告读取、scorecard 获取和错误脱敏，为后续前端展示和企业知识库平台化奠定基础。
 ```
 
-## 5.1 v0.4.1：并发、限流与稳定性实验
+## 6.1 v0.5.1：并发、限流与稳定性实验
 
 目标：补齐企业级 Agent 系统中“多任务并发”和“稳定性保障”的面试素材。
 
@@ -381,7 +431,7 @@ feature/paperstorm-eval-harness
 为 PaperStorm Agent API 增加任务队列、并发数限制、timeout/retry、任务级 trace 与压测报告，使用 fake runner 验证多任务状态隔离、文件隔离和错误恢复，为生产级 Agent 稳定性保障提供实验依据。
 ```
 
-## 6. v0.5：前端展示 Demo
+## 7. v0.6：前端展示 Demo
 
 目标：像 `nonlinear-nn-agent` 最后要做前端一样，PaperStorm 也需要可展示界面。
 
@@ -421,7 +471,7 @@ FastAPI + 简单 HTML/React/Vite
 实现 PaperStorm Agent 前端 Demo，展示任务状态、检索审计、memory 摘要、工具调用 trace、最终报告和 scorecard，使 Agent 执行链路从黑盒变为可视化调试界面。
 ```
 
-## 7. v1.0：Agent 平台化 Demo
+## 8. v1.0：Agent 平台化 Demo
 
 目标：形成可投递、可演示、可面试讲 5 分钟的完整项目。
 
@@ -450,7 +500,7 @@ FastAPI + 简单 HTML/React/Vite
 - 云部署。
 - 企业级监控告警。
 
-## 8. 每次版本更新模板
+## 9. 每次版本更新模板
 
 ```markdown
 ## vX.Y：版本名称

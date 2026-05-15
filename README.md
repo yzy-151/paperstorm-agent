@@ -74,6 +74,14 @@ research -> outline -> article -> polish
 - `PaperStormRuntimeSession`：轻量 runtime session，统一管理 tool registry、trace 写入和 working memory。
 - `evaluate_qa_artifact`：对 `qa_answer.json` 进行规则版 QA 评估，检查引用、groundedness、关键词覆盖和跑题内容。
 
+### v0.3：Runtime / Hook / Trace 标准化
+
+- `ToolRegistry`：统一注册、查询、列出和校验 PaperStorm 工具。
+- `HookManager`：支持 `before_tool_call`、`after_tool_call`、`on_tool_error`、`on_context_compress` 等生命周期 hook。
+- `RuntimeEvent`：统一 runtime trace 字段，包括 `run_id`、`task_id`、`stage`、`tool`、`status`、`duration_sec`、`input_summary`、`output_summary`、`error`。
+- `PaperStormRuntimeSession` v2：统一 tool registry、hook、trace、memory 和 context compression。
+- MCP-style server 已接入 `ToolRegistry`，工具发现和工具调用共享同一套注册模型。
+
 ## 3. 关键文件
 
 运行入口：
@@ -104,6 +112,7 @@ tests/test_paperstorm_logging.py
 tests/test_paperstorm_mcp_server.py
 tests/test_paperstorm_eval.py
 tests/test_paperstorm_memory_qa.py
+tests/test_paperstorm_runtime.py
 ```
 
 维护文档：

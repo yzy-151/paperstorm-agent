@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from knowledge_storm.paperstorm_tools import list_paperstorm_tools
+from knowledge_storm.paperstorm_runtime import ToolRegistry
 
 
 JSONRPC_VERSION = "2.0"
@@ -27,7 +28,10 @@ INTERNAL_ERROR = -32603
 
 
 def build_tool_registry(pdf_dir=None):
-    return {tool.name: tool for tool in list_paperstorm_tools(pdf_dir=pdf_dir)}
+    registry = ToolRegistry()
+    for tool in list_paperstorm_tools(pdf_dir=pdf_dir):
+        registry.register(tool)
+    return registry
 
 
 def _jsonrpc_result(request_id, result):
@@ -58,14 +62,14 @@ def handle_jsonrpc_request(request: Dict[str, Any], registry: Dict[str, Any]):
     method = request.get("method")
 
     if method == "tools/list":
-        tools = [tool.to_schema() for tool in registry.values()]
+        tools = _list_tool_schemas(registry)
         return _jsonrpc_result(request_id, {"tools": tools})
 
     if method == "tools/call":
         params = request.get("params") or {}
         tool_name = params.get("name")
         arguments = params.get("arguments") or {}
-        tool = registry.get(tool_name)
+        tool = _get_tool(registry, tool_name)
         if tool is None:
             return _jsonrpc_error(
                 request_id,
@@ -73,6 +77,8 @@ def handle_jsonrpc_request(request: Dict[str, Any], registry: Dict[str, Any]):
                 "Unknown tool: {tool_name}".format(tool_name=tool_name),
             )
         try:
+            if hasattr(registry, "validate_arguments"):
+                registry.validate_arguments(tool_name, arguments)
             return _jsonrpc_result(request_id, _mcp_text_content(tool.run(arguments)))
         except ValueError as exc:
             return _jsonrpc_error(request_id, INVALID_PARAMS, str(exc))
@@ -87,6 +93,21 @@ def handle_jsonrpc_request(request: Dict[str, Any], registry: Dict[str, Any]):
         )
 
     return _jsonrpc_error(request_id, INVALID_REQUEST, "JSON-RPC method is required.")
+
+
+def _list_tool_schemas(registry):
+    if hasattr(registry, "list_schemas"):
+        return registry.list_schemas()
+    return [tool.to_schema() for tool in registry.values()]
+
+
+def _get_tool(registry, tool_name):
+    if hasattr(registry, "get"):
+        try:
+            return registry.get(tool_name)
+        except KeyError:
+            return None
+    return registry.get(tool_name)
 
 
 def serve_stdio(registry):
