@@ -270,6 +270,12 @@ def evaluate_qa_artifact(run_dir, case: EvalCase):
     }
 
 
+def evaluate_multi_agent_report(run_dir):
+    from .paperstorm_agents import evaluate_multi_agent_report as _evaluate
+
+    return _evaluate(run_dir)
+
+
 def _build_notes(checks, forbidden_hits, expected_hits, case, source_count) -> List[str]:
     notes = []
     if not checks["has_article"]:

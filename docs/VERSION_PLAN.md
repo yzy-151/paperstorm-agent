@@ -321,26 +321,38 @@ feature/paperstorm-eval-harness
 
 ## 5. v0.4：Multi-Agent 论文调研协作
 
+状态：已完成第一阶段。
+
 目标：把 STORM 原有多视角对话思想显式工程化，形成可解释的 Multi-Agent 调研编排。
 
-### Agent 角色建议
+### 已完成能力
 
-- `PlannerAgent`：拆解调研任务，生成 query plan。
-- `RetrieverAgent`：执行 arXiv / LocalPDF / Web 检索。
-- `CriticAgent`：识别跑题、重复、引用不足。
-- `MemoryAgent`：维护 topic memory、paper memory、缩写规则。
-- `WriterAgent`：生成 outline 和 article。
-- `EvaluatorAgent`：运行 scorecard 并给出改进建议。
+1. Agent 角色
+   - `PlannerAgent`：拆解调研任务，生成带 intent 的 query plan。
+   - `RetrieverAgent`：通过 v0.3 `PaperStormRuntimeSession` 调用检索工具。
+   - `CriticAgent`：识别跑题、重复和领域关键词不足，输出保留/过滤理由。
+   - `MemoryAgent`：把保留结果和过滤原因写入 episodic memory。
+   - `EvaluatorAgent`：对 query plan、critic signal 和 agent trace 打分。
 
-### 功能目标
+2. Orchestrator
+   - 新增 `PaperStormResearchOrchestrator`。
+   - 使用中心化编排方式串联 Planner -> Retriever -> Critic -> Memory -> Evaluator。
+   - 输出 `multi_agent_report.json`。
+   - 输出 `agent_trace.jsonl`，记录每个 Agent 的 start/end 和 payload summary。
 
-- 明确每个 Agent 的输入、输出和状态字段。
-- 使用 v0.3 `PaperStormRuntimeSession` 记录 agent/tool 事件。
-- 输出 `agent_trace.jsonl` 或在统一 trace 中增加 `agent` 字段。
-- 支持中心化 orchestrator。
-- 先不做复杂并发，优先保证可审计。
-- 至少一个 case 展示 CriticAgent 发现 PIM 跑题结果。
-- Eval 能比较普通流程与 Multi-Agent 流程的结果差异。
+3. PIM 跑题识别
+   - 测试 case 中 `CriticAgent` 能保留 passive intermodulation / RF 结果。
+   - 能拒绝 processing-in-memory / DRAM / RAM 结果。
+   - 过滤理由写入 `reason`，便于面试讲“检索审计”和“幻觉/跑题防护”。
+
+4. Eval
+   - 新增 `evaluate_multi_agent_report`。
+   - 指标包括 multi_agent_trace、query_planning、critic_signal、result_quality。
+   - `paperstorm_eval.py` 提供桥接入口，方便后续 benchmark 统一调用。
+
+5. 测试
+   - 新增 `tests/test_paperstorm_multi_agent.py`。
+   - 覆盖 Planner、Critic、Orchestrator、agent trace、memory 写入和 multi-agent eval。
 
 ### 验收标准
 
@@ -349,7 +361,7 @@ feature/paperstorm-eval-harness
 - Critic 能给检索结果打保留/过滤理由。
 - MemoryAgent 能读写 semantic/episodic memory。
 - EvaluatorAgent 能输出 scorecard 和改进建议。
-- 测试不少于 60 个。
+- 新增和既有测试全部通过。
 
 ### 简历价值
 
@@ -358,6 +370,13 @@ feature/paperstorm-eval-harness
 ```text
 设计多角色论文调研 Agent 编排，将规划、检索、记忆、批判、写作和评估拆分为独立 Agent，并通过中心化 orchestrator 和统一 trace 记录 agent/tool 决策链路，实现多 Agent 协作过程可观测。
 ```
+
+### 本版没有强行做的内容
+
+- 没有把 WriterAgent 接入真实文章生成，避免触碰 STORM engine 的大范围重构。
+- 没有让多个 Agent 并发执行，因为当前目标是可审计链路，不是吞吐压测。
+- 没有真实调用 LLM 生成 agent 决策，当前先用规则版 agent 保证可测试、可复现。
+- 后续如果要增强，可以让 Planner/Critic 接 LLM，但保留当前规则版作为 fallback 和 benchmark baseline。
 
 ## 6. v0.5：知识库平台化、服务 API 与并发基础
 

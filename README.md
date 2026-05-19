@@ -82,6 +82,15 @@ research -> outline -> article -> polish
 - `PaperStormRuntimeSession` v2：统一 tool registry、hook、trace、memory 和 context compression。
 - MCP-style server 已接入 `ToolRegistry`，工具发现和工具调用共享同一套注册模型。
 
+### v0.4：Multi-Agent 论文调研协作
+
+- `PlannerAgent`：根据 topic 和关键词生成带 intent 的 query plan。
+- `RetrieverAgent`：通过 `PaperStormRuntimeSession` 调用检索工具，并保留 query 来源。
+- `CriticAgent`：基于 expected / forbidden keywords 判断结果保留或过滤，并写明理由。
+- `MemoryAgent`：把保留和过滤发现写入 episodic memory。
+- `EvaluatorAgent`：给 query plan、critic signal 和 agent trace 打分。
+- `PaperStormResearchOrchestrator`：中心化编排多 Agent，输出 `agent_trace.jsonl` 和 `multi_agent_report.json`。
+
 ## 3. 关键文件
 
 运行入口：
@@ -101,6 +110,7 @@ knowledge_storm/paperstorm_eval.py
 knowledge_storm/paperstorm_memory.py
 knowledge_storm/paperstorm_qa.py
 knowledge_storm/paperstorm_runtime.py
+knowledge_storm/paperstorm_agents.py
 ```
 
 测试：
@@ -113,6 +123,7 @@ tests/test_paperstorm_mcp_server.py
 tests/test_paperstorm_eval.py
 tests/test_paperstorm_memory_qa.py
 tests/test_paperstorm_runtime.py
+tests/test_paperstorm_multi_agent.py
 ```
 
 维护文档：
@@ -261,9 +272,9 @@ docs/VERSION_PLAN.md
 当前建议路线：
 
 - v0.2：RAG 质量与 Memory 模块。
-- v0.3：Multi-Agent 论文调研协作。
-- v0.4：知识库平台化与 FastAPI 服务。
-- v0.5：前端展示 Demo。
+- v0.4：Multi-Agent 论文调研协作。
+- v0.5：知识库平台化与 FastAPI 服务。
+- v0.6：前端展示 Demo。
 - v1.0：可投递、可演示的 Agent 平台化 Demo。
 
 ## 10. 求职与面试材料
