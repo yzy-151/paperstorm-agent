@@ -380,21 +380,52 @@ feature/paperstorm-eval-harness
 
 ## 6. v0.5：知识库平台化、服务 API 与并发基础
 
+状态：已完成第一阶段。
+
 目标：靠近企业级知识库平台和 Agent 构建平台。
 
-### 功能目标
+### 已完成能力
 
-- FastAPI 服务化。
-- 任务提交：`POST /research-tasks`。
-- 状态查询：`GET /research-tasks/{task_id}`。
-- 报告读取：`GET /research-tasks/{task_id}/article`。
-- 知识库问答：`POST /knowledge-bases/{kb_id}/query`。
-- 文档导入：`POST /knowledge-bases/{kb_id}/documents`。
-- 知识库导入：PDF / Markdown / arXiv。
-- 本地任务状态存储。
-- 敏感信息脱敏。
-- 单 worker 后台执行，支持 queued / running / succeeded / failed。
-- 每个 task_id 独立 output_dir、trace、summary、scorecard，避免多任务文件串写。
+1. 服务核心层
+   - 新增 `knowledge_storm/paperstorm_service.py`。
+   - `PaperStormTaskService` 负责任务提交、状态查询、任务运行、文章读取、scorecard、trace 和知识库 QA。
+   - 使用本地 JSON 文件保存任务状态，先不上数据库，降低复杂度。
+
+2. 任务状态与路径隔离
+   - 每个任务生成独立 `task_id`。
+   - 每个任务有独立 output_dir。
+   - 支持 `queued / running / succeeded / failed` 状态。
+   - 多任务 fake run 的 `run_summary.json`、trace、scorecard 互不覆盖。
+
+3. Fake Runner
+   - 支持 `run_mode="fake"`。
+   - 不依赖真实 LLM API key 也能跑完整服务链路。
+   - 产出 `storm_gen_outline.txt`、`storm_gen_article_polished.txt`、`raw_search_results.json`、`run_summary.json`、`paperstorm_trace.jsonl`、`scorecard.json/md`。
+   - 用于 API 测试、前端预览和后续压测 baseline。
+
+4. 知识库 QA
+   - 服务层支持 `query_knowledge_base(task_id, question)`。
+   - 复用 v0.2 `PaperStormKnowledgeBase`。
+   - 输出回答、引用、grounded 和 evidence。
+   - 写入 `qa_answer.json`。
+
+5. 错误与脱敏
+   - 失败任务会写入结构化 `error`。
+   - 对 secret / key / token 字段脱敏。
+   - 对 `sk-...` 形式错误信息做脱敏。
+
+6. 可选 FastAPI 适配器
+   - 新增 `examples/storm_examples/paperstorm_service_api.py`。
+   - 提供 `create_app(service_root=...)`。
+   - 当前不强制新增 FastAPI 依赖，避免破坏原环境。
+   - 如果安装 `fastapi` 和 `uvicorn`，可暴露：
+     - `POST /research-tasks`
+     - `POST /research-tasks/{task_id}/run`
+     - `GET /research-tasks/{task_id}`
+     - `GET /research-tasks/{task_id}/article`
+     - `GET /research-tasks/{task_id}/scorecard`
+     - `GET /research-tasks/{task_id}/trace`
+     - `POST /knowledge-bases/{task_id}/query`
 
 ### 验收标准
 
@@ -403,15 +434,22 @@ feature/paperstorm-eval-harness
 - 支持读取 scorecard。
 - 支持对样例知识库执行一次带引用 QA。
 - 同时提交多个 fake task 时状态文件互不覆盖。
-- 测试不少于 55 个。
+- 新增和既有测试全部通过。
 
 ### 简历价值
 
 可写：
 
 ```text
-将 PaperStorm 命令行 pipeline 服务化为 FastAPI Agent API，支持任务提交、状态追踪、报告读取、scorecard 获取和错误脱敏，为后续前端展示和企业知识库平台化奠定基础。
+将 PaperStorm 命令行 pipeline 抽象为文件存储版 Agent Task Service，支持 task_id、任务状态、产物隔离、文章/trace/scorecard 读取、知识库问答和错误脱敏，并提供可选 FastAPI 适配器，为企业知识库平台化和前端展示奠定基础。
 ```
+
+### 本版没有强行做的内容
+
+- 没有直接把真实 LLM pipeline 放入后台 worker，避免测试依赖外部 API。
+- 没有引入数据库，状态先用本地 JSON 文件存储。
+- 没有实现文档上传接口，后续和知识库导入一起做。
+- 没有实现并发队列、timeout/retry/rate limit，这些放到 v0.5.1。
 
 ## 6.1 v0.5.1：并发、限流与稳定性实验
 

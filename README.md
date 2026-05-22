@@ -91,6 +91,16 @@ research -> outline -> article -> polish
 - `EvaluatorAgent`：给 query plan、critic signal 和 agent trace 打分。
 - `PaperStormResearchOrchestrator`：中心化编排多 Agent，输出 `agent_trace.jsonl` 和 `multi_agent_report.json`。
 
+### v0.5：知识库平台化与服务 API
+
+- `PaperStormTaskService`：文件存储版服务核心，管理 task_id、状态、output_dir、trace、summary、scorecard。
+- 支持任务状态：`queued / running / succeeded / failed`。
+- 支持读取文章、scorecard、trace。
+- 支持基于 task artifacts 的知识库 QA。
+- 支持 fake runner，不依赖真实 API key 也能测试服务链路。
+- 失败任务输出结构化 error，并对 secret / key / token 字段脱敏。
+- `paperstorm_service_api.py`：可选 FastAPI 适配器，提供任务提交、运行、状态查询、文章读取、scorecard、trace 和知识库 QA 路由。
+
 ## 3. 关键文件
 
 运行入口：
@@ -99,6 +109,7 @@ research -> outline -> article -> polish
 examples/storm_examples/run_paper_storm_minimax.py
 examples/storm_examples/paperstorm_mcp_server.py
 examples/storm_examples/evaluate_paperstorm_run.py
+examples/storm_examples/paperstorm_service_api.py
 ```
 
 核心模块：
@@ -111,6 +122,7 @@ knowledge_storm/paperstorm_memory.py
 knowledge_storm/paperstorm_qa.py
 knowledge_storm/paperstorm_runtime.py
 knowledge_storm/paperstorm_agents.py
+knowledge_storm/paperstorm_service.py
 ```
 
 测试：
@@ -124,6 +136,7 @@ tests/test_paperstorm_eval.py
 tests/test_paperstorm_memory_qa.py
 tests/test_paperstorm_runtime.py
 tests/test_paperstorm_multi_agent.py
+tests/test_paperstorm_service.py
 ```
 
 维护文档：
@@ -273,7 +286,7 @@ docs/VERSION_PLAN.md
 
 - v0.2：RAG 质量与 Memory 模块。
 - v0.4：Multi-Agent 论文调研协作。
-- v0.5：知识库平台化与 FastAPI 服务。
+- v0.5：知识库平台化与服务 API。
 - v0.6：前端展示 Demo。
 - v1.0：可投递、可演示的 Agent 平台化 Demo。
 
