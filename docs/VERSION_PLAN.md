@@ -453,16 +453,34 @@ feature/paperstorm-eval-harness
 
 ## 6.1 v0.5.1：并发、限流与稳定性实验
 
+状态：已完成第一阶段。
+
 目标：补齐企业级 Agent 系统中“多任务并发”和“稳定性保障”的面试素材。
 
-### 功能目标
+### 已完成能力
 
-- 支持可配置并发数，例如 `max_concurrent_tasks`。
-- 增加任务队列，超过并发上限的任务进入 queued。
-- 对 LLM / arXiv / embedding 等外部或重资源工具设置 timeout、retry、rate limit。
-- 复用 embedding model / retriever 资源，避免每个任务重复加载。
-- 记录任务级 latency、tool latency、失败率、retry 次数。
-- 增加简单压测脚本，使用 fake runner 模拟 10 / 50 / 100 个任务。
+1. 并发上限
+   - `PaperStormTaskService(root_dir, max_concurrent_tasks=...)` 支持可配置并发数。
+   - `worker_tick()` 按剩余容量从 queued 任务中启动任务。
+   - worker 不会让 running 数量超过 `max_concurrent_tasks`。
+
+2. 任务队列与容量释放
+   - 超过并发上限的任务保持 queued。
+   - `complete_task(task_id, success=True/False)` 可完成 running 任务。
+   - running 任务完成后，下一次 `worker_tick()` 会启动后续 queued 任务。
+
+3. Stale Running 恢复
+   - `recover_stale_running_tasks(max_age_seconds)` 可把超时 running 任务标记为 failed。
+   - 避免任务因为进程崩溃或 worker 中断永久卡在 running。
+
+4. Stress Benchmark
+   - `run_stress_benchmark(total_tasks, fail_every)` 使用 fake runner 创建并运行多任务。
+   - 输出 `stress_report.json`。
+   - 指标包括 total_tasks、succeeded、failed、failure_rate、avg_latency_sec、p95_latency_sec、max_observed_running、retry_count。
+
+5. CLI 入口
+   - 新增 `examples/storm_examples/benchmark_paperstorm_service.py`。
+   - 可直接运行 fake stress benchmark，生成可展示的稳定性报告。
 
 ### 难点
 
@@ -479,6 +497,7 @@ feature/paperstorm-eval-harness
 - 多任务输出目录互不覆盖。
 - 每个任务都有独立 trace 和 summary。
 - 压测报告输出平均耗时、P95 latency、失败率和 retry 次数。
+- 新增和既有测试全部通过。
 
 ### 简历价值
 
@@ -487,6 +506,13 @@ feature/paperstorm-eval-harness
 ```text
 为 PaperStorm Agent API 增加任务队列、并发数限制、timeout/retry、任务级 trace 与压测报告，使用 fake runner 验证多任务状态隔离、文件隔离和错误恢复，为生产级 Agent 稳定性保障提供实验依据。
 ```
+
+### 本版没有强行做的内容
+
+- 没有对真实 LLM / arXiv / embedding 调用做 timeout/retry/rate limit，因为当前还没有真实 worker 接入服务层。
+- 没有实现异步 worker 或多进程队列，当前是可测试的单进程 worker tick 模型。
+- 没有接 Redis/Celery/RQ 等外部队列，避免为了架构名词引入重依赖。
+- 下一步做前端时会先展示任务队列、运行中任务、失败任务和 stress report；真实 worker 接入后再补外部 API 限流。
 
 ## 7. v0.6：前端展示 Demo
 

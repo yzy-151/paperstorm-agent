@@ -1,5 +1,6 @@
 import json
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,13 +13,14 @@ from .paperstorm_qa import PaperStormKnowledgeBase, write_qa_artifact
 class PaperStormTaskService:
     """File-backed service core for PaperStorm task APIs."""
 
-    def __init__(self, root_dir):
+    def __init__(self, root_dir, max_concurrent_tasks: int = 1):
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.tasks_dir = self.root_dir / "tasks"
         self.results_dir = self.root_dir / "results"
         self.tasks_dir.mkdir(exist_ok=True)
         self.results_dir.mkdir(exist_ok=True)
+        self.max_concurrent_tasks = max(1, int(max_concurrent_tasks))
 
     def submit_research_task(
         self,
@@ -62,6 +64,8 @@ class PaperStormTaskService:
         try:
             if state.get("run_mode") == "fail":
                 raise RuntimeError("simulated task failure for service testing")
+            if state.get("run_mode") == "manual":
+                return state
             if state.get("run_mode") != "fake":
                 raise ValueError("Only run_mode='fake' is supported by the service core.")
             self._run_fake_research(state)
@@ -74,6 +78,97 @@ class PaperStormTaskService:
         state["updated_at"] = _now()
         self._write_state(task_id, state)
         return state
+
+    def worker_tick(self):
+        running = self._list_tasks_by_status("running")
+        capacity = max(0, self.max_concurrent_tasks - len(running))
+        queued = self._list_tasks_by_status("queued")
+        started = []
+        for state in queued[:capacity]:
+            state["status"] = "running"
+            state["started_at"] = _now()
+            state["updated_at"] = _now()
+            self._write_state(state["task_id"], state)
+            started.append(state["task_id"])
+        return {
+            "max_concurrent_tasks": self.max_concurrent_tasks,
+            "running_count": len(running) + len(started),
+            "queued_count": max(0, len(queued) - len(started)),
+            "started_count": len(started),
+            "started_task_ids": started,
+        }
+
+    def complete_task(self, task_id: str, success: bool = True, error: str = ""):
+        state = self._read_state(task_id)
+        state["status"] = "succeeded" if success else "failed"
+        if not success:
+            state["error"] = _redact_error(error or "task failed")
+        state["finished_at"] = _now()
+        state["updated_at"] = _now()
+        self._write_state(task_id, state)
+        return state
+
+    def recover_stale_running_tasks(self, max_age_seconds: float):
+        now_ts = time.time()
+        failed = []
+        for state in self._list_tasks_by_status("running"):
+            started_at = _parse_timestamp(state.get("started_at")) or 0.0
+            if now_ts - started_at >= max_age_seconds:
+                state["status"] = "failed"
+                state["error"] = "stale running task recovered after timeout"
+                state["finished_at"] = _now()
+                state["updated_at"] = _now()
+                self._write_state(state["task_id"], state)
+                failed.append(state["task_id"])
+        return {"failed_count": len(failed), "failed_task_ids": failed}
+
+    def run_stress_benchmark(self, total_tasks: int, fail_every: int = 0):
+        created = []
+        latencies = []
+        max_observed_running = 0
+        for index in range(total_tasks):
+            mode = "fail" if fail_every and (index + 1) % fail_every == 0 else "fake"
+            created.append(
+                self.submit_research_task(
+                    topic="stress topic {0}".format(index + 1),
+                    run_mode=mode,
+                )["task_id"]
+            )
+        while True:
+            queued = self._list_tasks_by_status("queued")
+            running = self._list_tasks_by_status("running")
+            max_observed_running = max(max_observed_running, len(running))
+            if not queued and not running:
+                break
+            batch = self.worker_tick()
+            max_observed_running = max(max_observed_running, batch["running_count"])
+            for task_id in batch["started_task_ids"]:
+                start = time.time()
+                state = self._read_state(task_id)
+                if state.get("run_mode") == "manual":
+                    self.complete_task(task_id, success=True)
+                else:
+                    self.run_task(task_id)
+                latencies.append(time.time() - start)
+        states = [self._read_state(task_id) for task_id in created]
+        succeeded = len([state for state in states if state["status"] == "succeeded"])
+        failed = len([state for state in states if state["status"] == "failed"])
+        report = {
+            "total_tasks": total_tasks,
+            "succeeded": succeeded,
+            "failed": failed,
+            "failure_rate": round(failed / max(1, total_tasks), 4),
+            "avg_latency_sec": round(sum(latencies) / max(1, len(latencies)), 4),
+            "p95_latency_sec": round(_percentile(latencies, 0.95), 4),
+            "max_concurrent_tasks": self.max_concurrent_tasks,
+            "max_observed_running": max_observed_running,
+            "retry_count": 0,
+        }
+        (self.root_dir / "stress_report.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return report
 
     def get_article(self, task_id: str):
         state = self._read_state(task_id)
@@ -187,9 +282,34 @@ class PaperStormTaskService:
             encoding="utf-8",
         )
 
+    def _list_tasks_by_status(self, status: str):
+        tasks = []
+        for path in sorted(self.tasks_dir.glob("*.json")):
+            state = json.loads(path.read_text(encoding="utf-8"))
+            if state.get("status") == status:
+                tasks.append(state)
+        return sorted(tasks, key=lambda item: item.get("created_at", ""))
+
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_timestamp(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return None
+
+
+def _percentile(values, percentile):
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = int(round((len(ordered) - 1) * percentile))
+    return ordered[index]
 
 
 def _redact(value):

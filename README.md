@@ -101,6 +101,15 @@ research -> outline -> article -> polish
 - 失败任务输出结构化 error，并对 secret / key / token 字段脱敏。
 - `paperstorm_service_api.py`：可选 FastAPI 适配器，提供任务提交、运行、状态查询、文章读取、scorecard、trace 和知识库 QA 路由。
 
+### v0.5.1：并发、恢复与压测 baseline
+
+- `PaperStormTaskService(max_concurrent_tasks=...)`：支持可配置并发上限。
+- `worker_tick()`：从 queued 任务中按容量启动任务，避免超过并发上限。
+- `complete_task()`：手动完成 running 任务，释放后续任务容量。
+- `recover_stale_running_tasks()`：将超时 running 任务恢复为 failed，避免任务永久卡住。
+- `run_stress_benchmark()`：使用 fake runner 生成压测报告，包含成功数、失败数、失败率、平均延迟、P95 latency、最大观察并发和 retry 次数。
+- `benchmark_paperstorm_service.py`：命令行压测入口。
+
 ## 3. 关键文件
 
 运行入口：
@@ -110,6 +119,7 @@ examples/storm_examples/run_paper_storm_minimax.py
 examples/storm_examples/paperstorm_mcp_server.py
 examples/storm_examples/evaluate_paperstorm_run.py
 examples/storm_examples/paperstorm_service_api.py
+examples/storm_examples/benchmark_paperstorm_service.py
 ```
 
 核心模块：
@@ -137,6 +147,7 @@ tests/test_paperstorm_memory_qa.py
 tests/test_paperstorm_runtime.py
 tests/test_paperstorm_multi_agent.py
 tests/test_paperstorm_service.py
+tests/test_paperstorm_concurrency.py
 ```
 
 维护文档：

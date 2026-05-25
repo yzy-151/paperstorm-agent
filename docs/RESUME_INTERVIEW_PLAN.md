@@ -85,6 +85,7 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 将 runtime 升级为 ToolRegistry + HookManager + RuntimeEvent 结构，统一工具注册、参数校验、生命周期 hook 和 JSONL trace 字段，并让 MCP server 共用同一套工具注册模型。
 - 设计多 Agent 调研编排层，将任务拆分为 Planner、Retriever、Critic、Memory、Evaluator 等角色，通过中心化 orchestrator 输出 `agent_trace.jsonl` 和 `multi_agent_report.json`，使规划、检索、过滤、记忆和评估过程可复盘。
 - 抽象 `PaperStormTaskService` 服务核心层，支持 task_id、queued/running/succeeded/failed 状态、独立 output_dir、文章/trace/scorecard 读取、知识库 QA、fake runner 和错误脱敏，并提供可选 FastAPI 适配器。
+- 增加服务层并发与稳定性 baseline，支持 `max_concurrent_tasks`、`worker_tick`、running 任务容量释放、stale running 恢复和 fake runner 压测报告。
 
 压缩版 bullet：
 
@@ -95,6 +96,7 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 设计 ToolRegistry、HookManager 与统一 RuntimeEvent，将 PaperStorm 工具链升级为可观测、可扩展的轻量 Agent Harness。
 - 增加 Planner/Retriever/Critic/Memory/Evaluator 多 Agent 编排和 agent trace，支持对 PIM 跑题检索结果给出过滤理由。
 - 抽象文件存储版 Agent Task Service，支持任务状态、产物隔离、知识库 QA、scorecard/trace 查询和可选 FastAPI 路由。
+- 增加任务队列、并发上限、stale task 恢复和 stress benchmark，输出平均延迟、P95、失败率和最大观察并发。
 
 ## 4. Nonlinear NN Agent 简历项目描述
 
@@ -330,7 +332,7 @@ PaperStorm 最早是论文调研 Agent，但底层能力可以迁移到企业内
 高并发回答边界：
 
 ```text
-当前 PaperStorm 还不是线上高并发系统，但已经完成第一步：task_id、状态隔离、独立 output_dir、trace 和 scorecard 隔离。下一步会加后台 worker 和任务队列，限制 max_concurrent_tasks；再给 LLM、检索、embedding 工具加 timeout/retry/rate limit；最后用 fake runner 做 10/50/100 任务压测，统计平均延迟、P95、失败率和 retry 次数。真正生产级还需要鉴权、权限、监控告警、分布式队列和成本治理。
+当前 PaperStorm 还不是线上高并发系统，但已经完成了单进程服务层稳定性 baseline：task_id、状态隔离、独立 output_dir、trace/scorecard 隔离、max_concurrent_tasks、worker_tick、stale running 恢复和 fake runner 压测报告。下一步如果接真实 worker，会给 LLM、检索、embedding 工具加 timeout/retry/rate limit，并用 10/50/100 任务压测统计平均延迟、P95、失败率和 retry 次数。真正生产级还需要鉴权、权限、监控告警、分布式队列和成本治理。
 ```
 
 ### Q13.1：为什么先做 fake runner，不直接接真实 LLM 服务？
@@ -362,7 +364,7 @@ PaperStorm 最早是论文调研 Agent，但底层能力可以迁移到企业内
 推荐回答：
 
 ```text
-我会分阶段做，不会一上来声称高并发。第一阶段 FastAPI task_id，保证每个任务状态、output_dir、trace、scorecard 隔离；第二阶段后台 worker 和队列，限制 max_concurrent_tasks；第三阶段给 LLM、检索、embedding 工具加 timeout/retry/rate limit；第四阶段用 fake runner 做压测，统计平均延迟、P95、失败率和 retry 次数。难点是外部 API 限流、embedding 模型复用、文件写入隔离、阻塞调用与 async 混用、失败任务状态恢复。
+我会分阶段做，不会一上来声称高并发。当前已经完成第一阶段和第二阶段的单进程 baseline：task_id、状态隔离、output_dir/trace/scorecard 隔离、worker_tick 队列、max_concurrent_tasks、stale running 恢复和 fake runner 压测。下一步真实 worker 接入后，再给 LLM、检索、embedding 工具加 timeout/retry/rate limit。难点是外部 API 限流、embedding 模型复用、文件写入隔离、阻塞调用与 async 混用、失败任务状态恢复。
 ```
 
 ## 7. 简历投递策略
