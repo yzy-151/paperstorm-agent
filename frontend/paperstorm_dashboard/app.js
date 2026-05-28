@@ -1,0 +1,119 @@
+async function loadDashboard() {
+  try {
+    const data = window.PAPERSTORM_SAMPLE_DATA || await fetchSampleData();
+    renderProject(data.project || {});
+    renderTasks(data.tasks || []);
+    renderScorecard(data.scorecard || {});
+    renderArticle(data.article || {});
+    renderQA(data.qa || {});
+    renderTrace(data.trace || {});
+    renderMultiAgent(data.multi_agent || {}, data.agent_trace || []);
+    renderStress(data.stress_report || {});
+  } catch (error) {
+    document.querySelector("#task-list").innerHTML =
+      `<div class="item">请先运行 <code>python examples/storm_examples/build_paperstorm_demo_bundle.py --output-dir frontend/paperstorm_dashboard</code></div>`;
+    document.querySelector("#project-version").textContent = "no data";
+  }
+}
+
+async function fetchSampleData() {
+  const response = await fetch("sample_data.json");
+  if (!response.ok) {
+    throw new Error("sample_data.json not found");
+  }
+  return response.json();
+}
+
+function renderProject(project) {
+  document.querySelector("#project-version").textContent = project.version || "v0.6";
+}
+
+function renderTasks(tasks) {
+  document.querySelector("#task-list").innerHTML = tasks.map(task => `
+    <div class="item">
+      <div class="label">${escapeHtml(task.task_id || "")}</div>
+      <div class="value">${escapeHtml(task.status || "")}</div>
+      <p>${escapeHtml(task.topic || "")}</p>
+    </div>
+  `).join("");
+}
+
+function renderScorecard(scorecard) {
+  const scores = scorecard.scores || {};
+  document.querySelector("#scorecard").innerHTML = Object.entries(scores).map(([name, value]) => metric(name, value)).join("");
+}
+
+function renderArticle(article) {
+  document.querySelector("#article-content").textContent = article.content || "";
+}
+
+function renderQA(qa) {
+  const citations = qa.citations || [];
+  document.querySelector("#qa-answer").innerHTML = `
+    <div class="item">
+      <div class="label">${escapeHtml(qa.question || "知识库问题")}</div>
+      <p>${escapeHtml(qa.answer || "")}</p>
+      <div class="label">grounded: ${Boolean(qa.grounded)}</div>
+    </div>
+    ${citations.map(c => `<div class="item">${escapeHtml(c.title || c.url || "")}</div>`).join("")}
+  `;
+}
+
+function renderTrace(trace) {
+  const events = trace.events || [];
+  document.querySelector("#trace-list").innerHTML = events.map(event => `
+    <li>
+      <strong>${escapeHtml(event.event || "")}</strong>
+      <span>${escapeHtml(event.tool || event.status || "")}</span>
+    </li>
+  `).join("");
+}
+
+function renderMultiAgent(report, agentTrace) {
+  const kept = report.kept_results || [];
+  const rejected = report.rejected_results || [];
+  document.querySelector("#multi-agent").innerHTML = `
+    <div class="metric-grid">
+      ${metric("queries", (report.query_plan || []).length)}
+      ${metric("kept", kept.length)}
+      ${metric("rejected", rejected.length)}
+      ${metric("agent events", agentTrace.length)}
+    </div>
+    <div class="stack">
+      ${kept.map(item => `<div class="item kept"><strong>保留</strong> ${escapeHtml(item.title || "")}</div>`).join("")}
+      ${rejected.map(item => `<div class="item rejected"><strong>过滤</strong> ${escapeHtml(item.title || "")}<br>${escapeHtml(item.reason || "")}</div>`).join("")}
+    </div>
+  `;
+}
+
+function renderStress(report) {
+  document.querySelector("#stress-report").innerHTML = [
+    "total_tasks",
+    "succeeded",
+    "failed",
+    "failure_rate",
+    "avg_latency_sec",
+    "p95_latency_sec",
+    "max_observed_running",
+  ].map(name => metric(name, report[name])).join("");
+}
+
+function metric(name, value) {
+  return `
+    <div class="metric">
+      <div class="label">${escapeHtml(name)}</div>
+      <div class="value">${escapeHtml(String(value ?? ""))}</div>
+    </div>
+  `;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+loadDashboard();

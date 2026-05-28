@@ -45,6 +45,7 @@ class PaperStormTaskService:
             "output_dir": str(output_dir),
             "created_at": _now(),
             "updated_at": _now(),
+            "queue_index": self._next_queue_index(),
             "expected_keywords": expected_keywords or [],
             "forbidden_keywords": forbidden_keywords or [],
             "options": _redact(options),
@@ -288,7 +289,16 @@ class PaperStormTaskService:
             state = json.loads(path.read_text(encoding="utf-8"))
             if state.get("status") == status:
                 tasks.append(state)
-        return sorted(tasks, key=lambda item: item.get("created_at", ""))
+        return sorted(
+            tasks,
+            key=lambda item: (
+                int(item.get("queue_index", 0)),
+                item.get("created_at", ""),
+            ),
+        )
+
+    def _next_queue_index(self):
+        return len(list(self.tasks_dir.glob("*.json"))) + 1
 
 
 def _now():

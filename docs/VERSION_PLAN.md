@@ -516,35 +516,46 @@ feature/paperstorm-eval-harness
 
 ## 7. v0.6：前端展示 Demo
 
+状态：已完成第一阶段。
+
 目标：像 `nonlinear-nn-agent` 最后要做前端一样，PaperStorm 也需要可展示界面。
 
-### 功能目标
+### 已完成能力
 
-- 前端输入 topic / PDF 目录。
-- 前端创建/选择知识库。
-- 前端进行知识库 QA。
-- 展示任务状态。
-- 展示 query plan。
-- 展示检索结果与过滤原因。
-- 展示 memory 摘要。
-- 展示 trace 时间线。
-- 展示最终文章和 scorecard。
-- 展示并发任务队列、运行中任务和失败任务。
+1. 静态 Dashboard
+   - 新增 `frontend/paperstorm_dashboard/index.html`。
+   - 新增 `frontend/paperstorm_dashboard/styles.css`。
+   - 新增 `frontend/paperstorm_dashboard/app.js`。
+   - 不引入 Node/Vite 依赖，第一阶段直接打开 HTML 即可查看。
 
-技术建议：
+2. Demo 数据生成
+   - 新增 `knowledge_storm/paperstorm_demo.py`。
+   - 新增 `examples/storm_examples/build_paperstorm_demo_bundle.py`。
+   - 可生成 `sample_data.json`，供前端离线展示。
+   - 样例数据包含 task、article、QA、scorecard、runtime trace、multi-agent report、agent trace、stress report。
 
-```text
-FastAPI + 简单 HTML/React/Vite
-```
+3. Dashboard 展示内容
+   - 任务状态。
+   - 调研文章。
+   - 知识库 QA。
+   - Runtime trace。
+   - Eval scorecard。
+   - Multi-Agent 保留/过滤结果。
+   - Stress benchmark 指标。
 
-第一版不追求华丽 UI，重点是展示 Agent 执行链路。
+4. 官方中文文档
+   - 新增 `docs/STORM_OFFICIAL_CN.md`。
+   - README 补官方 STORM 架构图、两阶段流程图、Co-STORM 工作流图。
+   - README 先讲官方 STORM 基础，再讲 PaperStorm Agent 增强。
 
 ### 验收标准
 
-- 一键启动本地 demo。
+- 运行 demo bundle 生成命令后，前端可加载 `sample_data.json`。
 - 能展示一次已完成 run 的 report、trace、scorecard。
 - 能展示一次知识库 QA 的召回来源与引用片段。
 - 不依赖真实 API key 也能用样例数据预览。
+- README 包含官方 STORM 架构和架构图。
+- 新增和既有测试全部通过。
 
 ### 简历价值
 
@@ -554,7 +565,41 @@ FastAPI + 简单 HTML/React/Vite
 实现 PaperStorm Agent 前端 Demo，展示任务状态、检索审计、memory 摘要、工具调用 trace、最终报告和 scorecard，使 Agent 执行链路从黑盒变为可视化调试界面。
 ```
 
-## 8. v1.0：Agent 平台化 Demo
+### 本版没有强行做的内容
+
+- 没有做复杂 React/Vite 工程，避免前端依赖压过 Agent 项目本身。
+- 没有做在线 API 调用，第一阶段先基于 `sample_data.json` 静态展示。
+- 没有做真实 worker，下一版 v0.7 接入真实 PaperStorm pipeline worker。
+
+## 8. v0.7：真实 Pipeline Worker 接入
+
+目标：把 v0.5 的 fake runner 扩展为真实 PaperStorm runner，让服务 API 能触发真实调研流程。
+
+### 功能目标
+
+- 在 `PaperStormTaskService` 中增加 runner 接口，例如 `runner="fake" | "paperstorm"`。
+- 将 `run_paper_storm_minimax.py` 中可复用的配置构造逻辑下沉为函数。
+- 服务层能调用真实 PaperStorm pipeline，支持 arXiv / local-pdf。
+- 真实任务也输出 article、trace、summary、scorecard。
+- 保留 fake runner 作为测试、前端、压测 baseline。
+- 对真实 LLM / retriever 调用加入 timeout、retry、rate limit 的接口位。
+
+### 验收标准
+
+- fake runner 测试不受影响。
+- 不需要真实 API key 的单元测试仍可通过。
+- 有一个手工命令可以用 DeepSeek/arXiv 触发真实任务。
+- 真实任务产物能被 Dashboard 读取展示。
+
+### 简历价值
+
+可写：
+
+```text
+将 PaperStorm Task Service 从 fake runner 扩展到真实 pipeline worker，统一真实调研与测试 baseline 的 task_id、状态、trace、scorecard 和产物读取接口，使 Agent 服务从演示数据推进到真实可运行任务。
+```
+
+## 9. v1.0：Agent 平台化 Demo
 
 目标：形成可投递、可演示、可面试讲 5 分钟的完整项目。
 
@@ -583,7 +628,7 @@ FastAPI + 简单 HTML/React/Vite
 - 云部署。
 - 企业级监控告警。
 
-## 9. 每次版本更新模板
+## 10. 每次版本更新模板
 
 ```markdown
 ## vX.Y：版本名称

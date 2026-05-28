@@ -86,6 +86,7 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 设计多 Agent 调研编排层，将任务拆分为 Planner、Retriever、Critic、Memory、Evaluator 等角色，通过中心化 orchestrator 输出 `agent_trace.jsonl` 和 `multi_agent_report.json`，使规划、检索、过滤、记忆和评估过程可复盘。
 - 抽象 `PaperStormTaskService` 服务核心层，支持 task_id、queued/running/succeeded/failed 状态、独立 output_dir、文章/trace/scorecard 读取、知识库 QA、fake runner 和错误脱敏，并提供可选 FastAPI 适配器。
 - 增加服务层并发与稳定性 baseline，支持 `max_concurrent_tasks`、`worker_tick`、running 任务容量释放、stale running 恢复和 fake runner 压测报告。
+- 实现静态 PaperStorm Dashboard，基于样例数据展示任务状态、文章、知识库 QA、runtime trace、scorecard、Multi-Agent 保留/过滤结果和 stress report，并补充官方 STORM 架构中文说明与架构图。
 
 压缩版 bullet：
 
@@ -97,6 +98,7 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 增加 Planner/Retriever/Critic/Memory/Evaluator 多 Agent 编排和 agent trace，支持对 PIM 跑题检索结果给出过滤理由。
 - 抽象文件存储版 Agent Task Service，支持任务状态、产物隔离、知识库 QA、scorecard/trace 查询和可选 FastAPI 路由。
 - 增加任务队列、并发上限、stale task 恢复和 stress benchmark，输出平均延迟、P95、失败率和最大观察并发。
+- 实现静态 Dashboard 和官方 STORM 中文架构文档，将 Agent 执行链路、评估结果和稳定性报告可视化展示。
 
 ## 4. Nonlinear NN Agent 简历项目描述
 
@@ -341,6 +343,14 @@ PaperStorm 最早是论文调研 Agent，但底层能力可以迁移到企业内
 
 ```text
 因为服务层首先要验证任务状态、路径隔离、trace、scorecard、错误脱敏和 QA API 这些工程语义，不能让测试依赖真实 API、网络和模型波动。fake runner 是稳定 baseline，可以支撑单元测试、前端预览和后续压测。真实 LLM pipeline 后续作为 worker runner 接入，同一套 task_id 和状态模型不用变。
+```
+
+### Q13.2：为什么要做前端 Dashboard？
+
+推荐回答：
+
+```text
+Agent 系统的问题定位不能只看最终回答。Dashboard 的价值是把 task 状态、runtime trace、scorecard、QA 引用、Multi-Agent 决策和 stress report 展示出来，让执行链路可解释、可复盘、可沟通。对企业 Agent 平台来说，这对应可观测性和跨角色协作：算法、后端、产品都能看到 Agent 为什么这么答、工具是否失败、检索是否跑题、评估指标是否达标。
 ```
 
 ### Q11：做普通知识库 QA 会不会降低项目水平？

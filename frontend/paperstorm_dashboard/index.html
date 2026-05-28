@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PaperStorm Agent Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">PaperStorm Agent Dashboard</p>
+        <h1>论文调研 Agent 执行链路</h1>
+      </div>
+      <div class="status-pill" id="project-version">loading</div>
+    </header>
+
+    <main class="dashboard-grid">
+      <section class="panel" id="task-panel">
+        <h2>任务状态</h2>
+        <div id="task-list" class="stack"></div>
+      </section>
+
+      <section class="panel" id="scorecard-panel">
+        <h2>评估分数</h2>
+        <div id="scorecard" class="metric-grid"></div>
+      </section>
+
+      <section class="panel wide" id="article-panel">
+        <h2>调研文章</h2>
+        <article id="article-content" class="article"></article>
+      </section>
+
+      <section class="panel" id="qa-panel">
+        <h2>知识库问答</h2>
+        <div id="qa-answer" class="stack"></div>
+      </section>
+
+      <section class="panel" id="trace-panel">
+        <h2>Runtime Trace</h2>
+        <ol id="trace-list" class="timeline"></ol>
+      </section>
+
+      <section class="panel wide" id="multi-agent-panel">
+        <h2>Multi-Agent 编排</h2>
+        <div id="multi-agent" class="stack"></div>
+      </section>
+
+      <section class="panel wide" id="stress-panel">
+        <h2>稳定性压测</h2>
+        <div id="stress-report" class="metric-grid"></div>
+      </section>
+    </main>
+
+    <script src="sample_data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -8,6 +8,12 @@
 README_STORM_OFFICIAL.md
 ```
 
+官方中文说明：
+
+```text
+docs/STORM_OFFICIAL_CN.md
+```
+
 当前 GitHub 仓库：
 
 ```text
@@ -16,7 +22,64 @@ https://github.com/yzy-151/paperstorm-agent
 
 当前 README 记录本 fork 的中文项目定位、运行方式、版本计划和求职展示重点。
 
-## 1. 项目定位
+## 1. 官方 STORM 基础架构
+
+STORM 全称是：
+
+```text
+Synthesis of Topic Outlines through Retrieval and Multi-perspective Question Asking
+```
+
+它是 Stanford OVAL 提出的长文调研与写作系统，目标是从一个 topic 出发，通过检索、多视角提问、模拟对话、知识整理和写作，生成类似 Wikipedia 风格的长文章。
+
+官方整体架构图：
+
+<p align="center">
+  <img src="assets/overview.svg" style="width: 90%; height: auto;">
+</p>
+
+官方两阶段流程图：
+
+<p align="center">
+  <img src="assets/two_stages.jpg" style="width: 65%; height: auto;">
+</p>
+
+STORM 的核心流程：
+
+```text
+Pre-writing stage: research -> outline
+Writing stage: article -> polish
+```
+
+在工程入口中，对应 `STORMWikiRunner.run()` 的四个开关：
+
+```text
+do_research
+do_generate_outline
+do_generate_article
+do_polish_article
+```
+
+官方 STORM 的关键机制：
+
+- `Perspective-Guided Question Asking`：先发现不同视角，再让不同视角控制问题生成，避免问题浅、散、重复。
+- `Simulated Conversation`：模拟 Wikipedia writer 和 topic expert 的多轮对话，让 writer 追问、expert 基于检索结果回答。
+- 模块化 `dspy` 实现：retriever、LM、runner、module 解耦，便于替换搜索引擎和语言模型。
+- 多 LLM 配置：不同阶段可使用不同模型，在成本、速度、上下文长度和生成质量之间做权衡。
+
+Co-STORM 是官方协作版本，加入 human-AI collaborative knowledge curation、Moderator、LLM experts 和动态 mind map：
+
+<p align="center">
+  <img src="assets/co-storm-workflow.jpg" style="width: 65%; height: auto;">
+</p>
+
+更详细的官方中文整理见：
+
+```text
+docs/STORM_OFFICIAL_CN.md
+```
+
+## 2. PaperStorm Agent 项目定位
 
 PaperStorm Agent 的目标不是从零重写 STORM，而是在成熟 Deep Research / RAG 框架上做面向 Agent 开发岗的工程化改造：
 
@@ -34,7 +97,7 @@ PaperStorm Agent 的目标不是从零重写 STORM，而是在成熟 Deep Resear
 - `nonlinear-nn-agent`：从零实现轻量 Agent Harness Runtime，突出 ToolRegistry、Hook、Session、Trace、Async、Retry。
 - `PaperStorm Agent`：基于成熟 RAG/Deep Research 框架二次开发，突出 RAG、Memory、MCP、Multi-Agent、Eval、知识库与前端展示。
 
-## 2. 当前已完成能力
+## 3. 当前已完成能力
 
 ### v0.1：PaperStorm MVP
 
@@ -110,7 +173,15 @@ research -> outline -> article -> polish
 - `run_stress_benchmark()`：使用 fake runner 生成压测报告，包含成功数、失败数、失败率、平均延迟、P95 latency、最大观察并发和 retry 次数。
 - `benchmark_paperstorm_service.py`：命令行压测入口。
 
-## 3. 关键文件
+### v0.6：前端 Dashboard 与官方中文文档
+
+- 新增静态 Dashboard：`frontend/paperstorm_dashboard/index.html`。
+- Dashboard 展示任务状态、文章、知识库 QA、runtime trace、scorecard、multi-agent 结果和 stress report。
+- 新增 `build_paperstorm_demo_bundle.py`，可生成 `sample_data.json` 供前端离线展示。
+- 新增 `docs/STORM_OFFICIAL_CN.md`，把官方 STORM 架构和核心机制整理为中文说明。
+- README 补充官方 STORM 架构图、两阶段流程图和 Co-STORM 工作流图。
+
+## 4. 关键文件
 
 运行入口：
 
@@ -120,6 +191,7 @@ examples/storm_examples/paperstorm_mcp_server.py
 examples/storm_examples/evaluate_paperstorm_run.py
 examples/storm_examples/paperstorm_service_api.py
 examples/storm_examples/benchmark_paperstorm_service.py
+examples/storm_examples/build_paperstorm_demo_bundle.py
 ```
 
 核心模块：
@@ -133,6 +205,7 @@ knowledge_storm/paperstorm_qa.py
 knowledge_storm/paperstorm_runtime.py
 knowledge_storm/paperstorm_agents.py
 knowledge_storm/paperstorm_service.py
+knowledge_storm/paperstorm_demo.py
 ```
 
 测试：
@@ -148,6 +221,7 @@ tests/test_paperstorm_runtime.py
 tests/test_paperstorm_multi_agent.py
 tests/test_paperstorm_service.py
 tests/test_paperstorm_concurrency.py
+tests/test_paperstorm_frontend_docs.py
 ```
 
 维护文档：
@@ -156,9 +230,18 @@ tests/test_paperstorm_concurrency.py
 docs/OPERATION_GUIDE.md
 docs/VERSION_PLAN.md
 docs/RESUME_INTERVIEW_PLAN.md
+docs/STORM_OFFICIAL_CN.md
 ```
 
-## 4. 环境
+前端：
+
+```text
+frontend/paperstorm_dashboard/index.html
+frontend/paperstorm_dashboard/styles.css
+frontend/paperstorm_dashboard/app.js
+```
+
+## 5. 环境
 
 当前本地推荐解释器：
 
@@ -168,7 +251,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe
 
 不要用系统默认 `python` 直接运行，容易出现环境不一致。
 
-## 5. 运行 PaperStorm
+## 6. 运行 PaperStorm
 
 PowerShell 示例：
 
@@ -211,7 +294,32 @@ run_summary.json
 storm_gen_article_polished.txt
 ```
 
-## 6. 运行 Eval Harness
+## 7. 运行 Dashboard Demo
+
+生成前端样例数据：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\build_paperstorm_demo_bundle.py `
+  --output-dir frontend\paperstorm_dashboard
+```
+
+然后打开：
+
+```text
+frontend/paperstorm_dashboard/index.html
+```
+
+Dashboard 展示：
+
+- 任务状态。
+- 调研文章。
+- 知识库 QA。
+- Runtime trace。
+- Eval scorecard。
+- Multi-Agent 保留/过滤结果。
+- Stress benchmark。
+
+## 8. 运行 Eval Harness
 
 示例：
 
@@ -237,7 +345,7 @@ scorecard.md
 - 文章质量。
 - Runtime 可观测性。
 
-## 7. 运行 MCP-style Server
+## 9. 运行 MCP-style Server
 
 手工 `tools/list` 验证：
 
@@ -251,16 +359,23 @@ scorecard.md
 ```text
 arxiv_search
 local_pdf_search
+kb_qa
 ```
 
 其中 `local_pdf_search` 需要传入 `--pdf-dir` 后启用。
 
-## 8. 测试
+## 10. 测试
 
 推荐回归测试：
 
 ```powershell
 D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
+  tests.test_paperstorm_frontend_docs `
+  tests.test_paperstorm_concurrency `
+  tests.test_paperstorm_service `
+  tests.test_paperstorm_multi_agent `
+  tests.test_paperstorm_runtime `
+  tests.test_paperstorm_memory_qa `
   tests.test_paperstorm_eval `
   tests.test_paperstorm_mcp_server `
   tests.test_paperstorm_logging `
@@ -271,7 +386,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 最近目标结果：
 
 ```text
-Ran 38 tests
+Ran 66 tests
 OK
 ```
 
@@ -281,11 +396,14 @@ OK
 D:\SOFTWARE\spyder\envs\storm\python.exe -m py_compile `
   knowledge_storm\paperstorm_eval.py `
   knowledge_storm\paperstorm_tools.py `
+  knowledge_storm\paperstorm_demo.py `
+  knowledge_storm\paperstorm_service.py `
   examples\storm_examples\evaluate_paperstorm_run.py `
+  examples\storm_examples\build_paperstorm_demo_bundle.py `
   examples\storm_examples\paperstorm_mcp_server.py
 ```
 
-## 9. 后续版本路线
+## 11. 后续版本路线
 
 详见：
 
@@ -299,9 +417,10 @@ docs/VERSION_PLAN.md
 - v0.4：Multi-Agent 论文调研协作。
 - v0.5：知识库平台化与服务 API。
 - v0.6：前端展示 Demo。
+- v0.7：真实 Pipeline Worker 接入。
 - v1.0：可投递、可演示的 Agent 平台化 Demo。
 
-## 10. 求职与面试材料
+## 12. 求职与面试材料
 
 详见：
 
@@ -322,7 +441,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - 错误容灾。
 - 结构化技术文档。
 
-## 11. 当前边界
+## 13. 当前边界
 
 已经完成：
 
