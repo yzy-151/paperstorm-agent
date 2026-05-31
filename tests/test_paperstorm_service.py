@@ -12,6 +12,16 @@ class PaperStormServiceTest(unittest.TestCase):
 
         return PaperStormTaskService(root_dir=Path(temp_dir.name))
 
+    def make_service_with_pipeline_runner(self, runner):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        from knowledge_storm.paperstorm_service import PaperStormTaskService
+
+        return PaperStormTaskService(
+            root_dir=Path(temp_dir.name),
+            pipeline_runner=runner,
+        )
+
     def test_submit_research_task_creates_isolated_task_state(self):
         service = self.make_service()
 
@@ -94,11 +104,82 @@ class PaperStormServiceTest(unittest.TestCase):
         self.assertIn("error", failed)
         self.assertNotIn("sk-secret-value", serialized)
 
+    def test_domain_keywords_are_preserved_in_task_state(self):
+        service = self.make_service()
+
+        task = service.submit_research_task(
+            topic="pim",
+            expected_keywords=["passive intermodulation"],
+            forbidden_keywords=["DRAM"],
+        )
+        state = service.get_task(task["task_id"])
+
+        self.assertEqual(state["expected_keywords"], ["passive intermodulation"])
+        self.assertEqual(state["forbidden_keywords"], ["DRAM"])
+
     def test_fastapi_adapter_imports_without_required_runtime_dependency(self):
         from examples.storm_examples import paperstorm_service_api
 
         self.assertTrue(hasattr(paperstorm_service_api, "create_app"))
         self.assertTrue(hasattr(paperstorm_service_api, "DEFAULT_SERVICE_ROOT"))
+
+    def test_paperstorm_run_mode_uses_injected_pipeline_runner(self):
+        calls = []
+
+        def runner(state):
+            calls.append(state)
+            output_dir = Path(state["output_dir"])
+            (output_dir / "storm_gen_article_polished.txt").write_text(
+                "# PIM\n\npassive intermodulation suppression with RF neural networks.",
+                encoding="utf-8",
+            )
+            (output_dir / "paperstorm_trace.jsonl").write_text(
+                json.dumps({"event": "run_start", "task_id": state["task_id"]})
+                + "\n",
+                encoding="utf-8",
+            )
+            (output_dir / "scorecard.json").write_text(
+                json.dumps({"scores": {"total": 88}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            return {"artifacts": ["storm_gen_article_polished.txt"], "success": True}
+
+        service = self.make_service_with_pipeline_runner(runner)
+        task = service.submit_research_task(
+            topic="pim 神经网络抑制",
+            retriever="arxiv",
+            output_language="zh",
+            run_mode="paperstorm",
+            llm_provider="deepseek",
+            llm_model="flash",
+        )
+
+        finished = service.run_task(task["task_id"])
+
+        self.assertEqual(finished["status"], "succeeded")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["run_mode"], "paperstorm")
+        self.assertEqual(calls[0]["options"]["llm_provider"], "deepseek")
+        self.assertIn("passive intermodulation", service.get_article(task["task_id"])["content"])
+        self.assertEqual(service.get_scorecard(task["task_id"])["scores"]["total"], 88)
+        self.assertTrue(service.get_trace(task["task_id"])["events"])
+
+    def test_paperstorm_run_mode_records_structured_runner_failure(self):
+        def runner(state):
+            raise RuntimeError("provider failed with sk-secret-value")
+
+        service = self.make_service_with_pipeline_runner(runner)
+        task = service.submit_research_task(
+            topic="broken",
+            run_mode="paperstorm",
+            api_key="sk-secret-value",
+        )
+
+        failed = service.run_task(task["task_id"])
+
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn("provider failed", failed["error"])
+        self.assertNotIn("sk-secret-value", json.dumps(failed, ensure_ascii=False))
 
 
 if __name__ == "__main__":

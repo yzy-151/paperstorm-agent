@@ -13,7 +13,7 @@ from .paperstorm_qa import PaperStormKnowledgeBase, write_qa_artifact
 class PaperStormTaskService:
     """File-backed service core for PaperStorm task APIs."""
 
-    def __init__(self, root_dir, max_concurrent_tasks: int = 1):
+    def __init__(self, root_dir, max_concurrent_tasks: int = 1, pipeline_runner=None):
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.tasks_dir = self.root_dir / "tasks"
@@ -21,6 +21,7 @@ class PaperStormTaskService:
         self.tasks_dir.mkdir(exist_ok=True)
         self.results_dir.mkdir(exist_ok=True)
         self.max_concurrent_tasks = max(1, int(max_concurrent_tasks))
+        self.pipeline_runner = pipeline_runner
 
     def submit_research_task(
         self,
@@ -67,9 +68,14 @@ class PaperStormTaskService:
                 raise RuntimeError("simulated task failure for service testing")
             if state.get("run_mode") == "manual":
                 return state
-            if state.get("run_mode") != "fake":
-                raise ValueError("Only run_mode='fake' is supported by the service core.")
-            self._run_fake_research(state)
+            if state.get("run_mode") == "paperstorm":
+                self._run_paperstorm_pipeline(state)
+            elif state.get("run_mode") != "fake":
+                raise ValueError(
+                    "Supported run modes are 'fake', 'paperstorm', 'manual', and 'fail'."
+                )
+            else:
+                self._run_fake_research(state)
             state["status"] = "succeeded"
             state["finished_at"] = _now()
         except Exception as error:
@@ -268,6 +274,14 @@ class PaperStormTaskService:
         )
         write_scorecards(output_dir, evaluate_run(output_dir, case))
 
+    def _run_paperstorm_pipeline(self, state: Dict):
+        runner = self.pipeline_runner
+        if runner is None:
+            from .paperstorm_pipeline import run_paperstorm_pipeline_task
+
+            runner = run_paperstorm_pipeline_task
+        runner(state)
+
     def _state_path(self, task_id: str):
         return self.tasks_dir / "{0}.json".format(task_id)
 
@@ -332,7 +346,14 @@ def _redact(value):
 
 def _redact_secret(key, value):
     lowered = str(key).lower()
-    if "key" in lowered or "token" in lowered or "secret" in lowered:
+    if lowered in {"api_key", "apikey", "access_key", "secret_key"}:
+        return "***REDACTED***"
+    if (
+        "token" in lowered
+        or "secret" in lowered
+        or "password" in lowered
+        or lowered.endswith("_key")
+    ):
         return "***REDACTED***"
     return value
 

@@ -87,6 +87,7 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 抽象 `PaperStormTaskService` 服务核心层，支持 task_id、queued/running/succeeded/failed 状态、独立 output_dir、文章/trace/scorecard 读取、知识库 QA、fake runner 和错误脱敏，并提供可选 FastAPI 适配器。
 - 增加服务层并发与稳定性 baseline，支持 `max_concurrent_tasks`、`worker_tick`、running 任务容量释放、stale running 恢复和 fake runner 压测报告。
 - 实现静态 PaperStorm Dashboard，基于样例数据展示任务状态、文章、知识库 QA、runtime trace、scorecard、Multi-Agent 保留/过滤结果和 stress report，并补充官方 STORM 架构中文说明与架构图。
+- 将真实 STORM pipeline 封装为可注入 worker，`PaperStormTaskService` 支持 `run_mode="paperstorm"`，统一 fake 和真实任务的 task_id、状态、产物目录、trace、scorecard 和错误处理。
 
 压缩版 bullet：
 
@@ -99,6 +100,7 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 抽象文件存储版 Agent Task Service，支持任务状态、产物隔离、知识库 QA、scorecard/trace 查询和可选 FastAPI 路由。
 - 增加任务队列、并发上限、stale task 恢复和 stress benchmark，输出平均延迟、P95、失败率和最大观察并发。
 - 实现静态 Dashboard 和官方 STORM 中文架构文档，将 Agent 执行链路、评估结果和稳定性报告可视化展示。
+- 接入真实 PaperStorm pipeline worker，并通过 runner 注入让单元测试不依赖真实 LLM/API，保留 fake baseline 作为稳定回归测试。
 
 ## 4. Nonlinear NN Agent 简历项目描述
 
@@ -351,6 +353,22 @@ PaperStorm 最早是论文调研 Agent，但底层能力可以迁移到企业内
 
 ```text
 Agent 系统的问题定位不能只看最终回答。Dashboard 的价值是把 task 状态、runtime trace、scorecard、QA 引用、Multi-Agent 决策和 stress report 展示出来，让执行链路可解释、可复盘、可沟通。对企业 Agent 平台来说，这对应可观测性和跨角色协作：算法、后端、产品都能看到 Agent 为什么这么答、工具是否失败、检索是否跑题、评估指标是否达标。
+```
+
+### Q13.3：真实 LLM pipeline 怎么接入服务层？为什么要 runner 注入？
+
+推荐回答：
+
+```text
+我没有让 service 直接散落调用命令行脚本，而是把真实 STORM pipeline 封装成 `run_paperstorm_pipeline_task(state)`，由 `PaperStormTaskService` 在 `run_mode="paperstorm"` 时调用。service 只关心 task_id、状态、output_dir、trace、scorecard 和错误处理，真实 worker 负责把 task state 映射成 STORM runner 配置。这样 fake runner 和真实 worker 共用同一套服务语义，测试可以注入本地 runner，不依赖真实 LLM、arXiv、网络和余额；生产上也可以把这个 runner 换成队列 worker 或异步 worker。
+```
+
+### Q13.4：这次为什么修了 keywords 脱敏？
+
+推荐回答：
+
+```text
+我在新增 service CLI smoke test 时发现 `expected_keywords` 和 `forbidden_keywords` 被错误脱敏成 `***REDACTED***`。根因是旧脱敏规则只要字段名包含 `key` 就脱敏，误伤了 `keywords`，导致 eval 约束丢失。修复后只对 `api_key`、`secret_key`、`token`、`password` 等真正敏感字段脱敏，同时新增回归测试保证领域关键词不会再丢。
 ```
 
 ### Q11：做普通知识库 QA 会不会降低项目水平？

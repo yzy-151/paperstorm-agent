@@ -573,23 +573,86 @@ feature/paperstorm-eval-harness
 
 ## 8. v0.7：真实 Pipeline Worker 接入
 
+状态：已完成第一阶段。
+
 目标：把 v0.5 的 fake runner 扩展为真实 PaperStorm runner，让服务 API 能触发真实调研流程。
 
-### 功能目标
+### 已完成能力
 
-- 在 `PaperStormTaskService` 中增加 runner 接口，例如 `runner="fake" | "paperstorm"`。
-- 将 `run_paper_storm_minimax.py` 中可复用的配置构造逻辑下沉为函数。
-- 服务层能调用真实 PaperStorm pipeline，支持 arXiv / local-pdf。
-- 真实任务也输出 article、trace、summary、scorecard。
-- 保留 fake runner 作为测试、前端、压测 baseline。
-- 对真实 LLM / retriever 调用加入 timeout、retry、rate limit 的接口位。
+1. 真实 Pipeline Worker 模块
+   - 新增 `knowledge_storm/paperstorm_pipeline.py`。
+   - 提供 `PaperStormPipelineConfig`。
+   - 提供 `build_pipeline_config_from_task_state(state)`。
+   - 提供 `run_paperstorm_pipeline_task(state)`。
+   - 将 service task state 映射为真实 STORM pipeline 所需配置。
+
+2. Service Runner 接入
+   - `PaperStormTaskService` 支持 `run_mode="paperstorm"`。
+   - `run_mode="fake"` 保持原有测试和前端 baseline。
+   - `run_mode="paperstorm"` 调用真实 pipeline worker。
+   - `PaperStormTaskService(..., pipeline_runner=...)` 支持注入 runner，便于单元测试和未来替换为异步 worker / 队列 worker。
+
+3. 统一产物接口
+   - fake runner 和真实 worker 共用 task_id。
+   - fake runner 和真实 worker 共用 `queued / running / succeeded / failed` 状态。
+   - fake runner 和真实 worker 共用 output_dir。
+   - 真实 worker 产物也能被 `get_article()`、`get_trace()`、`get_scorecard()` 读取。
+   - 真实 worker 完成后写入 `pipeline_worker.json`，记录 runner、retriever、LLM provider/model 和 score。
+
+4. 命令行入口
+   - 新增 `examples/storm_examples/run_paperstorm_service_task.py`。
+   - 支持 `--run-mode fake` 验证 service 状态机。
+   - 支持 `--run-mode paperstorm` 触发真实 PaperStorm pipeline。
+   - 支持 arXiv / local-pdf、DeepSeek / MiniMax、阶段开关、trace 开关、关键词评估配置。
+
+5. FastAPI 适配器扩展
+   - `ResearchTaskRequest` 补充真实 worker 需要的参数：`pdf_dir`、`llm_provider`、`llm_model`、并发/轮次/检索参数、四阶段执行开关、`remove_duplicate`、`disable_trace` 和 `verbose`。
+
+6. 关键词脱敏修复
+   - 修复 `expected_keywords` / `forbidden_keywords` 被错误脱敏的问题。
+   - 原因是旧规则只要字段名包含 `key` 就脱敏，误伤了 `keywords`。
+   - 新规则只脱敏真实敏感字段，例如 `api_key`、`secret_key`、`token`、`password`。
+
+### 本版手工命令
+
+fake service worker：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_service_task.py `
+  --topic "pim 神经网络抑制" `
+  --run-mode fake `
+  --output-dir ./results/paperstorm_service_demo `
+  --expected-keyword "passive intermodulation" `
+  --forbidden-keyword DRAM
+```
+
+真实 PaperStorm worker：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_service_task.py `
+  --topic "pim 神经网络抑制" `
+  --run-mode paperstorm `
+  --retriever arxiv `
+  --output-language zh `
+  --llm-provider deepseek `
+  --llm-model flash `
+  --output-dir ./results/paperstorm_service_real `
+  --max-conv-turn 1 `
+  --max-perspective 1 `
+  --search-top-k 2 `
+  --max-thread-num 1 `
+  --expected-keyword "passive intermodulation" `
+  --forbidden-keyword DRAM
+```
 
 ### 验收标准
 
 - fake runner 测试不受影响。
 - 不需要真实 API key 的单元测试仍可通过。
+- service 可通过注入 runner 验证真实模式的状态机、产物读取和失败处理。
 - 有一个手工命令可以用 DeepSeek/arXiv 触发真实任务。
-- 真实任务产物能被 Dashboard 读取展示。
+- 真实任务产物能被 service 层统一读取。
+- 关键词配置不会被误脱敏。
 
 ### 简历价值
 
@@ -599,7 +662,42 @@ feature/paperstorm-eval-harness
 将 PaperStorm Task Service 从 fake runner 扩展到真实 pipeline worker，统一真实调研与测试 baseline 的 task_id、状态、trace、scorecard 和产物读取接口，使 Agent 服务从演示数据推进到真实可运行任务。
 ```
 
-## 9. v1.0：Agent 平台化 Demo
+### 本版没有强行做的内容
+
+- 没有在单元测试中真实调用 DeepSeek 或 arXiv，避免 CI / 本地测试依赖网络、余额和模型波动。
+- 没有引入 Celery / Redis / RQ 等外部队列，当前先完成可注入 worker 接口。
+- 没有让 Dashboard 在线请求 service，下一版 v0.8 再接前端。
+- 没有做真实 LLM/API 的大规模压测，后续需要在稳定网络和可控额度下执行。
+
+## 9. v0.8：Dashboard 读取真实 Service 产物
+
+目标：把 v0.6 的静态 Dashboard 和 v0.7 的真实 service worker 接起来。
+
+### 功能目标
+
+- Dashboard 支持选择 `sample_data.json` 或真实 service task JSON。
+- 增加本地 service API 的轻量 fetch 模式。
+- 展示 queued/running/succeeded/failed 的任务列表。
+- 支持输入 task_id 后读取 article、trace、scorecard、QA。
+- 将真实 worker 的 `pipeline_worker.json` 显示到 Dashboard。
+- 保留静态样例模式，避免演示时依赖服务启动。
+
+### 验收标准
+
+- 不启动服务时，Dashboard 仍能显示 sample data。
+- 启动 FastAPI service 后，Dashboard 能读取一个真实 task 的状态和产物。
+- 前端不会展示 API key、token 或本机敏感路径。
+- 文档包含本地端到端 demo 步骤。
+
+### 简历价值
+
+可写：
+
+```text
+将 PaperStorm 的静态可观测 Dashboard 接入本地 Task Service，支持读取真实任务状态、文章、trace、scorecard 和 pipeline worker 元数据，形成端到端 Agent 平台演示闭环。
+```
+
+## 10. v1.0：Agent 平台化 Demo
 
 目标：形成可投递、可演示、可面试讲 5 分钟的完整项目。
 
@@ -628,7 +726,7 @@ feature/paperstorm-eval-harness
 - 云部署。
 - 企业级监控告警。
 
-## 10. 每次版本更新模板
+## 11. 每次版本更新模板
 
 ```markdown
 ## vX.Y：版本名称

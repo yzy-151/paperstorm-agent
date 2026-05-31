@@ -6,6 +6,7 @@ Example:
 """
 
 from pathlib import Path
+from typing import Optional
 
 from knowledge_storm.paperstorm_service import PaperStormTaskService
 
@@ -23,13 +24,28 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT):
         ) from exc
 
     service = PaperStormTaskService(root_dir=service_root)
-    app = FastAPI(title="PaperStorm Agent Service", version="0.5")
+    app = FastAPI(title="PaperStorm Agent Service", version="0.7")
 
     class ResearchTaskRequest(BaseModel):
         topic: str
         retriever: str = "arxiv"
         output_language: str = "zh"
         run_mode: str = "fake"
+        pdf_dir: Optional[str] = None
+        llm_provider: str = "deepseek"
+        llm_model: str = "flash"
+        max_thread_num: int = 1
+        max_conv_turn: int = 1
+        max_perspective: int = 1
+        search_top_k: int = 2
+        retrieve_top_k: int = 3
+        do_research: bool = True
+        do_generate_outline: bool = True
+        do_generate_article: bool = True
+        do_polish_article: bool = True
+        remove_duplicate: bool = False
+        disable_trace: bool = False
+        verbose: bool = False
         expected_keywords: list[str] = []
         forbidden_keywords: list[str] = []
 

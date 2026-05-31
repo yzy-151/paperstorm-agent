@@ -181,6 +181,15 @@ research -> outline -> article -> polish
 - 新增 `docs/STORM_OFFICIAL_CN.md`，把官方 STORM 架构和核心机制整理为中文说明。
 - README 补充官方 STORM 架构图、两阶段流程图和 Co-STORM 工作流图。
 
+### v0.7：真实 Pipeline Worker 接入
+
+- 新增 `knowledge_storm/paperstorm_pipeline.py`，把真实 STORM pipeline 封装为 service 可调用的 worker。
+- `PaperStormTaskService` 支持 `run_mode="paperstorm"`，同一套 task_id、状态、output_dir、article、trace、scorecard 读取接口可承载 fake 和真实任务。
+- `PaperStormTaskService(..., pipeline_runner=...)` 支持 runner 注入，单元测试可用本地 runner 验证状态机，不依赖真实 LLM/API/网络。
+- 新增 `run_paperstorm_service_task.py`，可从命令行提交并运行单个 service task。
+- FastAPI 请求模型补充真实 worker 参数：LLM provider/model、检索器、PDF 目录、阶段开关、trace 开关等。
+- 修复领域关键词误脱敏问题：`expected_keywords` / `forbidden_keywords` 不再因为字段名包含 `key` 被错误替换。
+
 ## 4. 关键文件
 
 运行入口：
@@ -192,6 +201,7 @@ examples/storm_examples/evaluate_paperstorm_run.py
 examples/storm_examples/paperstorm_service_api.py
 examples/storm_examples/benchmark_paperstorm_service.py
 examples/storm_examples/build_paperstorm_demo_bundle.py
+examples/storm_examples/run_paperstorm_service_task.py
 ```
 
 核心模块：
@@ -206,6 +216,7 @@ knowledge_storm/paperstorm_runtime.py
 knowledge_storm/paperstorm_agents.py
 knowledge_storm/paperstorm_service.py
 knowledge_storm/paperstorm_demo.py
+knowledge_storm/paperstorm_pipeline.py
 ```
 
 测试：
@@ -222,6 +233,8 @@ tests/test_paperstorm_multi_agent.py
 tests/test_paperstorm_service.py
 tests/test_paperstorm_concurrency.py
 tests/test_paperstorm_frontend_docs.py
+tests/test_paperstorm_pipeline.py
+tests/test_paperstorm_service_cli.py
 ```
 
 维护文档：
@@ -319,7 +332,41 @@ Dashboard 展示：
 - Multi-Agent 保留/过滤结果。
 - Stress benchmark。
 
-## 8. 运行 Eval Harness
+## 8. 通过 Service Worker 运行单个任务
+
+fake 模式不需要真实 API key，适合验证 service 状态机：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_service_task.py `
+  --topic "pim 神经网络抑制" `
+  --run-mode fake `
+  --output-dir ./results/paperstorm_service_demo `
+  --expected-keyword "passive intermodulation" `
+  --forbidden-keyword DRAM
+```
+
+真实 PaperStorm worker 示例：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_service_task.py `
+  --topic "pim 神经网络抑制" `
+  --run-mode paperstorm `
+  --retriever arxiv `
+  --output-language zh `
+  --llm-provider deepseek `
+  --llm-model flash `
+  --output-dir ./results/paperstorm_service_real `
+  --max-conv-turn 1 `
+  --max-perspective 1 `
+  --search-top-k 2 `
+  --max-thread-num 1 `
+  --expected-keyword "passive intermodulation" `
+  --forbidden-keyword DRAM
+```
+
+真实 worker 会复用 service 的任务状态、产物目录、trace 和 scorecard 读取接口。真实模式需要可用网络和对应 LLM API key。
+
+## 9. 运行 Eval Harness
 
 示例：
 
@@ -345,7 +392,7 @@ scorecard.md
 - 文章质量。
 - Runtime 可观测性。
 
-## 9. 运行 MCP-style Server
+## 10. 运行 MCP-style Server
 
 手工 `tools/list` 验证：
 
@@ -364,7 +411,7 @@ kb_qa
 
 其中 `local_pdf_search` 需要传入 `--pdf-dir` 后启用。
 
-## 10. 测试
+## 11. 测试
 
 推荐回归测试：
 
@@ -373,6 +420,8 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
   tests.test_paperstorm_frontend_docs `
   tests.test_paperstorm_concurrency `
   tests.test_paperstorm_service `
+  tests.test_paperstorm_pipeline `
+  tests.test_paperstorm_service_cli `
   tests.test_paperstorm_multi_agent `
   tests.test_paperstorm_runtime `
   tests.test_paperstorm_memory_qa `
@@ -386,7 +435,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 最近目标结果：
 
 ```text
-Ran 66 tests
+Ran 72 tests
 OK
 ```
 
@@ -398,12 +447,15 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m py_compile `
   knowledge_storm\paperstorm_tools.py `
   knowledge_storm\paperstorm_demo.py `
   knowledge_storm\paperstorm_service.py `
+  knowledge_storm\paperstorm_pipeline.py `
   examples\storm_examples\evaluate_paperstorm_run.py `
   examples\storm_examples\build_paperstorm_demo_bundle.py `
+  examples\storm_examples\run_paperstorm_service_task.py `
+  examples\storm_examples\paperstorm_service_api.py `
   examples\storm_examples\paperstorm_mcp_server.py
 ```
 
-## 11. 后续版本路线
+## 12. 后续版本路线
 
 详见：
 
@@ -418,9 +470,10 @@ docs/VERSION_PLAN.md
 - v0.5：知识库平台化与服务 API。
 - v0.6：前端展示 Demo。
 - v0.7：真实 Pipeline Worker 接入。
+- v0.8：Dashboard 读取真实 service 产物。
 - v1.0：可投递、可演示的 Agent 平台化 Demo。
 
-## 12. 求职与面试材料
+## 13. 求职与面试材料
 
 详见：
 
@@ -441,7 +494,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - 错误容灾。
 - 结构化技术文档。
 
-## 13. 当前边界
+## 14. 当前边界
 
 已经完成：
 
@@ -450,15 +503,19 @@ docs/RESUME_INTERVIEW_PLAN.md
 - Tool Schema / MCP-style server。
 - Runtime Trace。
 - Eval Harness v1。
+- Memory / Context Compression / QA。
+- Multi-Agent 调研编排。
+- 文件存储版 Task Service。
+- 静态 Dashboard。
+- 真实 PaperStorm pipeline worker 接口。
 
 尚未完成：
 
 - 生产级 API 网关。
 - 多用户和权限系统。
-- 高并发任务队列。
+- 分布式高并发任务队列。
 - 企业级监控告警。
-- 完整 Memory Store。
-- 真正 Multi-Agent 编排。
-- 前端展示。
+- 前端在线调用真实 service。
+- 真实 LLM/API 环境下的大规模压测。
 
 这些内容会按版本计划逐步补齐。
