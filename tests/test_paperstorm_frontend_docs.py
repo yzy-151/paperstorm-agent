@@ -22,7 +22,10 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
             self.assertIn("scorecard", data)
             self.assertIn("trace", data)
             self.assertIn("multi_agent", data)
+            self.assertIn("pipeline_worker", data)
+            self.assertIn("service_snapshot", data)
             self.assertIn("stress_report", data)
+            self.assertEqual(data["project"]["version"], "v0.8")
             self.assertEqual(bundle["data_path"], str(data_path))
             self.assertEqual(bundle["js_path"], str(js_path))
 
@@ -44,6 +47,23 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("sample_data.js", index)
         self.assertIn("sample_data.json", script)
         self.assertIn("PAPERSTORM_SAMPLE_DATA", script)
+
+    def test_static_frontend_can_load_service_dashboard_bundle(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("service-url", index)
+        self.assertIn("service-task-id", index)
+        self.assertIn("load-service-task", index)
+        self.assertIn("/dashboard", script)
+        self.assertIn("loadServiceTask", script)
+        self.assertIn("pipeline-worker", index)
+        self.assertIn("renderPipelineWorker", script)
 
     def test_official_chinese_doc_and_readme_include_storm_architecture(self):
         root = Path(__file__).resolve().parents[1]

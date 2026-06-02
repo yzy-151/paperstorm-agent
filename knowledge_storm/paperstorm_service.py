@@ -201,6 +201,31 @@ class PaperStormTaskService:
         trace_path = Path(state["output_dir"]) / "paperstorm_trace.jsonl"
         return {"task_id": task_id, "events": _load_jsonl(trace_path)}
 
+    def get_dashboard_bundle(self, task_id: str):
+        state = self._read_state(task_id)
+        output_dir = Path(state["output_dir"])
+        return {
+            "project": {
+                "name": "PaperStorm Agent",
+                "version": "v0.8",
+                "description": "Service-backed PaperStorm dashboard snapshot",
+            },
+            "tasks": [state],
+            "article": self.get_article(task_id),
+            "qa": _read_json(output_dir / "qa_answer.json", {}),
+            "scorecard": self.get_scorecard(task_id),
+            "trace": self.get_trace(task_id),
+            "pipeline_worker": _read_json(output_dir / "pipeline_worker.json", {}),
+            "service_snapshot": {
+                "task_id": task_id,
+                "output_dir": str(output_dir),
+                "status": state.get("status", ""),
+                "run_mode": state.get("run_mode", ""),
+                "retriever": state.get("retriever", ""),
+                "updated_at": state.get("updated_at", ""),
+            },
+        }
+
     def query_knowledge_base(self, task_id: str, question: str, top_k: int = 3):
         state = self._read_state(task_id)
         output_dir = Path(state["output_dir"])

@@ -1,30 +1,37 @@
 window.PAPERSTORM_SAMPLE_DATA = {
   "project": {
     "name": "PaperStorm Agent",
-    "version": "v0.6",
-    "description": "RAG + Memory + Runtime + Multi-Agent dashboard demo"
+    "version": "v0.8",
+    "description": "Service-backed RAG + Memory + Multi-Agent dashboard demo"
   },
   "tasks": [
     {
-      "task_id": "24e77e32b5f2451ba388c1acba2df626",
+      "task_id": "314fba29d3274ae2907ce62e3f2b3e32",
       "topic": "pim 神经网络抑制",
       "retriever": "arxiv",
       "output_language": "zh",
       "run_mode": "fake",
       "status": "succeeded",
-      "output_dir": "demo://paperstorm_dashboard/tasks/24e77e32b5f2451ba388c1acba2df626",
-      "created_at": "2026-07-28T04:34:54.507996+00:00",
-      "updated_at": "2026-07-28T04:34:54.526715+00:00",
+      "output_dir": "demo://paperstorm_dashboard/tasks/314fba29d3274ae2907ce62e3f2b3e32",
+      "created_at": "2026-07-28T06:32:06.455881+00:00",
+      "updated_at": "2026-07-28T06:32:06.471873+00:00",
       "queue_index": 1,
-      "expected_keywords": "***REDACTED***",
-      "forbidden_keywords": "***REDACTED***",
+      "expected_keywords": [
+        "passive intermodulation",
+        "RF"
+      ],
+      "forbidden_keywords": [
+        "processing-in-memory",
+        "DRAM",
+        "RAM"
+      ],
       "options": {},
-      "started_at": "2026-07-28T04:34:54.507996+00:00",
-      "finished_at": "2026-07-28T04:34:54.526715+00:00"
+      "started_at": "2026-07-28T06:32:06.455881+00:00",
+      "finished_at": "2026-07-28T06:32:06.471873+00:00"
     }
   ],
   "article": {
-    "task_id": "24e77e32b5f2451ba388c1acba2df626",
+    "task_id": "314fba29d3274ae2907ce62e3f2b3e32",
     "path": "demo://paperstorm_dashboard/storm_gen_article_polished.txt",
     "content": "# pim 神经网络抑制\n\nPIM 在本任务中指 passive intermodulation，是 RF 系统中由无源器件非线性导致的互调杂散问题。[1]\n\n神经网络方法可以学习非线性抵消器，用于 passive intermodulation suppression 和 cancellation。[2]\n"
   },
@@ -35,7 +42,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       {
         "id": 1,
         "title": "Generated article paragraph 1",
-        "url": "C:\\Users\\yzy\\AppData\\Local\\Temp\\tmpb8_x90i5\\service\\results\\24e77e32b5f2451ba388c1acba2df626\\storm_gen_article_polished.txt",
+        "url": "demo://paperstorm_dashboard\\service\\results\\314fba29d3274ae2907ce62e3f2b3e32\\storm_gen_article_polished.txt",
         "source": "article",
         "document_id": "article-1"
       }
@@ -47,7 +54,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
         "id": "article-1",
         "title": "Generated article paragraph 1",
         "content": "PIM 在本任务中指 passive intermodulation，是 RF 系统中由无源器件非线性导致的互调杂散问题。[1]",
-        "url": "C:\\Users\\yzy\\AppData\\Local\\Temp\\tmpb8_x90i5\\service\\results\\24e77e32b5f2451ba388c1acba2df626\\storm_gen_article_polished.txt",
+        "url": "demo://paperstorm_dashboard\\service\\results\\314fba29d3274ae2907ce62e3f2b3e32\\storm_gen_article_polished.txt",
         "source": "article"
       }
     ]
@@ -55,36 +62,21 @@ window.PAPERSTORM_SAMPLE_DATA = {
   "scorecard": {
     "topic": "pim 神经网络抑制",
     "scores": {
-      "total": 58.43,
+      "total": 85.0,
       "task_completion": 20.0,
-      "retrieval_quality": 21.43,
-      "offtopic_penalty": 15.0,
-      "article_quality": 17.0,
+      "retrieval_quality": 30.0,
+      "offtopic_penalty": 0.0,
+      "article_quality": 20.0,
       "runtime_observability": 15.0
     },
     "metrics": {
       "source_count": 1,
       "expected_hits": [
-        "R",
-        "E",
-        "D",
-        "A",
-        "C",
-        "T",
-        "E",
-        "D"
+        "passive intermodulation",
+        "RF"
       ],
-      "forbidden_hits": [
-        "R",
-        "E",
-        "D",
-        "A",
-        "C",
-        "T",
-        "E",
-        "D"
-      ],
-      "offtopic_result_count": 1,
+      "forbidden_hits": [],
+      "offtopic_result_count": 0,
       "chinese_char_ratio": 0.3768,
       "trace_event_count": 4
     },
@@ -96,34 +88,47 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "run_success": true
     },
     "notes": [
-      "检索或文章中出现跑题关键词：R, E, D, A, C, T, E, D",
-      "未覆盖期望关键词：*, *, *, *, *, *"
+      "本次运行的核心指标满足当前规则评估要求。"
     ]
   },
   "trace": {
-    "task_id": "24e77e32b5f2451ba388c1acba2df626",
+    "task_id": "314fba29d3274ae2907ce62e3f2b3e32",
     "events": [
       {
         "event": "run_start",
-        "task_id": "24e77e32b5f2451ba388c1acba2df626",
+        "task_id": "314fba29d3274ae2907ce62e3f2b3e32",
         "success": true
       },
       {
         "event": "tool_start",
-        "task_id": "24e77e32b5f2451ba388c1acba2df626",
+        "task_id": "314fba29d3274ae2907ce62e3f2b3e32",
         "tool": "fake_research"
       },
       {
         "event": "tool_end",
-        "task_id": "24e77e32b5f2451ba388c1acba2df626",
+        "task_id": "314fba29d3274ae2907ce62e3f2b3e32",
         "tool": "fake_research"
       },
       {
         "event": "run_end",
-        "task_id": "24e77e32b5f2451ba388c1acba2df626",
+        "task_id": "314fba29d3274ae2907ce62e3f2b3e32",
         "success": true
       }
     ]
+  },
+  "pipeline_worker": {
+    "runner": "fake",
+    "run_mode": "fake",
+    "retriever": "arxiv",
+    "status": "succeeded",
+    "score": 85.0
+  },
+  "service_snapshot": {
+    "task_id": "314fba29d3274ae2907ce62e3f2b3e32",
+    "output_dir": "demo://paperstorm_dashboard/tasks/314fba29d3274ae2907ce62e3f2b3e32",
+    "status": "succeeded",
+    "run_mode": "fake",
+    "retriever": "arxiv"
   },
   "multi_agent": {
     "topic": "pim 神经网络抑制",
@@ -218,7 +223,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "PlannerAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.634781+00:00",
+      "timestamp": "2026-07-28T06:32:06.585104+00:00",
       "payload_summary": {
         "topic": "pim 神经网络抑制",
         "expected_keywords": {
@@ -232,7 +237,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "PlannerAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.634781+00:00",
+      "timestamp": "2026-07-28T06:32:06.585104+00:00",
       "payload_summary": {
         "agent": "PlannerAgent",
         "topic": "pim 神经网络抑制",
@@ -247,7 +252,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "RetrieverAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.634781+00:00",
+      "timestamp": "2026-07-28T06:32:06.585104+00:00",
       "payload_summary": {
         "session": {
           "type": "PaperStormRuntimeSession"
@@ -265,7 +270,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "RetrieverAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.634781+00:00",
+      "timestamp": "2026-07-28T06:32:06.585104+00:00",
       "payload_summary": {
         "agent": "RetrieverAgent",
         "results": {
@@ -279,7 +284,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "CriticAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.641308+00:00",
+      "timestamp": "2026-07-28T06:32:06.585104+00:00",
       "payload_summary": {
         "results": {
           "type": "list",
@@ -300,7 +305,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "CriticAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.641308+00:00",
+      "timestamp": "2026-07-28T06:32:06.585104+00:00",
       "payload_summary": {
         "agent": "CriticAgent",
         "kept": {
@@ -318,7 +323,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "MemoryAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.641308+00:00",
+      "timestamp": "2026-07-28T06:32:06.595565+00:00",
       "payload_summary": {
         "memory": {
           "type": "PaperStormMemoryStore"
@@ -339,7 +344,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "MemoryAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.641308+00:00",
+      "timestamp": "2026-07-28T06:32:06.595565+00:00",
       "payload_summary": {
         "agent": "MemoryAgent",
         "episodic_count": 2,
@@ -351,7 +356,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "EvaluatorAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.641308+00:00",
+      "timestamp": "2026-07-28T06:32:06.595565+00:00",
       "payload_summary": {
         "query_plan": {
           "type": "list",
@@ -376,7 +381,7 @@ window.PAPERSTORM_SAMPLE_DATA = {
       "agent": "EvaluatorAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T04:34:54.641308+00:00",
+      "timestamp": "2026-07-28T06:32:06.595565+00:00",
       "payload_summary": {
         "agent": "EvaluatorAgent",
         "scores": {
@@ -402,8 +407,8 @@ window.PAPERSTORM_SAMPLE_DATA = {
     "succeeded": 4,
     "failed": 2,
     "failure_rate": 0.3333,
-    "avg_latency_sec": 0.0086,
-    "p95_latency_sec": 0.0169,
+    "avg_latency_sec": 0.0069,
+    "p95_latency_sec": 0.0104,
     "max_concurrent_tasks": 2,
     "max_observed_running": 2,
     "retry_count": 0

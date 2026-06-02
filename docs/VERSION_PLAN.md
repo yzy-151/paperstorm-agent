@@ -671,16 +671,38 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 
 ## 9. v0.8：Dashboard 读取真实 Service 产物
 
+状态：已完成第一阶段。
+
 目标：把 v0.6 的静态 Dashboard 和 v0.7 的真实 service worker 接起来。
 
-### 功能目标
+### 已完成能力
 
-- Dashboard 支持选择 `sample_data.json` 或真实 service task JSON。
-- 增加本地 service API 的轻量 fetch 模式。
-- 展示 queued/running/succeeded/failed 的任务列表。
-- 支持输入 task_id 后读取 article、trace、scorecard、QA。
-- 将真实 worker 的 `pipeline_worker.json` 显示到 Dashboard。
-- 保留静态样例模式，避免演示时依赖服务启动。
+1. Service Dashboard Bundle
+   - `PaperStormTaskService.get_dashboard_bundle(task_id)` 聚合单个任务的展示数据。
+   - bundle 包含 project、tasks、article、QA、scorecard、trace、pipeline_worker 和 service_snapshot。
+   - 前端不需要分别请求 task/article/trace/scorecard/QA 多个接口，降低展示页耦合。
+
+2. FastAPI 聚合接口
+   - 新增 `GET /research-tasks/{task_id}/dashboard`。
+   - 真实 service task 可被 Dashboard 一次性读取。
+   - 保留原 article、trace、scorecard、QA 细粒度接口。
+
+3. Dashboard 在线读取模式
+   - 页面顶部新增 Service URL 输入框。
+   - 页面顶部新增 Task ID 输入框。
+   - 新增“加载真实任务”按钮。
+   - 新增“加载样例数据”按钮。
+   - 默认仍加载 `sample_data.js/json`，避免演示时必须启动服务。
+
+4. Pipeline Worker 展示
+   - Dashboard 新增 Pipeline Worker 面板。
+   - 展示 runner、run_mode、retriever、llm_provider、llm_model、status、score。
+   - 对 fake / paperstorm 两种任务都能展示有意义的 worker 元数据或 service snapshot。
+
+5. Demo Bundle v0.8
+   - `build_demo_bundle()` 输出 project version `v0.8`。
+   - `sample_data.json/js` 增加 pipeline_worker 和 service_snapshot。
+   - 递归替换本机临时路径为 `demo://paperstorm_dashboard/...`，避免把 `%TEMP%` 路径写进正式样例数据。
 
 ### 验收标准
 
@@ -688,6 +710,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 - 启动 FastAPI service 后，Dashboard 能读取一个真实 task 的状态和产物。
 - 前端不会展示 API key、token 或本机敏感路径。
 - 文档包含本地端到端 demo 步骤。
+- 新增和既有测试全部通过。
 
 ### 简历价值
 
@@ -697,7 +720,42 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 将 PaperStorm 的静态可观测 Dashboard 接入本地 Task Service，支持读取真实任务状态、文章、trace、scorecard 和 pipeline worker 元数据，形成端到端 Agent 平台演示闭环。
 ```
 
-## 10. v1.0：Agent 平台化 Demo
+### 本版没有强行做的内容
+
+- 没有引入 React/Vite，当前仍保持零构建静态 Dashboard。
+- 没有做鉴权、跨域配置模板和生产部署。
+- 没有做前端创建任务、运行任务、轮询任务的完整交互；当前先做 task_id 读取真实产物。
+- 没有把 Dashboard 变成复杂后台管理系统，避免偏离 Agent 能力主线。
+
+## 10. v0.9：端到端本地 Demo 与任务轮询
+
+目标：从“输入 task_id 看结果”推进到“前端提交任务、运行任务、轮询状态、查看结果”的本地闭环。
+
+### 功能目标
+
+- Dashboard 支持提交 fake task。
+- Dashboard 支持提交 paperstorm task。
+- Dashboard 支持点击运行 task。
+- Dashboard 支持轮询 queued/running/succeeded/failed 状态。
+- Dashboard 支持任务失败时展示结构化 error。
+- 增加本地演示脚本，一条命令启动 service，一条命令打开/生成 Dashboard。
+
+### 验收标准
+
+- 不依赖真实 API key 的 fake 端到端 demo 可以完整跑通。
+- 真实 worker 仍然通过手工参数和 API key 控制，不在测试中真实调用。
+- 前端能展示 task 从 queued 到 succeeded/failed 的状态变化。
+- 文档能支持 5 分钟面试演示。
+
+### 简历价值
+
+可写：
+
+```text
+将 PaperStorm Dashboard 从结果查看器扩展为本地端到端 Agent 控制台，支持提交任务、运行任务、轮询状态、展示失败原因和查看 trace/scorecard，形成可演示的轻量 Agent 平台原型。
+```
+
+## 11. v1.0：Agent 平台化 Demo
 
 目标：形成可投递、可演示、可面试讲 5 分钟的完整项目。
 
@@ -726,7 +784,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 - 云部署。
 - 企业级监控告警。
 
-## 11. 每次版本更新模板
+## 12. 每次版本更新模板
 
 ```markdown
 ## vX.Y：版本名称

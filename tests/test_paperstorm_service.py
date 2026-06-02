@@ -75,6 +75,29 @@ class PaperStormServiceTest(unittest.TestCase):
         self.assertTrue(answer["citations"])
         self.assertIn("passive intermodulation", answer["answer"])
 
+    def test_dashboard_bundle_collects_task_artifacts_for_frontend(self):
+        service = self.make_service()
+        task = service.submit_research_task(
+            topic="pim 神经网络抑制",
+            retriever="arxiv",
+            output_language="zh",
+            run_mode="fake",
+            expected_keywords=["passive intermodulation"],
+            forbidden_keywords=["DRAM"],
+        )
+        service.run_task(task["task_id"])
+        service.query_knowledge_base(task["task_id"], "PIM 是什么？")
+
+        bundle = service.get_dashboard_bundle(task["task_id"])
+
+        self.assertEqual(bundle["project"]["version"], "v0.8")
+        self.assertEqual(bundle["tasks"][0]["task_id"], task["task_id"])
+        self.assertIn("passive intermodulation", bundle["article"]["content"])
+        self.assertTrue(bundle["trace"]["events"])
+        self.assertGreater(bundle["scorecard"]["scores"]["total"], 50)
+        self.assertTrue(bundle["qa"]["grounded"])
+        self.assertIn("service_snapshot", bundle)
+
     def test_two_tasks_write_to_separate_output_dirs(self):
         service = self.make_service()
 

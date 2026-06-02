@@ -190,6 +190,15 @@ research -> outline -> article -> polish
 - FastAPI 请求模型补充真实 worker 参数：LLM provider/model、检索器、PDF 目录、阶段开关、trace 开关等。
 - 修复领域关键词误脱敏问题：`expected_keywords` / `forbidden_keywords` 不再因为字段名包含 `key` 被错误替换。
 
+### v0.8：Dashboard 读取 Service 产物
+
+- `PaperStormTaskService.get_dashboard_bundle(task_id)`：聚合 task、article、QA、scorecard、trace、pipeline worker 和 service snapshot。
+- FastAPI 新增 `GET /research-tasks/{task_id}/dashboard`，前端可一次请求拿到真实任务展示数据。
+- Dashboard 增加 Service URL、Task ID、加载真实任务和加载样例数据控件。
+- Dashboard 新增 Pipeline Worker 面板，展示真实 worker 的 runner、retriever、LLM 和 score 元数据。
+- 静态 `sample_data.json/js` 升级到 v0.8，离线打开 HTML 仍可展示完整样例。
+- Demo bundle 递归清理本机临时路径，静态数据中的运行目录统一展示为 `demo://paperstorm_dashboard/...`。
+
 ## 4. 关键文件
 
 运行入口：
@@ -331,6 +340,14 @@ Dashboard 展示：
 - Eval scorecard。
 - Multi-Agent 保留/过滤结果。
 - Stress benchmark。
+- Pipeline Worker 元数据。
+
+连接本地 service 查看真实任务：
+
+1. 启动 `paperstorm_service_api.py` 对应的 FastAPI 服务。
+2. 在 Dashboard 顶部输入 service URL，例如 `http://127.0.0.1:8000`。
+3. 输入 task_id。
+4. 点击“加载真实任务”。
 
 ## 8. 通过 Service Worker 运行单个任务
 
@@ -435,7 +452,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 最近目标结果：
 
 ```text
-Ran 72 tests
+Ran 74 tests
 OK
 ```
 
@@ -471,6 +488,7 @@ docs/VERSION_PLAN.md
 - v0.6：前端展示 Demo。
 - v0.7：真实 Pipeline Worker 接入。
 - v0.8：Dashboard 读取真实 service 产物。
+- v0.9：端到端本地 Demo 与任务轮询。
 - v1.0：可投递、可演示的 Agent 平台化 Demo。
 
 ## 13. 求职与面试材料
@@ -508,6 +526,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - 文件存储版 Task Service。
 - 静态 Dashboard。
 - 真实 PaperStorm pipeline worker 接口。
+- Dashboard 轻量读取真实 service task 产物。
 
 尚未完成：
 
@@ -515,7 +534,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - 多用户和权限系统。
 - 分布式高并发任务队列。
 - 企业级监控告警。
-- 前端在线调用真实 service。
+- 生产级前端构建、鉴权和部署。
 - 真实 LLM/API 环境下的大规模压测。
 
 这些内容会按版本计划逐步补齐。

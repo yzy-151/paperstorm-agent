@@ -24,7 +24,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT):
         ) from exc
 
     service = PaperStormTaskService(root_dir=service_root)
-    app = FastAPI(title="PaperStorm Agent Service", version="0.7")
+    app = FastAPI(title="PaperStorm Agent Service", version="0.8")
 
     class ResearchTaskRequest(BaseModel):
         topic: str
@@ -76,6 +76,10 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT):
     @app.get("/research-tasks/{task_id}/trace")
     def get_research_trace(task_id: str):
         return service.get_trace(task_id)
+
+    @app.get("/research-tasks/{task_id}/dashboard")
+    def get_research_dashboard(task_id: str):
+        return service.get_dashboard_bundle(task_id)
 
     @app.post("/knowledge-bases/{task_id}/query")
     def query_knowledge_base(task_id: str, request: KnowledgeBaseQueryRequest):

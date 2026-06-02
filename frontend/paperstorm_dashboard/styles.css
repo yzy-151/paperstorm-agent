@@ -66,6 +66,61 @@ h2 {
   text-align: center;
 }
 
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 1fr) auto auto minmax(120px, auto);
+  gap: 10px;
+  align-items: end;
+  padding: 14px 32px;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.toolbar label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.toolbar input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+}
+
+.toolbar button {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toolbar button + button {
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--ink);
+}
+
+#data-source-status {
+  min-height: 36px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -148,6 +203,11 @@ h2 {
     align-items: start;
     flex-direction: column;
     padding: 22px 18px 16px;
+  }
+
+  .toolbar {
+    grid-template-columns: 1fr;
+    padding: 14px 16px;
   }
 
   .dashboard-grid {

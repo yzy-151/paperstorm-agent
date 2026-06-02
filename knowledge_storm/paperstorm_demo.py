@@ -84,18 +84,35 @@ def build_demo_bundle(output_dir):
         data = {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v0.6",
-                "description": "RAG + Memory + Runtime + Multi-Agent dashboard demo",
+                "version": "v0.8",
+                "description": "Service-backed RAG + Memory + Multi-Agent dashboard demo",
             },
             "tasks": [task_state],
             "article": article,
             "qa": qa,
             "scorecard": service.get_scorecard(task["task_id"]),
             "trace": service.get_trace(task["task_id"]),
+            "pipeline_worker": {
+                "runner": "fake",
+                "run_mode": "fake",
+                "retriever": "arxiv",
+                "status": "succeeded",
+                "score": service.get_scorecard(task["task_id"])
+                .get("scores", {})
+                .get("total", ""),
+            },
+            "service_snapshot": {
+                "task_id": task["task_id"],
+                "output_dir": f"demo://paperstorm_dashboard/tasks/{task['task_id']}",
+                "status": "succeeded",
+                "run_mode": "fake",
+                "retriever": "arxiv",
+            },
             "multi_agent": multi_agent,
             "agent_trace": _load_jsonl(agent_output_dir / "agent_trace.jsonl"),
             "stress_report": stress_report,
         }
+        data = _sanitize_demo_paths(data, temp_root)
     data_path = output_dir / "sample_data.json"
     data_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     js_path = output_dir / "sample_data.js"
@@ -120,3 +137,13 @@ def _load_jsonl(path):
         except json.JSONDecodeError:
             events.append({"event": "decode_error"})
     return events
+
+
+def _sanitize_demo_paths(value, temp_root):
+    if isinstance(value, dict):
+        return {key: _sanitize_demo_paths(item, temp_root) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_demo_paths(item, temp_root) for item in value]
+    if isinstance(value, str):
+        return value.replace(str(temp_root), "demo://paperstorm_dashboard")
+    return value

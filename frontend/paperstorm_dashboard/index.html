@@ -15,6 +15,20 @@
       <div class="status-pill" id="project-version">loading</div>
     </header>
 
+    <section class="toolbar" aria-label="service data loader">
+      <label>
+        Service URL
+        <input id="service-url" value="http://127.0.0.1:8000" />
+      </label>
+      <label>
+        Task ID
+        <input id="service-task-id" placeholder="输入 task_id" />
+      </label>
+      <button id="load-service-task" type="button">加载真实任务</button>
+      <button id="load-sample-data" type="button">加载样例数据</button>
+      <span id="data-source-status">sample data</span>
+    </section>
+
     <main class="dashboard-grid">
       <section class="panel" id="task-panel">
         <h2>任务状态</h2>
@@ -44,6 +58,11 @@
       <section class="panel wide" id="multi-agent-panel">
         <h2>Multi-Agent 编排</h2>
         <div id="multi-agent" class="stack"></div>
+      </section>
+
+      <section class="panel" id="pipeline-worker-panel">
+        <h2>Pipeline Worker</h2>
+        <div id="pipeline-worker" class="metric-grid"></div>
       </section>
 
       <section class="panel wide" id="stress-panel">

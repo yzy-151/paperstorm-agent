@@ -1,19 +1,26 @@
 async function loadDashboard() {
   try {
     const data = window.PAPERSTORM_SAMPLE_DATA || await fetchSampleData();
-    renderProject(data.project || {});
-    renderTasks(data.tasks || []);
-    renderScorecard(data.scorecard || {});
-    renderArticle(data.article || {});
-    renderQA(data.qa || {});
-    renderTrace(data.trace || {});
-    renderMultiAgent(data.multi_agent || {}, data.agent_trace || []);
-    renderStress(data.stress_report || {});
+    renderDashboard(data);
+    setStatus("sample data");
   } catch (error) {
     document.querySelector("#task-list").innerHTML =
       `<div class="item">请先运行 <code>python examples/storm_examples/build_paperstorm_demo_bundle.py --output-dir frontend/paperstorm_dashboard</code></div>`;
     document.querySelector("#project-version").textContent = "no data";
+    setStatus(error.message);
   }
+}
+
+function renderDashboard(data) {
+  renderProject(data.project || {});
+  renderTasks(data.tasks || []);
+  renderScorecard(data.scorecard || {});
+  renderArticle(data.article || {});
+  renderQA(data.qa || {});
+  renderTrace(data.trace || {});
+  renderMultiAgent(data.multi_agent || {}, data.agent_trace || []);
+  renderPipelineWorker(data.pipeline_worker || {}, data.service_snapshot || {});
+  renderStress(data.stress_report || {});
 }
 
 async function fetchSampleData() {
@@ -24,8 +31,35 @@ async function fetchSampleData() {
   return response.json();
 }
 
+async function loadServiceTask() {
+  const baseUrl = document.querySelector("#service-url").value.replace(/\/+$/, "");
+  const taskId = document.querySelector("#service-task-id").value.trim();
+  if (!taskId) {
+    setStatus("请输入 task_id");
+    return;
+  }
+  setStatus("loading service task");
+  try {
+    const response = await fetch(`${baseUrl}/research-tasks/${encodeURIComponent(taskId)}/dashboard`);
+    if (!response.ok) {
+      throw new Error(`service ${response.status}`);
+    }
+    const data = await response.json();
+    renderDashboard(data);
+    setStatus(`service task ${taskId}`);
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function loadSampleData() {
+  const data = window.PAPERSTORM_SAMPLE_DATA || await fetchSampleData();
+  renderDashboard(data);
+  setStatus("sample data");
+}
+
 function renderProject(project) {
-  document.querySelector("#project-version").textContent = project.version || "v0.6";
+  document.querySelector("#project-version").textContent = project.version || "v0.8";
 }
 
 function renderTasks(tasks) {
@@ -86,6 +120,19 @@ function renderMultiAgent(report, agentTrace) {
   `;
 }
 
+function renderPipelineWorker(worker, snapshot) {
+  const data = Object.keys(worker).length ? worker : snapshot;
+  document.querySelector("#pipeline-worker").innerHTML = [
+    "runner",
+    "run_mode",
+    "retriever",
+    "llm_provider",
+    "llm_model",
+    "status",
+    "score",
+  ].map(name => metric(name, data[name])).join("");
+}
+
 function renderStress(report) {
   document.querySelector("#stress-report").innerHTML = [
     "total_tasks",
@@ -96,6 +143,10 @@ function renderStress(report) {
     "p95_latency_sec",
     "max_observed_running",
   ].map(name => metric(name, report[name])).join("");
+}
+
+function setStatus(message) {
+  document.querySelector("#data-source-status").textContent = message;
 }
 
 function metric(name, value) {
@@ -115,5 +166,8 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+document.querySelector("#load-service-task").addEventListener("click", loadServiceTask);
+document.querySelector("#load-sample-data").addEventListener("click", loadSampleData);
 
 loadDashboard();

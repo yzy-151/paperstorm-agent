@@ -88,6 +88,7 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 增加服务层并发与稳定性 baseline，支持 `max_concurrent_tasks`、`worker_tick`、running 任务容量释放、stale running 恢复和 fake runner 压测报告。
 - 实现静态 PaperStorm Dashboard，基于样例数据展示任务状态、文章、知识库 QA、runtime trace、scorecard、Multi-Agent 保留/过滤结果和 stress report，并补充官方 STORM 架构中文说明与架构图。
 - 将真实 STORM pipeline 封装为可注入 worker，`PaperStormTaskService` 支持 `run_mode="paperstorm"`，统一 fake 和真实任务的 task_id、状态、产物目录、trace、scorecard 和错误处理。
+- 为 Dashboard 增加 service-backed snapshot 接口，聚合 task、article、QA、scorecard、trace、pipeline worker 元数据和 service snapshot，支持前端通过 task_id 读取真实任务产物。
 
 压缩版 bullet：
 
@@ -101,6 +102,7 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 增加任务队列、并发上限、stale task 恢复和 stress benchmark，输出平均延迟、P95、失败率和最大观察并发。
 - 实现静态 Dashboard 和官方 STORM 中文架构文档，将 Agent 执行链路、评估结果和稳定性报告可视化展示。
 - 接入真实 PaperStorm pipeline worker，并通过 runner 注入让单元测试不依赖真实 LLM/API，保留 fake baseline 作为稳定回归测试。
+- 将 Dashboard 接入 service dashboard bundle，支持输入 service URL 和 task_id 查看真实任务的 article、trace、scorecard 和 worker 元数据。
 
 ## 4. Nonlinear NN Agent 简历项目描述
 
@@ -369,6 +371,14 @@ Agent 系统的问题定位不能只看最终回答。Dashboard 的价值是把 
 
 ```text
 我在新增 service CLI smoke test 时发现 `expected_keywords` 和 `forbidden_keywords` 被错误脱敏成 `***REDACTED***`。根因是旧脱敏规则只要字段名包含 `key` 就脱敏，误伤了 `keywords`，导致 eval 约束丢失。修复后只对 `api_key`、`secret_key`、`token`、`password` 等真正敏感字段脱敏，同时新增回归测试保证领域关键词不会再丢。
+```
+
+### Q13.5：Dashboard 为什么要后端聚合 snapshot，而不是前端分别调很多接口？
+
+推荐回答：
+
+```text
+我给 service 增加了 `get_dashboard_bundle(task_id)` 和 `/research-tasks/{task_id}/dashboard`，把 task、article、QA、scorecard、trace、pipeline worker 元数据聚合成一个前端 snapshot。这样前端只负责展示，后端负责产物结构和路径处理，减少前端对内部文件结构的依赖。对 Agent 平台来说，这是一种常见的可观测性接口设计：调试页面需要的是一次运行的完整视图，而不是让页面自己拼很多低层接口。
 ```
 
 ### Q11：做普通知识库 QA 会不会降低项目水平？
