@@ -729,23 +729,50 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 
 ## 10. v0.9：端到端本地 Demo 与任务轮询
 
+状态：已完成第一阶段。
+
 目标：从“输入 task_id 看结果”推进到“前端提交任务、运行任务、轮询状态、查看结果”的本地闭环。
 
-### 功能目标
+### 已完成能力
 
-- Dashboard 支持提交 fake task。
-- Dashboard 支持提交 paperstorm task。
-- Dashboard 支持点击运行 task。
-- Dashboard 支持轮询 queued/running/succeeded/failed 状态。
-- Dashboard 支持任务失败时展示结构化 error。
-- 增加本地演示脚本，一条命令启动 service，一条命令打开/生成 Dashboard。
+1. Service 任务列表
+   - `PaperStormTaskService.list_tasks(status=None)` 返回所有任务或按状态过滤任务。
+   - 任务按 `queue_index` 和 `created_at` 保持稳定顺序。
+   - 支撑 Dashboard 刷新任务列表和后续轮询。
+
+2. FastAPI 控制接口
+   - 新增 `GET /research-tasks`。
+   - 保留 `POST /research-tasks` 创建任务。
+   - 保留 `POST /research-tasks/{task_id}/run` 运行任务。
+   - 保留 `GET /research-tasks/{task_id}/dashboard` 聚合读取任务产物。
+   - 增加 CORS middleware，方便本地 HTML 直接访问 `http://127.0.0.1:8000`。
+
+3. Dashboard 任务控制台
+   - 新增 topic 输入。
+   - 新增 run mode 选择：`fake` / `paperstorm`。
+   - 新增 retriever 选择：`arxiv` / `local-pdf`。
+   - 新增 output language 选择。
+   - 新增 expected / forbidden keyword 输入。
+   - 新增“提交任务”“运行选中任务”“轮询选中任务”“刷新任务列表”。
+
+4. 失败可观测
+   - Dashboard 增加 `task-error-panel`。
+   - 任务失败时展示 service 返回的结构化 error。
+   - 成功或未失败任务显示无结构化错误。
+
+5. Demo Bundle v0.9
+   - `build_demo_bundle()` 输出 project version `v0.9`。
+   - 静态样例仍可离线打开。
+   - 前端控制台和静态展示共存，演示时可选择是否启动服务。
 
 ### 验收标准
 
 - 不依赖真实 API key 的 fake 端到端 demo 可以完整跑通。
 - 真实 worker 仍然通过手工参数和 API key 控制，不在测试中真实调用。
-- 前端能展示 task 从 queued 到 succeeded/failed 的状态变化。
+- 前端能提交 task、运行 task、轮询 task 并展示结果。
+- 前端能展示 task 的结构化失败信息。
 - 文档能支持 5 分钟面试演示。
+- 新增和既有测试全部通过。
 
 ### 简历价值
 
@@ -754,6 +781,13 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 ```text
 将 PaperStorm Dashboard 从结果查看器扩展为本地端到端 Agent 控制台，支持提交任务、运行任务、轮询状态、展示失败原因和查看 trace/scorecard，形成可演示的轻量 Agent 平台原型。
 ```
+
+### 本版没有强行做的内容
+
+- 没有做自动定时轮询，避免静态页面误触发真实 API 成本。
+- 没有做复杂前端状态管理，当前保持零构建原生 JS。
+- 没有做登录、鉴权、用户隔离和生产部署。
+- 没有在测试中真实调用 `paperstorm` worker，真实 API 仍由手工命令控制。
 
 ## 11. v1.0：Agent 平台化 Demo
 

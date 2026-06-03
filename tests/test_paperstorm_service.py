@@ -112,6 +112,22 @@ class PaperStormServiceTest(unittest.TestCase):
         self.assertTrue((Path(first_state["output_dir"]) / "run_summary.json").exists())
         self.assertTrue((Path(second_state["output_dir"]) / "run_summary.json").exists())
 
+    def test_list_tasks_returns_recent_tasks_for_dashboard_polling(self):
+        service = self.make_service()
+
+        first = service.submit_research_task(topic="topic one", run_mode="fake")
+        second = service.submit_research_task(topic="topic two", run_mode="manual")
+        service.run_task(first["task_id"])
+        service.worker_tick()
+
+        tasks = service.list_tasks()
+        running = service.list_tasks(status="running")
+        succeeded = service.list_tasks(status="succeeded")
+
+        self.assertEqual([task["task_id"] for task in tasks], [first["task_id"], second["task_id"]])
+        self.assertEqual([task["task_id"] for task in running], [second["task_id"]])
+        self.assertEqual([task["task_id"] for task in succeeded], [first["task_id"]])
+
     def test_task_failure_is_structured_and_secret_safe(self):
         service = self.make_service()
         task = service.submit_research_task(

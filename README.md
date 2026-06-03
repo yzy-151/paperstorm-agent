@@ -199,6 +199,15 @@ research -> outline -> article -> polish
 - 静态 `sample_data.json/js` 升级到 v0.8，离线打开 HTML 仍可展示完整样例。
 - Demo bundle 递归清理本机临时路径，静态数据中的运行目录统一展示为 `demo://paperstorm_dashboard/...`。
 
+### v0.9：端到端本地 Demo 与任务轮询
+
+- `PaperStormTaskService.list_tasks(status=None)`：支持 Dashboard 获取全部任务或按状态过滤任务。
+- FastAPI 新增 `GET /research-tasks`，返回任务列表；同时加入 CORS middleware，方便本地 HTML 访问服务。
+- Dashboard 新增任务控制台：topic、run mode、retriever、output language、expected/forbidden keywords。
+- Dashboard 支持提交任务、运行选中任务、轮询选中任务、刷新任务列表。
+- Dashboard 支持展示结构化任务 error，使失败任务可观察、可复盘。
+- 静态 `sample_data.json/js` 升级到 v0.9，离线展示和服务控制台共存。
+
 ## 4. 关键文件
 
 运行入口：
@@ -341,6 +350,7 @@ Dashboard 展示：
 - Multi-Agent 保留/过滤结果。
 - Stress benchmark。
 - Pipeline Worker 元数据。
+- 任务创建、运行和轮询控制。
 
 连接本地 service 查看真实任务：
 
@@ -348,6 +358,15 @@ Dashboard 展示：
 2. 在 Dashboard 顶部输入 service URL，例如 `http://127.0.0.1:8000`。
 3. 输入 task_id。
 4. 点击“加载真实任务”。
+
+本地端到端 fake demo：
+
+1. 启动 FastAPI service。
+2. 打开 `frontend/paperstorm_dashboard/index.html`。
+3. 保持 Run Mode 为 `fake`。
+4. 点击“提交任务”。
+5. 点击“运行选中任务”。
+6. 点击“轮询选中任务”查看 article、trace、scorecard 和 error。
 
 ## 8. 通过 Service Worker 运行单个任务
 
@@ -452,7 +471,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 最近目标结果：
 
 ```text
-Ran 74 tests
+Ran 76 tests
 OK
 ```
 
@@ -527,6 +546,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - 静态 Dashboard。
 - 真实 PaperStorm pipeline worker 接口。
 - Dashboard 轻量读取真实 service task 产物。
+- Dashboard 提交、运行和轮询本地 service task。
 
 尚未完成：
 
@@ -534,7 +554,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - 多用户和权限系统。
 - 分布式高并发任务队列。
 - 企业级监控告警。
-- 生产级前端构建、鉴权和部署。
+- 生产级前端构建、鉴权、自动轮询调度和部署。
 - 真实 LLM/API 环境下的大规模压测。
 
 这些内容会按版本计划逐步补齐。

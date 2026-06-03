@@ -18,13 +18,20 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT):
     try:
         from fastapi import FastAPI
         from pydantic import BaseModel
+        from starlette.middleware.cors import CORSMiddleware
     except ImportError as exc:
         raise RuntimeError(
             "FastAPI service adapter requires optional dependencies: fastapi and uvicorn."
         ) from exc
 
     service = PaperStormTaskService(root_dir=service_root)
-    app = FastAPI(title="PaperStorm Agent Service", version="0.8")
+    app = FastAPI(title="PaperStorm Agent Service", version="0.9")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     class ResearchTaskRequest(BaseModel):
         topic: str
@@ -56,6 +63,10 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT):
     @app.post("/research-tasks")
     def submit_research_task(request: ResearchTaskRequest):
         return service.submit_research_task(**request.dict())
+
+    @app.get("/research-tasks")
+    def list_research_tasks(status: Optional[str] = None):
+        return {"tasks": service.list_tasks(status=status)}
 
     @app.post("/research-tasks/{task_id}/run")
     def run_research_task(task_id: str):

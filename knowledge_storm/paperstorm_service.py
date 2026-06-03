@@ -57,6 +57,20 @@ class PaperStormTaskService:
     def get_task(self, task_id: str):
         return self._read_state(task_id)
 
+    def list_tasks(self, status: Optional[str] = None):
+        tasks = []
+        for path in sorted(self.tasks_dir.glob("*.json")):
+            state = json.loads(path.read_text(encoding="utf-8"))
+            if status is None or state.get("status") == status:
+                tasks.append(state)
+        return sorted(
+            tasks,
+            key=lambda item: (
+                int(item.get("queue_index", 0)),
+                item.get("created_at", ""),
+            ),
+        )
+
     def run_task(self, task_id: str):
         state = self._read_state(task_id)
         state["status"] = "running"

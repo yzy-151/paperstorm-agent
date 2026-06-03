@@ -151,6 +151,51 @@ h2 {
   gap: 10px;
 }
 
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.control-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.control-grid input,
+.control-grid select {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.button-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.button-row button,
+.task-row button {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .metric,
 .item {
   padding: 10px;
@@ -208,6 +253,11 @@ h2 {
   .toolbar {
     grid-template-columns: 1fr;
     padding: 14px 16px;
+  }
+
+  .control-grid,
+  .button-row {
+    grid-template-columns: 1fr;
   }
 
   .dashboard-grid {

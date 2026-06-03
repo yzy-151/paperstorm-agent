@@ -20,6 +20,7 @@ function renderDashboard(data) {
   renderTrace(data.trace || {});
   renderMultiAgent(data.multi_agent || {}, data.agent_trace || []);
   renderPipelineWorker(data.pipeline_worker || {}, data.service_snapshot || {});
+  renderTaskError((data.tasks || [])[0] || {});
   renderStress(data.stress_report || {});
 }
 
@@ -32,19 +33,14 @@ async function fetchSampleData() {
 }
 
 async function loadServiceTask() {
-  const baseUrl = document.querySelector("#service-url").value.replace(/\/+$/, "");
-  const taskId = document.querySelector("#service-task-id").value.trim();
+  const taskId = getSelectedTaskId();
   if (!taskId) {
     setStatus("请输入 task_id");
     return;
   }
   setStatus("loading service task");
   try {
-    const response = await fetch(`${baseUrl}/research-tasks/${encodeURIComponent(taskId)}/dashboard`);
-    if (!response.ok) {
-      throw new Error(`service ${response.status}`);
-    }
-    const data = await response.json();
+    const data = await fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/dashboard`);
     renderDashboard(data);
     setStatus(`service task ${taskId}`);
   } catch (error) {
@@ -58,18 +54,115 @@ async function loadSampleData() {
   setStatus("sample data");
 }
 
+async function submitTask() {
+  const payload = {
+    topic: document.querySelector("#task-topic").value.trim(),
+    run_mode: document.querySelector("#task-run-mode").value,
+    retriever: document.querySelector("#task-retriever").value,
+    output_language: document.querySelector("#task-output-language").value,
+    expected_keywords: splitKeywords(document.querySelector("#task-expected-keyword").value),
+    forbidden_keywords: splitKeywords(document.querySelector("#task-forbidden-keyword").value),
+    max_conv_turn: 1,
+    max_perspective: 1,
+    search_top_k: 2,
+    max_thread_num: 1,
+  };
+  if (!payload.topic) {
+    setStatus("请输入 topic");
+    return;
+  }
+  try {
+    const task = await fetchJson("/research-tasks", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    document.querySelector("#service-task-id").value = task.task_id;
+    await fetchTaskList();
+    setStatus(`created ${task.task_id}`);
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function runSelectedTask() {
+  const taskId = getSelectedTaskId();
+  if (!taskId) {
+    setStatus("请输入 task_id");
+    return;
+  }
+  try {
+    const task = await fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/run`, {
+      method: "POST",
+    });
+    setStatus(`run ${task.status}`);
+    await pollSelectedTask();
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function pollSelectedTask() {
+  const taskId = getSelectedTaskId();
+  if (!taskId) {
+    setStatus("请输入 task_id");
+    return;
+  }
+  try {
+    const data = await fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/dashboard`);
+    renderDashboard(data);
+    setStatus(`polled ${(data.tasks || [])[0]?.status || "unknown"}`);
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function fetchTaskList() {
+  try {
+    const data = await fetchJson("/research-tasks");
+    renderTasks(data.tasks || []);
+    setStatus(`tasks ${(data.tasks || []).length}`);
+  } catch (error) {
+    setStatus(error.message);
+  }
+}
+
+async function fetchJson(path, options) {
+  const baseUrl = document.querySelector("#service-url").value.replace(/\/+$/, "");
+  const response = await fetch(`${baseUrl}${path}`, options);
+  if (!response.ok) {
+    throw new Error(`service ${response.status}`);
+  }
+  return response.json();
+}
+
+function getSelectedTaskId() {
+  return document.querySelector("#service-task-id").value.trim();
+}
+
+function splitKeywords(value) {
+  return value.split(",").map(item => item.trim()).filter(Boolean);
+}
+
 function renderProject(project) {
-  document.querySelector("#project-version").textContent = project.version || "v0.8";
+  document.querySelector("#project-version").textContent = project.version || "v0.9";
 }
 
 function renderTasks(tasks) {
   document.querySelector("#task-list").innerHTML = tasks.map(task => `
-    <div class="item">
+    <div class="item task-row" data-task-id="${escapeHtml(task.task_id || "")}">
       <div class="label">${escapeHtml(task.task_id || "")}</div>
       <div class="value">${escapeHtml(task.status || "")}</div>
       <p>${escapeHtml(task.topic || "")}</p>
+      <button type="button" data-select-task="${escapeHtml(task.task_id || "")}">选择</button>
     </div>
   `).join("");
+  document.querySelectorAll("[data-select-task]").forEach(button => {
+    button.addEventListener("click", () => {
+      document.querySelector("#service-task-id").value = button.dataset.selectTask;
+      setStatus(`selected ${button.dataset.selectTask}`);
+    });
+  });
 }
 
 function renderScorecard(scorecard) {
@@ -133,6 +226,12 @@ function renderPipelineWorker(worker, snapshot) {
   ].map(name => metric(name, data[name])).join("");
 }
 
+function renderTaskError(task) {
+  document.querySelector("#task-error").innerHTML = task.error
+    ? `<div class="item rejected">${escapeHtml(task.error)}</div>`
+    : `<div class="item">当前任务没有结构化错误。</div>`;
+}
+
 function renderStress(report) {
   document.querySelector("#stress-report").innerHTML = [
     "total_tasks",
@@ -169,5 +268,9 @@ function escapeHtml(value) {
 
 document.querySelector("#load-service-task").addEventListener("click", loadServiceTask);
 document.querySelector("#load-sample-data").addEventListener("click", loadSampleData);
+document.querySelector("#submit-task").addEventListener("click", submitTask);
+document.querySelector("#run-selected-task").addEventListener("click", runSelectedTask);
+document.querySelector("#poll-selected-task").addEventListener("click", pollSelectedTask);
+document.querySelector("#refresh-task-list").addEventListener("click", fetchTaskList);
 
 loadDashboard();

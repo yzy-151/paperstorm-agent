@@ -30,9 +30,59 @@
     </section>
 
     <main class="dashboard-grid">
+      <section class="panel wide" id="create-task-panel">
+        <h2>任务控制台</h2>
+        <div class="control-grid">
+          <label>
+            Topic
+            <input id="task-topic" value="pim 神经网络抑制" />
+          </label>
+          <label>
+            Run Mode
+            <select id="task-run-mode">
+              <option value="fake">fake</option>
+              <option value="paperstorm">paperstorm</option>
+            </select>
+          </label>
+          <label>
+            Retriever
+            <select id="task-retriever">
+              <option value="arxiv">arxiv</option>
+              <option value="local-pdf">local-pdf</option>
+            </select>
+          </label>
+          <label>
+            Output Language
+            <select id="task-output-language">
+              <option value="zh">zh</option>
+              <option value="original">original</option>
+            </select>
+          </label>
+          <label>
+            Expected Keyword
+            <input id="task-expected-keyword" value="passive intermodulation" />
+          </label>
+          <label>
+            Forbidden Keyword
+            <input id="task-forbidden-keyword" value="DRAM" />
+          </label>
+          <div class="button-row">
+            <button id="submit-task" type="button">提交任务</button>
+            <button id="run-selected-task" type="button">运行选中任务</button>
+            <button id="poll-selected-task" type="button">轮询选中任务</button>
+            <button id="refresh-task-list" type="button">刷新任务列表</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel" id="task-panel">
         <h2>任务状态</h2>
         <div id="task-list" class="stack"></div>
+      </section>
+
+      <section class="panel" id="task-error-panel">
+        <h2>失败信息</h2>
+        <div id="task-error" class="stack"></div>
       </section>
 
       <section class="panel" id="scorecard-panel">
