@@ -791,7 +791,48 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 
 ## 11. v1.0：Agent 平台化 Demo
 
+状态：已完成第一阶段。
+
 目标：形成可投递、可演示、可面试讲 5 分钟的完整项目。
+
+### 本次完成
+
+1. Release Demo 生成器
+   - 新增 `knowledge_storm/paperstorm_release.py`。
+   - `build_release_demo(service_root, dashboard_dir, topic)` 复用 `PaperStormTaskService`。
+   - 固定走 submit -> run fake task -> query KB -> collect dashboard bundle -> write summary 的链路。
+   - 不依赖真实 LLM/API key，适合作为面试和本地演示 baseline。
+
+2. 命令行入口
+   - 新增 `examples/storm_examples/run_paperstorm_release_demo.py`。
+   - 一条命令生成 `release_demo_summary.json`、文章、trace、scorecard、QA 和前端 `sample_data.json/js`。
+   - 默认 topic 是 `pim 神经网络抑制`，用于展示 PIM 领域消歧。
+
+3. 前端样例数据
+   - release demo 写入 Dashboard 可直接加载的 `sample_data.json` 和 `sample_data.js`。
+   - project version 升级为 `v1.0`。
+   - bundle 内增加 `release_demo` 字段，标注演示入口、场景和面试关键词。
+
+4. 文档收口
+   - README 增加 `v1.0 Release Demo`、一键命令和 5 分钟演示路线。
+   - 本文档标记 v1.0 第一阶段完成。
+   - `docs/RESUME_INTERVIEW_PLAN.md` 增加 30 秒、2 分钟、5 分钟项目讲法。
+
+### 验证标准
+
+- release demo 功能测试能验证文章、trace、scorecard、QA、dashboard sample data 均存在。
+- 文档测试能验证 README、版本计划和简历文档都包含 v1.0 演示信息。
+- 既有 PaperStorm 回归测试继续通过。
+
+### 本版验收命令
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
+  tests.test_paperstorm_release_demo `
+  tests.test_paperstorm_release_docs -v
+```
+
+完整回归见 README 的测试章节。
 
 ### 能力边界
 
@@ -809,6 +850,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 - 前端展示。
 - README 中文文档。
 - 简历问答文档。
+- 一键生成本地 release demo。
 
 暂不承诺：
 

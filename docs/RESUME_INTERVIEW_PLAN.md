@@ -90,6 +90,7 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 将真实 STORM pipeline 封装为可注入 worker，`PaperStormTaskService` 支持 `run_mode="paperstorm"`，统一 fake 和真实任务的 task_id、状态、产物目录、trace、scorecard 和错误处理。
 - 为 Dashboard 增加 service-backed snapshot 接口，聚合 task、article、QA、scorecard、trace、pipeline worker 元数据和 service snapshot，支持前端通过 task_id 读取真实任务产物。
 - 将 Dashboard 从结果查看器扩展为本地 Agent 控制台，支持创建任务、运行任务、刷新任务列表、轮询选中任务并展示结构化失败原因。
+- 新增 v1.0 release demo，一条命令复现 service task、文章、QA、trace、scorecard 和 Dashboard 样例数据，形成可投递、可演示、可面试讲解的 Agent 平台原型。
 
 压缩版 bullet：
 
@@ -105,6 +106,41 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 接入真实 PaperStorm pipeline worker，并通过 runner 注入让单元测试不依赖真实 LLM/API，保留 fake baseline 作为稳定回归测试。
 - 将 Dashboard 接入 service dashboard bundle，支持输入 service URL 和 task_id 查看真实任务的 article、trace、scorecard 和 worker 元数据。
 - 将 Dashboard 升级为轻量 Agent 控制台，支持提交/运行/轮询 task，并把失败 error 纳入可观测面板。
+- 增加 release demo 生成器，把 RAG、Memory、Runtime Trace、Eval、Task Service 和 Dashboard 串成可复现的 5 分钟本地演示。
+
+## 3.1 v1.0 项目讲法
+
+### 30 秒项目介绍
+
+```text
+PaperStorm Agent 是我基于 Stanford STORM 二次开发的中文论文调研和知识库 Agent。我保留了原项目 research、outline、article、polish 的长文生成流程，并在此基础上补了 arXiv/本地 PDF 检索、PIM 领域消歧、Tool Schema、MCP-style server、三层记忆、上下文压缩、知识库 QA、Multi-Agent 编排、Eval Harness、Task Service 和 Dashboard。v1.0 已经能一条命令生成本地 release demo，展示一次 Agent 任务从提交、运行、问答、trace 到 scorecard 的完整链路。
+```
+
+### 2 分钟技术介绍
+
+```text
+这个项目的核心不是简单套一个 RAG，而是把论文调研 Agent 做成可观测、可评估、可服务化的系统。底层复用 STORM 的多阶段 workflow：先多视角调研，再生成大纲、文章和润色结果。我主要做了几层工程化增强：
+
+第一是 RAG 稳定性，接入 arXiv 和 Local PDF，并做 query sanitizer、PIM 缩写消歧、空检索防护和单 query 失败降级，避免 PIM 被误召回成 processing-in-memory、RAM、DRAM。
+
+第二是 Agent Runtime，把工具封装成统一 PaperStormTool schema，通过 ToolRegistry 管理工具发现和参数校验，用 HookManager 和 RuntimeEvent 记录工具调用、错误、耗时和上下文压缩，输出 JSONL trace。
+
+第三是 Memory 和 QA，把调研产物转成可问答知识库，支持 working/episodic/semantic 三层记忆、结构化上下文压缩、grounded QA、citations 和 QA eval。
+
+第四是 Multi-Agent 和评测，把调研拆成 Planner、Retriever、Critic、Memory、Evaluator，用 agent_trace 记录每个角色决策，并用 scorecard 评估任务完成度、检索相关性、跑题率、文章质量和可观测性。
+
+最后我抽象了 PaperStormTaskService 和 FastAPI 适配器，并做 Dashboard 展示任务状态、文章、QA、trace、scorecard 和错误信息。v1.0 release demo 可以不依赖真实 API key 复现完整链路，真实 worker 则可以接 DeepSeek/arXiv 手工运行。
+```
+
+### 5 分钟演示路线
+
+1. 打开 README，先指官方 STORM 架构图，说明原流程是 research -> outline -> article -> polish。
+2. 运行 `run_paperstorm_release_demo.py`，说明这个命令复用 service 层，不是单独伪造前端数据。
+3. 打开 `release_demo_summary.json`，展示 task_id、task_status、article_path、trace_path、scorecard_path 和 QA answer。
+4. 打开 `frontend/paperstorm_dashboard/index.html`，展示 Dashboard 的 task、article、QA、trace、scorecard。
+5. 讲 PIM case：expected keywords 是 `passive intermodulation / RF`，forbidden keywords 是 `processing-in-memory / DRAM / RAM`，对应检索跑题治理。
+6. 讲系统设计：ToolRegistry 负责工具，Hook/Trace 负责可观测，Memory/QA 负责知识沉淀，Eval 负责量化，Task Service 负责生命周期，Dashboard 负责调试展示。
+7. 主动讲边界：当前 v1.0 是本地可演示原型，不是生产级多租户平台；后续要补鉴权、权限、分布式队列、监控告警和真实 API 压测。
 
 ## 4. Nonlinear NN Agent 简历项目描述
 

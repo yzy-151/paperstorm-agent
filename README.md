@@ -208,6 +208,14 @@ research -> outline -> article -> polish
 - Dashboard 支持展示结构化任务 error，使失败任务可观察、可复盘。
 - 静态 `sample_data.json/js` 升级到 v0.9，离线展示和服务控制台共存。
 
+### v1.0 Release Demo：可投递、可演示的 Agent 平台原型
+
+- 新增 `build_release_demo()`，复用 `PaperStormTaskService` 的 submit -> run -> QA -> dashboard bundle 链路生成稳定演示数据。
+- 新增 `run_paperstorm_release_demo.py`，一条命令生成 release summary、文章、trace、scorecard、QA 和前端 `sample_data.json/js`。
+- Dashboard 样例数据可升级为 v1.0，展示 RAG、Memory、Runtime Trace、Eval、Task Service 和 Dashboard 的闭环。
+- README、版本计划、简历面试文档补充 5 分钟演示路线和面试讲法。
+- v1.0 明确为本地可演示平台原型，不夸大为多租户、分布式或生产部署系统。
+
 ## 4. 关键文件
 
 运行入口：
@@ -220,6 +228,7 @@ examples/storm_examples/paperstorm_service_api.py
 examples/storm_examples/benchmark_paperstorm_service.py
 examples/storm_examples/build_paperstorm_demo_bundle.py
 examples/storm_examples/run_paperstorm_service_task.py
+examples/storm_examples/run_paperstorm_release_demo.py
 ```
 
 核心模块：
@@ -235,6 +244,7 @@ knowledge_storm/paperstorm_agents.py
 knowledge_storm/paperstorm_service.py
 knowledge_storm/paperstorm_demo.py
 knowledge_storm/paperstorm_pipeline.py
+knowledge_storm/paperstorm_release.py
 ```
 
 测试：
@@ -253,6 +263,8 @@ tests/test_paperstorm_concurrency.py
 tests/test_paperstorm_frontend_docs.py
 tests/test_paperstorm_pipeline.py
 tests/test_paperstorm_service_cli.py
+tests/test_paperstorm_release_demo.py
+tests/test_paperstorm_release_docs.py
 ```
 
 维护文档：
@@ -368,7 +380,38 @@ Dashboard 展示：
 5. 点击“运行选中任务”。
 6. 点击“轮询选中任务”查看 article、trace、scorecard 和 error。
 
-## 8. 通过 Service Worker 运行单个任务
+## 8. v1.0 Release Demo
+
+一条命令生成可演示产物：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_release_demo.py `
+  --topic "pim 神经网络抑制" `
+  --service-root ./results/paperstorm_release_demo `
+  --dashboard-dir frontend\paperstorm_dashboard
+```
+
+它会生成：
+
+```text
+results/paperstorm_release_demo/release_demo_summary.json
+results/paperstorm_release_demo/results/<task_id>/storm_gen_article_polished.txt
+results/paperstorm_release_demo/results/<task_id>/paperstorm_trace.jsonl
+results/paperstorm_release_demo/results/<task_id>/scorecard.json
+frontend/paperstorm_dashboard/sample_data.json
+frontend/paperstorm_dashboard/sample_data.js
+```
+
+### 5 分钟演示路线
+
+1. 用 README 的官方 STORM 架构图说明原项目的 research -> outline -> article -> polish。
+2. 运行 `run_paperstorm_release_demo.py`，展示同一套 service task 如何生成文章、QA、trace 和 scorecard。
+3. 打开 `frontend/paperstorm_dashboard/index.html`，展示 task 状态、文章、知识库 QA、trace timeline 和 eval scorecard。
+4. 解释 PIM 消歧：本项目把 PIM 指向 `passive intermodulation`，并过滤 `processing-in-memory / RAM / DRAM` 跑题内容。
+5. 讲工程化增强：Tool Schema / MCP-style server、Memory、Context Compression、Multi-Agent、Task Service、Dashboard、Benchmark。
+6. 主动说明边界：当前是本地平台原型，生产级多租户、权限、分布式队列和云部署还在后续计划。
+
+## 9. 通过 Service Worker 运行单个任务
 
 fake 模式不需要真实 API key，适合验证 service 状态机：
 
@@ -402,7 +445,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 
 真实 worker 会复用 service 的任务状态、产物目录、trace 和 scorecard 读取接口。真实模式需要可用网络和对应 LLM API key。
 
-## 9. 运行 Eval Harness
+## 10. 运行 Eval Harness
 
 示例：
 
@@ -428,7 +471,7 @@ scorecard.md
 - 文章质量。
 - Runtime 可观测性。
 
-## 10. 运行 MCP-style Server
+## 11. 运行 MCP-style Server
 
 手工 `tools/list` 验证：
 
@@ -447,7 +490,7 @@ kb_qa
 
 其中 `local_pdf_search` 需要传入 `--pdf-dir` 后启用。
 
-## 11. 测试
+## 12. 测试
 
 推荐回归测试：
 
@@ -458,6 +501,8 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
   tests.test_paperstorm_service `
   tests.test_paperstorm_pipeline `
   tests.test_paperstorm_service_cli `
+  tests.test_paperstorm_release_demo `
+  tests.test_paperstorm_release_docs `
   tests.test_paperstorm_multi_agent `
   tests.test_paperstorm_runtime `
   tests.test_paperstorm_memory_qa `
@@ -471,7 +516,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 最近目标结果：
 
 ```text
-Ran 76 tests
+Ran 78 tests
 OK
 ```
 
@@ -484,14 +529,16 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m py_compile `
   knowledge_storm\paperstorm_demo.py `
   knowledge_storm\paperstorm_service.py `
   knowledge_storm\paperstorm_pipeline.py `
+  knowledge_storm\paperstorm_release.py `
   examples\storm_examples\evaluate_paperstorm_run.py `
   examples\storm_examples\build_paperstorm_demo_bundle.py `
   examples\storm_examples\run_paperstorm_service_task.py `
+  examples\storm_examples\run_paperstorm_release_demo.py `
   examples\storm_examples\paperstorm_service_api.py `
   examples\storm_examples\paperstorm_mcp_server.py
 ```
 
-## 12. 后续版本路线
+## 13. 后续版本路线
 
 详见：
 
@@ -510,7 +557,7 @@ docs/VERSION_PLAN.md
 - v0.9：端到端本地 Demo 与任务轮询。
 - v1.0：可投递、可演示的 Agent 平台化 Demo。
 
-## 13. 求职与面试材料
+## 14. 求职与面试材料
 
 详见：
 
@@ -531,7 +578,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - 错误容灾。
 - 结构化技术文档。
 
-## 14. 当前边界
+## 15. 当前边界
 
 已经完成：
 
@@ -547,6 +594,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - 真实 PaperStorm pipeline worker 接口。
 - Dashboard 轻量读取真实 service task 产物。
 - Dashboard 提交、运行和轮询本地 service task。
+- v1.0 release demo 一键生成本地演示产物和前端样例数据。
 
 尚未完成：
 
