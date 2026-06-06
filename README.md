@@ -216,6 +216,13 @@ research -> outline -> article -> polish
 - README、版本计划、简历面试文档补充 5 分钟演示路线和面试讲法。
 - v1.0 明确为本地可演示平台原型，不夸大为多租户、分布式或生产部署系统。
 
+### v1.1 Demo Runbook：本地演示链路打磨
+
+- 新增 `start_paperstorm_service.py`，把 FastAPI service 启动命令固化为项目入口。
+- README 补充本地演示 runbook：启动 service、生成 release demo、打开 Dashboard、提交/运行/轮询任务。
+- 演示链路明确为 `submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard`。
+- 面试文档补充“演示不是只给静态截图”，而是能展示 Agent 生命周期和可观测链路。
+
 ## 4. 关键文件
 
 运行入口：
@@ -229,6 +236,7 @@ examples/storm_examples/benchmark_paperstorm_service.py
 examples/storm_examples/build_paperstorm_demo_bundle.py
 examples/storm_examples/run_paperstorm_service_task.py
 examples/storm_examples/run_paperstorm_release_demo.py
+examples/storm_examples/start_paperstorm_service.py
 ```
 
 核心模块：
@@ -265,6 +273,7 @@ tests/test_paperstorm_pipeline.py
 tests/test_paperstorm_service_cli.py
 tests/test_paperstorm_release_demo.py
 tests/test_paperstorm_release_docs.py
+tests/test_paperstorm_demo_runbook.py
 ```
 
 维护文档：
@@ -411,7 +420,61 @@ frontend/paperstorm_dashboard/sample_data.js
 5. 讲工程化增强：Tool Schema / MCP-style server、Memory、Context Compression、Multi-Agent、Task Service、Dashboard、Benchmark。
 6. 主动说明边界：当前是本地平台原型，生产级多租户、权限、分布式队列和云部署还在后续计划。
 
-## 9. 通过 Service Worker 运行单个任务
+## 9. v1.1 Demo Runbook
+
+第一步，启动本地 service：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\start_paperstorm_service.py `
+  --service-root ./results/paperstorm_demo_service `
+  --host 127.0.0.1 `
+  --port 8000
+```
+
+第二步，生成离线可展示数据：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_release_demo.py `
+  --service-root ./results/paperstorm_release_demo `
+  --dashboard-dir frontend\paperstorm_dashboard
+```
+
+第三步，打开 Dashboard：
+
+```text
+frontend/paperstorm_dashboard/index.html
+```
+
+第四步，在 Dashboard 顶部填入：
+
+```text
+Service URL: http://127.0.0.1:8000
+Run Mode: fake
+Topic: pim 神经网络抑制
+Expected Keywords: passive intermodulation, RF
+Forbidden Keywords: processing-in-memory, DRAM, RAM
+```
+
+第五步，按顺序点击：
+
+```text
+提交任务 -> 运行选中任务 -> 轮询选中任务 -> 查看 trace / scorecard / article / QA
+```
+
+这条链路对应 Agent 平台生命周期：
+
+```text
+submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard
+```
+
+面试演示重点：
+
+- 不是只给静态截图，而是能展示一次 task 的状态变化和产物生成。
+- fake 模式用于稳定演示，不消耗 API key。
+- paperstorm 模式可以接真实 DeepSeek/arXiv，但受网络、余额和外部服务稳定性影响。
+- Dashboard 展示的是 service 聚合后的 snapshot，前端不直接理解底层文件结构。
+
+## 10. 通过 Service Worker 运行单个任务
 
 fake 模式不需要真实 API key，适合验证 service 状态机：
 
@@ -445,7 +508,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 
 真实 worker 会复用 service 的任务状态、产物目录、trace 和 scorecard 读取接口。真实模式需要可用网络和对应 LLM API key。
 
-## 10. 运行 Eval Harness
+## 11. 运行 Eval Harness
 
 示例：
 
@@ -471,7 +534,7 @@ scorecard.md
 - 文章质量。
 - Runtime 可观测性。
 
-## 11. 运行 MCP-style Server
+## 12. 运行 MCP-style Server
 
 手工 `tools/list` 验证：
 
@@ -490,7 +553,7 @@ kb_qa
 
 其中 `local_pdf_search` 需要传入 `--pdf-dir` 后启用。
 
-## 12. 测试
+## 13. 测试
 
 推荐回归测试：
 
@@ -503,6 +566,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
   tests.test_paperstorm_service_cli `
   tests.test_paperstorm_release_demo `
   tests.test_paperstorm_release_docs `
+  tests.test_paperstorm_demo_runbook `
   tests.test_paperstorm_multi_agent `
   tests.test_paperstorm_runtime `
   tests.test_paperstorm_memory_qa `
@@ -516,7 +580,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 最近目标结果：
 
 ```text
-Ran 78 tests
+Ran 80 tests
 OK
 ```
 
@@ -534,11 +598,12 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m py_compile `
   examples\storm_examples\build_paperstorm_demo_bundle.py `
   examples\storm_examples\run_paperstorm_service_task.py `
   examples\storm_examples\run_paperstorm_release_demo.py `
+  examples\storm_examples\start_paperstorm_service.py `
   examples\storm_examples\paperstorm_service_api.py `
   examples\storm_examples\paperstorm_mcp_server.py
 ```
 
-## 13. 后续版本路线
+## 14. 后续版本路线
 
 详见：
 
@@ -556,8 +621,9 @@ docs/VERSION_PLAN.md
 - v0.8：Dashboard 读取真实 service 产物。
 - v0.9：端到端本地 Demo 与任务轮询。
 - v1.0：可投递、可演示的 Agent 平台化 Demo。
+- v1.1：本地演示链路打磨。
 
-## 14. 求职与面试材料
+## 15. 求职与面试材料
 
 详见：
 
@@ -578,7 +644,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - 错误容灾。
 - 结构化技术文档。
 
-## 15. 当前边界
+## 16. 当前边界
 
 已经完成：
 
@@ -595,6 +661,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - Dashboard 轻量读取真实 service task 产物。
 - Dashboard 提交、运行和轮询本地 service task。
 - v1.0 release demo 一键生成本地演示产物和前端样例数据。
+- v1.1 demo runbook 固化本地 service、Dashboard 和任务生命周期演示步骤。
 
 尚未完成：
 

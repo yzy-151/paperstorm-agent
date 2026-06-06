@@ -860,6 +860,40 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 - 云部署。
 - 企业级监控告警。
 
+## 11.1 v1.1：本地演示链路打磨
+
+状态：已完成第一阶段。
+
+目标：让面试官或自己按 README 能稳定复现本地 Agent 平台演示，而不是只看静态截图。
+
+### 本次完成
+
+1. Service 启动入口
+   - 新增 `examples/storm_examples/start_paperstorm_service.py`。
+   - 支持 `--service-root`、`--host`、`--port`、`--reload`、`--log-level`。
+   - 启动时打印 service URL、Dashboard 文件位置和 task 生命周期提示。
+
+2. README Demo Runbook
+   - 新增 `v1.1 Demo Runbook`。
+   - 明确启动 service、生成 release demo、打开 Dashboard、提交任务、运行任务、轮询任务的顺序。
+   - 明确生命周期：`submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard`。
+
+3. 求职表达
+   - `docs/RESUME_INTERVIEW_PLAN.md` 补充 v1.1 面试讲法。
+   - 强调演示不是只给静态截图，而是展示 Agent task lifecycle 和 observability。
+
+### 验收标准
+
+- 新增 CLI parser 测试通过。
+- README、版本计划和简历文档均包含 v1.1 本地演示链路。
+- 完整回归测试继续通过。
+
+### 简历价值
+
+```text
+为 PaperStorm Agent 补齐本地演示 runbook 和 service 启动入口，使项目能稳定展示从任务提交、状态流转、产物生成到 trace/scorecard 可观测的 Agent 生命周期。
+```
+
 ## 12. 每次版本更新模板
 
 ```markdown

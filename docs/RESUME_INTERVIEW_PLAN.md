@@ -427,6 +427,14 @@ Agent 系统的问题定位不能只看最终回答。Dashboard 的价值是把 
 因为只展示结果还不算 Agent 平台，最多是报告查看器。v0.9 把 Dashboard 扩成一个本地 Agent 控制台：前端可以创建 task、运行 task、刷新任务列表、轮询 selected task，并展示结构化 error。这样面试时可以讲清楚 Agent runtime 的完整生命周期：submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard，而不是只讲一个离线脚本。
 ```
 
+### Q13.7：v1.1 面试讲法：为什么还要做 Demo Runbook？
+
+推荐回答：
+
+```text
+演示不是只给静态截图。Agent 平台面试里，面试官更关心系统是不是能复现、能定位问题、能解释状态变化。v1.1 我补了 start_paperstorm_service.py 和 README runbook，让项目可以按固定步骤启动 service、打开 Dashboard、提交任务、运行任务、轮询任务，再查看 article、QA、trace 和 scorecard。这个链路能讲清楚 submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard，也能说明 fake 模式用于稳定演示，paperstorm 模式用于真实 LLM 任务。
+```
+
 ### Q11：做普通知识库 QA 会不会降低项目水平？
 
 推荐回答：
