@@ -1,6 +1,92 @@
 # PaperStorm Agent
 
-> 基于 Stanford STORM 二次开发的中文论文调研 Agent，面向 RAG、Memory、Tool Calling、MCP、Multi-Agent 与 Agent Eval 持续演进。
+> 基于 Stanford STORM 二次开发的中文论文调研与知识库 Agent，面向 RAG、Memory、Tool Calling、MCP-style tools、Multi-Agent、Runtime Trace、Eval Harness 和 Dashboard 演示。
+
+## 项目一眼看懂
+
+PaperStorm Agent 不是从零重写一个聊天机器人，而是在 Stanford STORM 的 Deep Research / 长文生成框架上做工程化增强，把“论文调研脚本”推进成一个可演示的 Agent 平台原型。
+
+它目前能展示：
+
+- **RAG 调研链路**：arXiv / Local PDF 检索、query 清洗、PIM 领域消歧、引用证据和中文综述生成。
+- **Agent Runtime**：ToolRegistry、HookManager、RuntimeEvent、JSONL trace、错误脱敏和上下文压缩。
+- **Memory / QA**：working / episodic / semantic 三层记忆，基于调研产物的 grounded QA。
+- **Multi-Agent**：Planner、Retriever、Critic、Memory、Evaluator 分工协作，保留/过滤检索结果并写入 agent trace。
+- **Eval / Benchmark**：scorecard 评估任务完成度、检索相关性、跑题风险、文章质量和 runtime 可观测性。
+- **Service / Dashboard**：本地 task service、FastAPI 适配器、静态 Dashboard、任务提交/运行/轮询和 release demo。
+
+## 最终能力地图
+
+```text
+STORM Workflow
+  research -> outline -> article -> polish
+        |
+        v
+PaperStorm RAG
+  arXiv / Local PDF -> query sanitizer -> PIM disambiguation -> grounded article
+        |
+        v
+PaperStorm Runtime
+  ToolRegistry -> HookManager -> RuntimeEvent -> Memory -> Context Compression
+        |
+        v
+Agent Layer
+  Planner -> Retriever -> Critic -> Memory -> Evaluator
+        |
+        v
+Service / Dashboard
+  TaskService -> FastAPI adapter -> Dashboard -> trace / scorecard / QA
+```
+
+## Architecture Map
+
+```text
+STORM Workflow -> PaperStorm Runtime -> Service/Dashboard
+```
+
+```text
+Topic
+  -> STORM research / outline / article / polish
+  -> PaperStorm retrievers and tools
+  -> Runtime trace, memory, context compression
+  -> Multi-Agent critic and evaluator
+  -> Task service artifacts
+  -> Dashboard and scorecard
+```
+
+## 最终演示命令
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_release_demo.py `
+  --topic "pim 神经网络抑制" `
+  --service-root ./results/paperstorm_release_demo `
+  --dashboard-dir frontend\paperstorm_dashboard
+```
+
+然后打开：
+
+```text
+frontend/paperstorm_dashboard/index.html
+```
+
+需要演示本地 service 生命周期时，再运行：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\start_paperstorm_service.py `
+  --service-root ./results/paperstorm_demo_service `
+  --host 127.0.0.1 `
+  --port 8000
+```
+
+面试展示主线：
+
+```text
+submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard
+```
+
+## v1.2 Final Packaging
+
+v1.2 是本项目第一阶段最终包装版。此后项目进入维护和面试准备阶段，除非有明确岗位需求或真实缺陷，不再继续堆版本。
 
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
@@ -223,6 +309,14 @@ research -> outline -> article -> polish
 - 演示链路明确为 `submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard`。
 - 面试文档补充“演示不是只给静态截图”，而是能展示 Agent 生命周期和可观测链路。
 
+### v1.2 Final Packaging：最终包装与投递收口
+
+- README 首页新增“项目一眼看懂”“最终能力地图”和 `Architecture Map`。
+- README 明确最终演示命令和本地 service 生命周期演示主线。
+- `docs/VERSION_PLAN.md` 标记项目后续进入维护和面试准备阶段。
+- `docs/RESUME_INTERVIEW_PLAN.md` 整理最终简历 bullet 和最终面试 FAQ 精简版。
+- 明确当前不建议继续堆版本，后续只围绕真实面试反馈和缺陷修复维护。
+
 ## 4. 关键文件
 
 运行入口：
@@ -274,6 +368,7 @@ tests/test_paperstorm_service_cli.py
 tests/test_paperstorm_release_demo.py
 tests/test_paperstorm_release_docs.py
 tests/test_paperstorm_demo_runbook.py
+tests/test_paperstorm_final_packaging.py
 ```
 
 维护文档：
@@ -567,6 +662,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
   tests.test_paperstorm_release_demo `
   tests.test_paperstorm_release_docs `
   tests.test_paperstorm_demo_runbook `
+  tests.test_paperstorm_final_packaging `
   tests.test_paperstorm_multi_agent `
   tests.test_paperstorm_runtime `
   tests.test_paperstorm_memory_qa `
@@ -580,7 +676,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 最近目标结果：
 
 ```text
-Ran 80 tests
+Ran 82 tests
 OK
 ```
 
@@ -622,6 +718,7 @@ docs/VERSION_PLAN.md
 - v0.9：端到端本地 Demo 与任务轮询。
 - v1.0：可投递、可演示的 Agent 平台化 Demo。
 - v1.1：本地演示链路打磨。
+- v1.2：最终包装与投递收口。
 
 ## 15. 求职与面试材料
 
@@ -662,6 +759,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 - Dashboard 提交、运行和轮询本地 service task。
 - v1.0 release demo 一键生成本地演示产物和前端样例数据。
 - v1.1 demo runbook 固化本地 service、Dashboard 和任务生命周期演示步骤。
+- v1.2 final packaging 完成 GitHub 首页、能力地图、最终演示命令和求职材料收口。
 
 尚未完成：
 

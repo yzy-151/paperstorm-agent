@@ -108,6 +108,47 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 将 Dashboard 升级为轻量 Agent 控制台，支持提交/运行/轮询 task，并把失败 error 纳入可观测面板。
 - 增加 release demo 生成器，把 RAG、Memory、Runtime Trace、Eval、Task Service 和 Dashboard 串成可复现的 5 分钟本地演示。
 
+## 3.0 最终简历 bullet
+
+投 Agent / RAG / 知识库平台方向时，建议最终只放 4 到 5 条，不要把所有版本都塞进简历。
+
+```text
+- 基于 Stanford STORM 二次开发 PaperStorm Agent，接入 DeepSeek/MiniMax、arXiv 与本地 PDF 检索，复用 research -> outline -> article -> polish 多阶段 RAG 流程生成中文论文综述。
+- 抽象 PaperStormTool、ToolRegistry、HookManager 和 RuntimeEvent，统一工具 schema、参数校验、生命周期 hook、JSONL trace 和结构化错误，使 Agent 执行链路可复盘。
+- 构建 Memory / Context Compression / QA 模块，将调研产物转化为可问答知识库，支持 working/episodic/semantic 三层记忆、grounded answer、citations 和 QA scorecard。
+- 设计 Planner/Retriever/Critic/Memory/Evaluator 多 Agent 编排，对 PIM 场景中的 processing-in-memory、RAM、DRAM 跑题检索结果进行过滤并记录 critic reason。
+- 抽象 PaperStormTaskService 与 FastAPI 适配器，支持 task_id、queued/running/succeeded/failed 状态、产物隔离、Dashboard 展示、并发 baseline、release demo 和 scorecard 评估。
+```
+
+最终简历短描述：
+
+```text
+PaperStorm Agent 是一个基于 Stanford STORM 二次开发的中文论文调研与知识库 Agent，覆盖 RAG、Memory、Tool Calling、MCP-style tools、Multi-Agent、Runtime Trace、Eval Harness、Task Service 和 Dashboard 演示。
+```
+
+## 3.0.1 最终面试 FAQ 精简版
+
+1. 你这个项目解决什么问题？
+   - 把原本偏离线的论文调研 pipeline 工程化成可观测、可评估、可服务化的 Agent 平台原型。
+
+2. 和普通 RAG demo 有什么区别？
+   - 不只是上传文档问答，而是包含 query planning/清洗、领域消歧、工具 schema、trace、memory、multi-agent critic、scorecard 和 Dashboard。
+
+3. Runtime 在这里有什么价值？
+   - Workflow 描述业务步骤，Runtime 负责稳定执行：工具注册、参数校验、hook、trace、错误、memory 和上下文压缩。
+
+4. 你怎么评估 Agent 好不好？
+   - 用 scorecard 检查任务完成度、检索相关性、跑题风险、文章质量、trace 可观测性和 QA groundedness。
+
+5. Multi-Agent 是不是硬凑？
+   - 不是。Planner、Retriever、Critic、Memory、Evaluator 分别对应调研链路里的真实职责，并且每个角色都有可测试输入输出和 agent trace。
+
+6. 项目边界是什么？
+   - 当前是本地可演示平台原型，不是生产级多租户系统。权限、鉴权、分布式队列、企业监控和真实大规模压测属于后续工程化方向。
+
+7. 为什么不要继续堆版本？
+   - 现在项目的求职叙事已经闭环，继续加零散功能会稀释重点。后续应该围绕真实面试反馈、bug 和明确岗位需求维护。
+
 ## 3.1 v1.0 项目讲法
 
 ### 30 秒项目介绍

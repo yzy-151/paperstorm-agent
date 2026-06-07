@@ -894,6 +894,55 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 为 PaperStorm Agent 补齐本地演示 runbook 和 service 启动入口，使项目能稳定展示从任务提交、状态流转、产物生成到 trace/scorecard 可观测的 Agent 生命周期。
 ```
 
+## 11.2 v1.2：最终包装与投递收口
+
+状态：已完成第一阶段。
+
+目标：把 PaperStorm Agent 收口成适合 GitHub 展示、简历投递和面试讲解的项目首页与材料包。
+
+### 本次完成
+
+1. README 首页重排
+   - 新增“项目一眼看懂”。
+   - 新增“最终能力地图”。
+   - 新增 `Architecture Map`。
+   - 新增“最终演示命令”。
+   - 明确 `STORM Workflow -> PaperStorm Runtime -> Service/Dashboard`。
+
+2. 求职材料收口
+   - `docs/RESUME_INTERVIEW_PLAN.md` 增加最终简历 bullet。
+   - 增加最终面试 FAQ 精简版。
+   - 明确哪些能力可以讲，哪些边界不能夸大。
+
+3. 版本策略收口
+   - v1.2 后续进入维护和面试准备阶段。
+   - 不建议继续堆版本。
+   - 后续只针对真实面试反馈、运行缺陷或明确岗位需求做小版本维护。
+
+### 验收标准
+
+- README 能让第一次打开仓库的人快速理解项目定位、架构和演示方式。
+- VERSION_PLAN 明确 v1.2 是第一阶段收口版本。
+- RESUME_INTERVIEW_PLAN 有可直接改写到简历中的最终 bullet 和面试 FAQ。
+- 完整回归测试继续通过。
+
+### 简历价值
+
+```text
+将 PaperStorm Agent 收口为可投递项目：补齐 GitHub 首页、架构能力地图、最终演示命令、简历 bullet 和面试 FAQ，使项目从功能堆叠转为可展示、可讲述、可维护的 Agent 平台原型。
+```
+
+### 后续状态
+
+后续进入维护和面试准备阶段。
+
+维护原则：
+
+- 不为“看起来更大”继续堆版本。
+- 只修真实运行问题。
+- 只补面试反馈暴露出的表达或证据缺口。
+- 只在明确岗位需求要求时扩展新能力。
+
 ## 12. 每次版本更新模板
 
 ```markdown
