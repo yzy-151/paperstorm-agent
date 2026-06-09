@@ -80,12 +80,108 @@ PaperStorm Agent：中文论文调研与知识库 RAG Agent
 - 新增 Runtime Trace，输出 `paperstorm_trace.jsonl` 与 `run_summary.json`，记录工具调用、耗时、结果数量、失败原因和产物路径，使 Agent 执行链路可复盘。
 - 抽象 `PaperStormTool` schema，将 arXiv / Local PDF 检索封装为可发现、可调用工具，并实现 MCP-style stdio server 支持 `tools/list`、`tools/call` 和结构化错误返回。
 - 实现规则版 Eval Harness，读取检索结果、文章、trace 和 summary 输出 `scorecard.json/md`，从任务完成度、检索相关性、跑题率、文章质量和 runtime 可观测性评估 Agent 效果。
+- 设计 `PaperStormMemoryStore` 三层记忆、`compress_context` 上下文压缩和 `PaperStormKnowledgeBase` 问答模块，将调研产物转化为可问答知识库，并要求 QA 返回 citations、grounded 和 evidence。
+- 新增 `PaperStormRuntimeSession`，统一 tool registry、tool call trace 和 working memory 写入，形成轻量 Agent Runtime 雏形。
+- 将 runtime 升级为 ToolRegistry + HookManager + RuntimeEvent 结构，统一工具注册、参数校验、生命周期 hook 和 JSONL trace 字段，并让 MCP server 共用同一套工具注册模型。
+- 设计多 Agent 调研编排层，将任务拆分为 Planner、Retriever、Critic、Memory、Evaluator 等角色，通过中心化 orchestrator 输出 `agent_trace.jsonl` 和 `multi_agent_report.json`，使规划、检索、过滤、记忆和评估过程可复盘。
+- 抽象 `PaperStormTaskService` 服务核心层，支持 task_id、queued/running/succeeded/failed 状态、独立 output_dir、文章/trace/scorecard 读取、知识库 QA、fake runner 和错误脱敏，并提供可选 FastAPI 适配器。
+- 增加服务层并发与稳定性 baseline，支持 `max_concurrent_tasks`、`worker_tick`、running 任务容量释放、stale running 恢复和 fake runner 压测报告。
+- 实现静态 PaperStorm Dashboard，基于样例数据展示任务状态、文章、知识库 QA、runtime trace、scorecard、Multi-Agent 保留/过滤结果和 stress report，并补充官方 STORM 架构中文说明与架构图。
+- 将真实 STORM pipeline 封装为可注入 worker，`PaperStormTaskService` 支持 `run_mode="paperstorm"`，统一 fake 和真实任务的 task_id、状态、产物目录、trace、scorecard 和错误处理。
+- 为 Dashboard 增加 service-backed snapshot 接口，聚合 task、article、QA、scorecard、trace、pipeline worker 元数据和 service snapshot，支持前端通过 task_id 读取真实任务产物。
+- 将 Dashboard 从结果查看器扩展为本地 Agent 控制台，支持创建任务、运行任务、刷新任务列表、轮询选中任务并展示结构化失败原因。
+- 新增 v1.0 release demo，一条命令复现 service task、文章、QA、trace、scorecard 和 Dashboard 样例数据，形成可投递、可演示、可面试讲解的 Agent 平台原型。
 
 压缩版 bullet：
 
 - 基于 Stanford STORM 二次开发 PaperStorm Agent，接入 DeepSeek/MiniMax、arXiv 与本地 PDF 检索，复用多阶段 RAG 流程生成中文论文综述。
 - 实现 query 清洗、PIM 歧义消解、空检索防护、外部 API 失败降级和 JSONL runtime trace，提升 Agent 工具链稳定性与可观测性。
 - 抽象 Tool Schema 并实现 MCP-style server 与 Eval Harness，支持工具发现/调用、结构化错误和 scorecard 评估。
+- 增加三层记忆、上下文压缩、知识库 QA 和轻量 Runtime Session，使调研结果可追踪、可问答、可评估。
+- 设计 ToolRegistry、HookManager 与统一 RuntimeEvent，将 PaperStorm 工具链升级为可观测、可扩展的轻量 Agent Harness。
+- 增加 Planner/Retriever/Critic/Memory/Evaluator 多 Agent 编排和 agent trace，支持对 PIM 跑题检索结果给出过滤理由。
+- 抽象文件存储版 Agent Task Service，支持任务状态、产物隔离、知识库 QA、scorecard/trace 查询和可选 FastAPI 路由。
+- 增加任务队列、并发上限、stale task 恢复和 stress benchmark，输出平均延迟、P95、失败率和最大观察并发。
+- 实现静态 Dashboard 和官方 STORM 中文架构文档，将 Agent 执行链路、评估结果和稳定性报告可视化展示。
+- 接入真实 PaperStorm pipeline worker，并通过 runner 注入让单元测试不依赖真实 LLM/API，保留 fake baseline 作为稳定回归测试。
+- 将 Dashboard 接入 service dashboard bundle，支持输入 service URL 和 task_id 查看真实任务的 article、trace、scorecard 和 worker 元数据。
+- 将 Dashboard 升级为轻量 Agent 控制台，支持提交/运行/轮询 task，并把失败 error 纳入可观测面板。
+- 增加 release demo 生成器，把 RAG、Memory、Runtime Trace、Eval、Task Service 和 Dashboard 串成可复现的 5 分钟本地演示。
+
+## 3.0 最终简历 bullet
+
+投 Agent / RAG / 知识库平台方向时，建议最终只放 4 到 5 条，不要把所有版本都塞进简历。
+
+```text
+- 基于 Stanford STORM 二次开发 PaperStorm Agent，接入 DeepSeek/MiniMax、arXiv 与本地 PDF 检索，复用 research -> outline -> article -> polish 多阶段 RAG 流程生成中文论文综述。
+- 抽象 PaperStormTool、ToolRegistry、HookManager 和 RuntimeEvent，统一工具 schema、参数校验、生命周期 hook、JSONL trace 和结构化错误，使 Agent 执行链路可复盘。
+- 构建 Memory / Context Compression / QA 模块，将调研产物转化为可问答知识库，支持 working/episodic/semantic 三层记忆、grounded answer、citations 和 QA scorecard。
+- 设计 Planner/Retriever/Critic/Memory/Evaluator 多 Agent 编排，对 PIM 场景中的 processing-in-memory、RAM、DRAM 跑题检索结果进行过滤并记录 critic reason。
+- 抽象 PaperStormTaskService 与 FastAPI 适配器，支持 task_id、queued/running/succeeded/failed 状态、产物隔离、Dashboard 展示、并发 baseline、release demo 和 scorecard 评估。
+```
+
+最终简历短描述：
+
+```text
+PaperStorm Agent 是一个基于 Stanford STORM 二次开发的中文论文调研与知识库 Agent，覆盖 RAG、Memory、Tool Calling、MCP-style tools、Multi-Agent、Runtime Trace、Eval Harness、Task Service 和 Dashboard 演示。
+```
+
+## 3.0.1 最终面试 FAQ 精简版
+
+1. 你这个项目解决什么问题？
+   - 把原本偏离线的论文调研 pipeline 工程化成可观测、可评估、可服务化的 Agent 平台原型。
+
+2. 和普通 RAG demo 有什么区别？
+   - 不只是上传文档问答，而是包含 query planning/清洗、领域消歧、工具 schema、trace、memory、multi-agent critic、scorecard 和 Dashboard。
+
+3. Runtime 在这里有什么价值？
+   - Workflow 描述业务步骤，Runtime 负责稳定执行：工具注册、参数校验、hook、trace、错误、memory 和上下文压缩。
+
+4. 你怎么评估 Agent 好不好？
+   - 用 scorecard 检查任务完成度、检索相关性、跑题风险、文章质量、trace 可观测性和 QA groundedness。
+
+5. Multi-Agent 是不是硬凑？
+   - 不是。Planner、Retriever、Critic、Memory、Evaluator 分别对应调研链路里的真实职责，并且每个角色都有可测试输入输出和 agent trace。
+
+6. 项目边界是什么？
+   - 当前是本地可演示平台原型，不是生产级多租户系统。权限、鉴权、分布式队列、企业监控和真实大规模压测属于后续工程化方向。
+
+7. 为什么不要继续堆版本？
+   - 现在项目的求职叙事已经闭环，继续加零散功能会稀释重点。后续应该围绕真实面试反馈、bug 和明确岗位需求维护。
+
+## 3.1 v1.0 项目讲法
+
+### 30 秒项目介绍
+
+```text
+PaperStorm Agent 是我基于 Stanford STORM 二次开发的中文论文调研和知识库 Agent。我保留了原项目 research、outline、article、polish 的长文生成流程，并在此基础上补了 arXiv/本地 PDF 检索、PIM 领域消歧、Tool Schema、MCP-style server、三层记忆、上下文压缩、知识库 QA、Multi-Agent 编排、Eval Harness、Task Service 和 Dashboard。v1.0 已经能一条命令生成本地 release demo，展示一次 Agent 任务从提交、运行、问答、trace 到 scorecard 的完整链路。
+```
+
+### 2 分钟技术介绍
+
+```text
+这个项目的核心不是简单套一个 RAG，而是把论文调研 Agent 做成可观测、可评估、可服务化的系统。底层复用 STORM 的多阶段 workflow：先多视角调研，再生成大纲、文章和润色结果。我主要做了几层工程化增强：
+
+第一是 RAG 稳定性，接入 arXiv 和 Local PDF，并做 query sanitizer、PIM 缩写消歧、空检索防护和单 query 失败降级，避免 PIM 被误召回成 processing-in-memory、RAM、DRAM。
+
+第二是 Agent Runtime，把工具封装成统一 PaperStormTool schema，通过 ToolRegistry 管理工具发现和参数校验，用 HookManager 和 RuntimeEvent 记录工具调用、错误、耗时和上下文压缩，输出 JSONL trace。
+
+第三是 Memory 和 QA，把调研产物转成可问答知识库，支持 working/episodic/semantic 三层记忆、结构化上下文压缩、grounded QA、citations 和 QA eval。
+
+第四是 Multi-Agent 和评测，把调研拆成 Planner、Retriever、Critic、Memory、Evaluator，用 agent_trace 记录每个角色决策，并用 scorecard 评估任务完成度、检索相关性、跑题率、文章质量和可观测性。
+
+最后我抽象了 PaperStormTaskService 和 FastAPI 适配器，并做 Dashboard 展示任务状态、文章、QA、trace、scorecard 和错误信息。v1.0 release demo 可以不依赖真实 API key 复现完整链路，真实 worker 则可以接 DeepSeek/arXiv 手工运行。
+```
+
+### 5 分钟演示路线
+
+1. 打开 README，先指官方 STORM 架构图，说明原流程是 research -> outline -> article -> polish。
+2. 运行 `run_paperstorm_release_demo.py`，说明这个命令复用 service 层，不是单独伪造前端数据。
+3. 打开 `release_demo_summary.json`，展示 task_id、task_status、article_path、trace_path、scorecard_path 和 QA answer。
+4. 打开 `frontend/paperstorm_dashboard/index.html`，展示 Dashboard 的 task、article、QA、trace、scorecard。
+5. 讲 PIM case：expected keywords 是 `passive intermodulation / RF`，forbidden keywords 是 `processing-in-memory / DRAM / RAM`，对应检索跑题治理。
+6. 讲系统设计：ToolRegistry 负责工具，Hook/Trace 负责可观测，Memory/QA 负责知识沉淀，Eval 负责量化，Task Service 负责生命周期，Dashboard 负责调试展示。
+7. 主动讲边界：当前 v1.0 是本地可演示原型，不是生产级多租户平台；后续要补鉴权、权限、分布式队列、监控告警和真实 API 压测。
 
 ## 4. Nonlinear NN Agent 简历项目描述
 
@@ -127,7 +223,7 @@ Agentic Experiment Harness for Nonlinear System Modeling
 答题素材：
 
 ```text
-直接调 LLM API 只解决生成问题，Agent Harness 解决执行问题。它需要工具注册、参数校验、调用调度、timeout/retry、Hook、session、trace、错误恢复和评测。我的 Nonlinear 项目从零实现了 ToolRegistry、HookManager、SessionStore 和 TraceLogger；PaperStorm 则把这些思想落到 RAG 论文调研流程里，增加了 tool schema、MCP server、runtime trace 和 eval harness。
+直接调 LLM API 只解决生成问题，Agent Harness 解决执行问题。它需要工具注册、参数校验、调用调度、timeout/retry、Hook、session、trace、错误恢复和评测。我的 Nonlinear 项目从零实现了 ToolRegistry、HookManager、SessionStore 和 TraceLogger；PaperStorm 则把这些思想落到 RAG 论文调研流程里，已经实现 PaperStormTool、ToolRegistry、HookManager、RuntimeEvent、MCP server、runtime trace、memory 和 eval harness。
 ```
 
 ### Q2：RAG 全流程怎么做？
@@ -149,13 +245,45 @@ Agentic Experiment Harness for Nonlinear System Modeling
 当前回答：
 
 ```text
-短期记忆保存一次运行内的 persona、query、已读论文、已过滤论文和当前 outline；长期记忆保存跨运行的 topic summary、paper summary、缩写消歧规则和用户偏好。原始 trace 和 summary 分开存，trace 用于审计，memory 用于下次召回。
+我把记忆拆成 working、episodic、semantic 和 preferences。working 保存一次任务中的工具调用和当前上下文；episodic 保存一次运行经历，例如某个 topic 容易召回哪些跑题结果；semantic 保存可复用知识，例如 PIM 在射频场景中指 passive intermodulation；preferences 保存用户偏好，例如中文输出。trace 用来复盘执行链路，memory 用来影响后续检索和问答，两者职责分开。
 ```
 
 项目状态：
 
 ```text
-Nonlinear 已有 SessionStore 和 context_summary 字段；PaperStorm v0.2 将实现 Memory Store v1。
+Nonlinear 已有 SessionStore 和 context_summary 字段；PaperStorm 已实现 `PaperStormMemoryStore`、`compress_context` 和 `PaperStormRuntimeSession`，并在 v0.3 补了 `HookManager`、`ToolRegistry` 和统一 `RuntimeEvent` trace schema。
+```
+
+### Q3.3：Workflow 和 Runtime 有什么区别？为什么这个项目需要 Runtime？
+
+答题素材：
+
+```text
+Workflow 描述业务步骤，比如 research、outline、article、polish、qa；Runtime 描述这些步骤如何被稳定执行，比如工具怎么注册、参数怎么校验、失败怎么记录、hook 怎么插入、trace 怎么统一、memory 怎么写入。PaperStorm 原来更像 workflow，我在 v0.3 加了 ToolRegistry、HookManager、RuntimeEvent 和 RuntimeSession，让工具调用和上下文压缩都能被统一追踪。这样后续 Multi-Agent、服务化和前端 trace timeline 都有底座。
+```
+
+### Q3.4：Hook 机制有什么用？
+
+答题素材：
+
+```text
+Hook 是 Agent Runtime 的生命周期扩展点。比如 before_tool_call 可以记录输入摘要或做参数校验，after_tool_call 可以记录耗时和输出摘要，on_tool_error 可以统一收敛错误，on_context_compress 可以记录压缩是否保留关键约束。它的价值是让核心业务代码不用到处写日志、指标和错误处理，后续也方便接可观测面板和告警。
+```
+
+### Q3.1：上下文压缩怎么做，如何避免压缩丢关键信息？
+
+答题素材：
+
+```text
+我没有把压缩理解成简单截断，而是输出结构化摘要、保留事实、约束和 validation。比如 PaperStorm 的 compress_context 会检查 expected_keywords 是否仍然保留，同时检查 forbidden_keywords 是否混入摘要。这样可以解释压缩后的上下文是否还能约束下一步工具调用和生成。
+```
+
+### Q3.2：为什么要做知识库 QA，会不会降低项目格调？
+
+答题素材：
+
+```text
+普通聊天式 QA 价值不高，但企业内部文档知识库 Agent 是真实需求。我的做法不是套一个聊天壳，而是把 PaperStorm 调研产物和本地 PDF 检索结果作为证据层，QA 必须返回 citations、grounded 和 evidence，并纳入 Eval Harness 检查。这能对应企业知识库平台、RAG grounded answer 和可追踪问答链路。
 ```
 
 ### Q4：工具调用失败怎么办？
@@ -199,7 +327,15 @@ MCP 可以理解成工具发现和工具调用的标准协议边界。我的 Pap
 当前观点：
 
 ```text
-简单线性任务优先单 Agent，减少通信和状态复杂度；当任务天然包含规划、检索、批判、记忆、写作、评估等不同职责时适合 Multi-Agent。PaperStorm v0.3 计划拆分 PlannerAgent、RetrieverAgent、CriticAgent、MemoryAgent、WriterAgent、EvaluatorAgent，并用中心化 orchestrator 记录 agent_trace。
+简单线性任务优先单 Agent，减少通信和状态复杂度；当任务天然包含规划、检索、批判、记忆、写作、评估等不同职责时适合 Multi-Agent。PaperStorm 里我没有为了形式硬拆，而是把论文调研中真实存在的职责拆成 PlannerAgent、RetrieverAgent、CriticAgent、MemoryAgent 和 EvaluatorAgent，并用中心化 orchestrator 记录 agent_trace。比如 PIM case 中 CriticAgent 会把 processing-in-memory / DRAM / RAM 这类跑题结果过滤掉，并记录 reason。
+```
+
+### Q8.1：你的 Multi-Agent 是不是几个 prompt 拼起来？
+
+答题素材：
+
+```text
+不是。我先做的是可测试的工程编排层，而不是依赖 LLM 随机输出。每个 Agent 都有明确输入输出：Planner 输出 query plan，Retriever 通过 runtime 调工具，Critic 输出 kept/rejected 和 reason，Memory 写 episodic memory，Evaluator 输出 scorecard。所有 Agent 的 start/end 都写入 agent_trace.jsonl。这让 Multi-Agent 的价值可以被测试和复盘，后续再把 Planner/Critic 替换成 LLM 版本，也有规则版 baseline。
 ```
 
 ### Q9：Skill 和 MCP 有什么区别？
@@ -215,7 +351,7 @@ Skill 更像 Agent 内部能力封装和触发策略，强调什么时候用、�
 结合未来规划：
 
 ```text
-当前项目处于本地原型阶段，已经做了错误降级、trace、eval 和测试。后续版本会补 FastAPI task_id、异步任务、状态查询、前端展示、错误分类、检索缓存、memory 召回和固定 benchmark。真正生产级还需要鉴权、限流、队列、并发压测、监控告警和数据权限。
+当前项目处于本地原型阶段，已经做了错误降级、trace、eval、测试和 PaperStormTaskService 服务核心层。v0.5 已经支持 task_id、状态查询、文章/trace/scorecard 读取、知识库 QA、fake runner、独立 output_dir 和错误脱敏，并提供可选 FastAPI 适配器。真正生产级还需要鉴权、限流、队列、并发压测、监控告警、数据权限和真实 worker 编排。
 ```
 
 ## 6. 针对目标 JD 的项目强化方向
@@ -281,7 +417,63 @@ PaperStorm 最早是论文调研 Agent，但底层能力可以迁移到企业内
 高并发回答边界：
 
 ```text
-当前 PaperStorm 还不是线上高并发系统。后续会按工程路径推进：先 FastAPI task_id 和状态隔离，再单 worker 后台执行，再加任务队列、并发数限制、timeout/retry、rate limit 和 fake runner 压测。真正生产级还需要鉴权、权限、监控告警、分布式队列和成本治理。
+当前 PaperStorm 还不是线上高并发系统，但已经完成了单进程服务层稳定性 baseline：task_id、状态隔离、独立 output_dir、trace/scorecard 隔离、max_concurrent_tasks、worker_tick、stale running 恢复和 fake runner 压测报告。下一步如果接真实 worker，会给 LLM、检索、embedding 工具加 timeout/retry/rate limit，并用 10/50/100 任务压测统计平均延迟、P95、失败率和 retry 次数。真正生产级还需要鉴权、权限、监控告警、分布式队列和成本治理。
+```
+
+### Q13.1：为什么先做 fake runner，不直接接真实 LLM 服务？
+
+推荐回答：
+
+```text
+因为服务层首先要验证任务状态、路径隔离、trace、scorecard、错误脱敏和 QA API 这些工程语义，不能让测试依赖真实 API、网络和模型波动。fake runner 是稳定 baseline，可以支撑单元测试、前端预览和后续压测。真实 LLM pipeline 后续作为 worker runner 接入，同一套 task_id 和状态模型不用变。
+```
+
+### Q13.2：为什么要做前端 Dashboard？
+
+推荐回答：
+
+```text
+Agent 系统的问题定位不能只看最终回答。Dashboard 的价值是把 task 状态、runtime trace、scorecard、QA 引用、Multi-Agent 决策和 stress report 展示出来，让执行链路可解释、可复盘、可沟通。对企业 Agent 平台来说，这对应可观测性和跨角色协作：算法、后端、产品都能看到 Agent 为什么这么答、工具是否失败、检索是否跑题、评估指标是否达标。
+```
+
+### Q13.3：真实 LLM pipeline 怎么接入服务层？为什么要 runner 注入？
+
+推荐回答：
+
+```text
+我没有让 service 直接散落调用命令行脚本，而是把真实 STORM pipeline 封装成 `run_paperstorm_pipeline_task(state)`，由 `PaperStormTaskService` 在 `run_mode="paperstorm"` 时调用。service 只关心 task_id、状态、output_dir、trace、scorecard 和错误处理，真实 worker 负责把 task state 映射成 STORM runner 配置。这样 fake runner 和真实 worker 共用同一套服务语义，测试可以注入本地 runner，不依赖真实 LLM、arXiv、网络和余额；生产上也可以把这个 runner 换成队列 worker 或异步 worker。
+```
+
+### Q13.4：这次为什么修了 keywords 脱敏？
+
+推荐回答：
+
+```text
+我在新增 service CLI smoke test 时发现 `expected_keywords` 和 `forbidden_keywords` 被错误脱敏成 `***REDACTED***`。根因是旧脱敏规则只要字段名包含 `key` 就脱敏，误伤了 `keywords`，导致 eval 约束丢失。修复后只对 `api_key`、`secret_key`、`token`、`password` 等真正敏感字段脱敏，同时新增回归测试保证领域关键词不会再丢。
+```
+
+### Q13.5：Dashboard 为什么要后端聚合 snapshot，而不是前端分别调很多接口？
+
+推荐回答：
+
+```text
+我给 service 增加了 `get_dashboard_bundle(task_id)` 和 `/research-tasks/{task_id}/dashboard`，把 task、article、QA、scorecard、trace、pipeline worker 元数据聚合成一个前端 snapshot。这样前端只负责展示，后端负责产物结构和路径处理，减少前端对内部文件结构的依赖。对 Agent 平台来说，这是一种常见的可观测性接口设计：调试页面需要的是一次运行的完整视图，而不是让页面自己拼很多低层接口。
+```
+
+### Q13.6：为什么 v0.9 还要做提交、运行和轮询？
+
+推荐回答：
+
+```text
+因为只展示结果还不算 Agent 平台，最多是报告查看器。v0.9 把 Dashboard 扩成一个本地 Agent 控制台：前端可以创建 task、运行 task、刷新任务列表、轮询 selected task，并展示结构化 error。这样面试时可以讲清楚 Agent runtime 的完整生命周期：submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard，而不是只讲一个离线脚本。
+```
+
+### Q13.7：v1.1 面试讲法：为什么还要做 Demo Runbook？
+
+推荐回答：
+
+```text
+演示不是只给静态截图。Agent 平台面试里，面试官更关心系统是不是能复现、能定位问题、能解释状态变化。v1.1 我补了 start_paperstorm_service.py 和 README runbook，让项目可以按固定步骤启动 service、打开 Dashboard、提交任务、运行任务、轮询任务，再查看 article、QA、trace 和 scorecard。这个链路能讲清楚 submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard，也能说明 fake 模式用于稳定演示，paperstorm 模式用于真实 LLM 任务。
 ```
 
 ### Q11：做普通知识库 QA 会不会降低项目水平？
@@ -305,7 +497,7 @@ PaperStorm 最早是论文调研 Agent，但底层能力可以迁移到企业内
 推荐回答：
 
 ```text
-我会分阶段做，不会一上来声称高并发。第一阶段 FastAPI task_id，保证每个任务状态、output_dir、trace、scorecard 隔离；第二阶段后台 worker 和队列，限制 max_concurrent_tasks；第三阶段给 LLM、检索、embedding 工具加 timeout/retry/rate limit；第四阶段用 fake runner 做压测，统计平均延迟、P95、失败率和 retry 次数。难点是外部 API 限流、embedding 模型复用、文件写入隔离、阻塞调用与 async 混用、失败任务状态恢复。
+我会分阶段做，不会一上来声称高并发。当前已经完成第一阶段和第二阶段的单进程 baseline：task_id、状态隔离、output_dir/trace/scorecard 隔离、worker_tick 队列、max_concurrent_tasks、stale running 恢复和 fake runner 压测。下一步真实 worker 接入后，再给 LLM、检索、embedding 工具加 timeout/retry/rate limit。难点是外部 API 限流、embedding 模型复用、文件写入隔离、阻塞调用与 async 混用、失败任务状态恢复。
 ```
 
 ## 7. 简历投递策略

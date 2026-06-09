@@ -211,6 +211,71 @@ def evaluate_run(run_dir, case: EvalCase):
     }
 
 
+def evaluate_qa_artifact(run_dir, case: EvalCase):
+    run_dir = Path(run_dir)
+    qa = _read_json(run_dir / "qa_answer.json", {})
+    answer = str(qa.get("answer") or "")
+    citations = qa.get("citations") or []
+    grounded = bool(qa.get("grounded"))
+    expected_hits = _count_keyword_hits(answer, case.expected_keywords)
+    forbidden_hits = _count_keyword_hits(answer, case.forbidden_keywords)
+    chinese_ratio = _chinese_char_ratio(answer)
+
+    keyword_score = 12.0
+    if case.expected_keywords:
+        keyword_score = 12.0 * min(1.0, len(expected_hits) / len(case.expected_keywords))
+    citation_score = 8.0 if citations else 0.0
+    grounded_score = 6.0 if grounded else 0.0
+    language_score = 4.0
+    if case.expected_language == "zh":
+        language_score = 4.0 * min(1.0, chinese_ratio / 0.25)
+    forbidden_penalty = 10.0 if forbidden_hits else 0.0
+    qa_quality = keyword_score + citation_score + grounded_score + language_score
+    total = max(0.0, min(100.0, qa_quality - forbidden_penalty))
+
+    checks = {
+        "qa_exists": bool(qa),
+        "qa_has_answer": bool(answer.strip()),
+        "qa_has_citation": bool(citations),
+        "qa_grounded": grounded,
+    }
+    notes = []
+    if not checks["qa_exists"]:
+        notes.append("缺少 qa_answer.json。")
+    if not checks["qa_has_citation"]:
+        notes.append("问答缺少引用，不能证明答案来自知识库证据。")
+    if forbidden_hits:
+        notes.append("问答中出现跑题关键词：" + ", ".join(forbidden_hits))
+    missing = [item for item in case.expected_keywords if item not in expected_hits]
+    if missing:
+        notes.append("问答未覆盖期望关键词：" + ", ".join(missing))
+    if not notes:
+        notes.append("问答结果满足当前知识库 QA 评估规则。")
+
+    return {
+        "topic": case.topic,
+        "scores": {
+            "total": round(total, 2),
+            "qa_quality": round(qa_quality, 2),
+            "forbidden_penalty": round(forbidden_penalty, 2),
+        },
+        "metrics": {
+            "expected_hits": expected_hits,
+            "forbidden_hits": forbidden_hits,
+            "citation_count": len(citations),
+            "chinese_char_ratio": round(chinese_ratio, 4),
+        },
+        "checks": checks,
+        "notes": notes,
+    }
+
+
+def evaluate_multi_agent_report(run_dir):
+    from .paperstorm_agents import evaluate_multi_agent_report as _evaluate
+
+    return _evaluate(run_dir)
+
+
 def _build_notes(checks, forbidden_hits, expected_hits, case, source_count) -> List[str]:
     notes = []
     if not checks["has_article"]:

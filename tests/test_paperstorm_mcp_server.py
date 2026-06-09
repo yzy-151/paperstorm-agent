@@ -94,6 +94,22 @@ class PaperStormMCPServerTest(unittest.TestCase):
 
         self.assertIn("arxiv_search", registry)
 
+    def test_mcp_server_accepts_runtime_tool_registry(self):
+        from examples.storm_examples.paperstorm_mcp_server import (
+            handle_jsonrpc_request,
+        )
+        from knowledge_storm.paperstorm_runtime import ToolRegistry
+
+        registry = ToolRegistry()
+        registry.register(FakeTool())
+
+        response = handle_jsonrpc_request(
+            {"jsonrpc": "2.0", "id": 4, "method": "tools/list"},
+            registry,
+        )
+
+        self.assertEqual(response["result"]["tools"][0]["name"], "fake_search")
+
 
 if __name__ == "__main__":
     unittest.main()
