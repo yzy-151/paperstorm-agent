@@ -88,6 +88,56 @@ submit -> queued -> running -> succeeded/failed -> artifacts -> trace/scorecard
 
 v1.2 是本项目第一阶段最终包装版。此后项目进入维护和面试准备阶段，除非有明确岗位需求或真实缺陷，不再继续堆版本。
 
+## v2.0 Research QA Agent
+
+v2.0 是第二阶段 Research QA Agent 演示版。项目从“先调研、再手动问答”升级为“用户直接提问，Agent 判断是否需要检索，基于证据回答”的交互式文献问答链路。
+
+核心入口：
+
+```text
+POST /research-agent/ask
+```
+
+请求示例：
+
+```json
+{
+  "question": "PIM 是什么，神经网络如何抑制它？",
+  "topic": "pim 神经网络抑制",
+  "run_mode": "fake",
+  "expected_keywords": ["passive intermodulation", "RF"],
+  "forbidden_keywords": ["DRAM", "RAM", "processing-in-memory"]
+}
+```
+
+返回内容包括：
+
+```text
+answer
+citations
+evidence
+grounded
+used_task_id
+retrieval_triggered
+decision
+evidence_sufficiency
+qa_history
+trace
+```
+
+Research QA Agent 的阶段能力：
+
+- v1.3：统一 ask 入口，自动创建 research task 或复用已有 task_id。
+- v1.4：Evidence Sufficiency，证据不足时 `reject_low_confidence`，避免无关证据硬拼回答。
+- v1.5：Dashboard 聊天式问答，页面可直接发送问题并展示 answer、citations、decision 和 sufficiency。
+- v1.6：统一 evidence schema，证据包含 `source_type`、`chunk_id`、`score`、`metadata`。
+- v1.7：QA history，支持连续追问的轻量会话记忆。
+- v1.8：`research_qa` Tool Schema，Research QA 能力可被工具系统发现和调用。
+- v1.9：Research QA Benchmark，输出 `research_qa_benchmark_report.json` 和 `research_qa_benchmark_report.md`。
+- v2.0：README、版本计划和面试材料收口，形成可演示的文献检索问答 Agent。
+
+本地 service 启动后，可在 Dashboard 的“文献检索问答”区域直接提问；如果没有 Task ID，fake 模式会自动跑一次可复现调研任务。
+
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
 ```text
@@ -644,6 +694,7 @@ scorecard.md
 arxiv_search
 local_pdf_search
 kb_qa
+research_qa
 ```
 
 其中 `local_pdf_search` 需要传入 `--pdf-dir` 后启用。
@@ -673,10 +724,10 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
   tests.test_minimax_runtime_fixes -v
 ```
 
-最近目标结果：
+最近目标结果以当前回归输出为准，例如：
 
 ```text
-Ran 82 tests
+Ran N tests
 OK
 ```
 

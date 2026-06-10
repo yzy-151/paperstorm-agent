@@ -94,6 +94,12 @@ class PaperStormMemoryQATest(unittest.TestCase):
         self.assertTrue(answer["citations"])
         self.assertTrue(answer["grounded"])
         self.assertIn("semantic", answer["memory_context"])
+        self.assertEqual(answer["evidence"][0]["source_type"], "article")
+        self.assertIn("chunk_id", answer["evidence"][0])
+        self.assertIn("score", answer["evidence"][0])
+        self.assertIn("metadata", answer["evidence"][0])
+        self.assertEqual(answer["citations"][0]["source_type"], "article")
+        self.assertIn("chunk_id", answer["citations"][0])
 
     def test_kb_qa_tool_exposes_schema_and_runs(self):
         from knowledge_storm.paperstorm_tools import KnowledgeBaseQATool
@@ -119,6 +125,28 @@ class PaperStormMemoryQATest(unittest.TestCase):
         self.assertIn("run_dir", schema["input_schema"]["required"])
         self.assertIn("passive intermodulation", result["answer"])
         self.assertTrue(result["citations"])
+
+    def test_research_qa_tool_exposes_schema_and_runs_fake_agent(self):
+        from knowledge_storm.paperstorm_tools import ResearchQATool
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tool = ResearchQATool(service_root=Path(temp_dir))
+            schema = tool.to_schema()
+            result = tool.run(
+                {
+                    "question": "PIM 是什么？",
+                    "topic": "pim 神经网络抑制",
+                    "run_mode": "fake",
+                    "expected_keywords": ["passive intermodulation"],
+                    "forbidden_keywords": ["DRAM"],
+                }
+            )
+
+        self.assertEqual(schema["name"], "research_qa")
+        self.assertIn("question", schema["input_schema"]["required"])
+        self.assertEqual(result["decision"]["action"], "retrieve_then_answer")
+        self.assertTrue(result["citations"])
+        self.assertIn("evidence_sufficiency", result)
 
     def test_evaluate_qa_artifact_scores_grounded_answers(self):
         from knowledge_storm.paperstorm_eval import EvalCase, evaluate_qa_artifact

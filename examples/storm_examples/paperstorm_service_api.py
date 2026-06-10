@@ -5,6 +5,8 @@ Example:
     uvicorn examples.storm_examples.paperstorm_service_api:app --reload
 """
 
+import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -12,19 +14,23 @@ from knowledge_storm.paperstorm_service import PaperStormTaskService
 
 
 DEFAULT_SERVICE_ROOT = Path("./results/paperstorm_service")
+DEFAULT_DASHBOARD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "paperstorm_dashboard"
 
 
-def create_app(service_root=DEFAULT_SERVICE_ROOT):
+def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOARD_DIR):
     try:
         from fastapi import FastAPI
+        from fastapi.responses import FileResponse, StreamingResponse
         from pydantic import BaseModel
         from starlette.middleware.cors import CORSMiddleware
+        from starlette.staticfiles import StaticFiles
     except ImportError as exc:
         raise RuntimeError(
             "FastAPI service adapter requires optional dependencies: fastapi and uvicorn."
         ) from exc
 
     service = PaperStormTaskService(root_dir=service_root)
+    dashboard_dir = Path(dashboard_dir)
     app = FastAPI(title="PaperStorm Agent Service", version="0.9")
     app.add_middleware(
         CORSMiddleware,
@@ -32,6 +38,12 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT):
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    if dashboard_dir.exists():
+        app.mount(
+            "/dashboard",
+            StaticFiles(directory=str(dashboard_dir), html=True),
+            name="dashboard",
+        )
 
     class ResearchTaskRequest(BaseModel):
         topic: str
@@ -60,9 +72,80 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT):
         question: str
         top_k: int = 3
 
+    class ResearchAgentAskRequest(BaseModel):
+        question: str
+        topic: Optional[str] = None
+        task_id: Optional[str] = None
+        mode: str = "auto"
+        top_k: int = 3
+        run_mode: str = "fake"
+        retriever: str = "arxiv"
+        output_language: str = "zh"
+        expected_keywords: list[str] = []
+        forbidden_keywords: list[str] = []
+
+    @app.get("/")
+    def get_dashboard_home():
+        index_path = dashboard_dir / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        return {"service": "PaperStorm Agent Service", "dashboard": "not found"}
+
+    @app.get("/styles.css")
+    def get_dashboard_styles():
+        return _dashboard_file_response(dashboard_dir, "styles.css")
+
+    @app.get("/app.js")
+    def get_dashboard_app_js():
+        return _dashboard_file_response(dashboard_dir, "app.js")
+
+    @app.get("/sample_data.js")
+    def get_dashboard_sample_data_js():
+        return _dashboard_file_response(dashboard_dir, "sample_data.js")
+
+    @app.get("/sample_data.json")
+    def get_dashboard_sample_data_json():
+        return _dashboard_file_response(dashboard_dir, "sample_data.json")
+
+    @app.get("/events")
+    def stream_events(task_id: Optional[str] = None, once: bool = False):
+        def event_stream():
+            yield _sse_event(
+                "service",
+                {
+                    "status": "connected",
+                    "message": "PaperStorm SSE connected",
+                    "task_id": task_id or "",
+                },
+            )
+            last_status = None
+            while True:
+                payload = {
+                    "status": "heartbeat",
+                    "task_count": len(service.list_tasks()),
+                    "task_id": task_id or "",
+                    "timestamp": time.time(),
+                }
+                if task_id:
+                    try:
+                        task = service.get_task(task_id)
+                        payload["task_status"] = task.get("status", "")
+                        payload["topic"] = task.get("topic", "")
+                    except KeyError:
+                        payload["task_status"] = "unknown"
+                    if payload.get("task_status") != last_status:
+                        last_status = payload.get("task_status")
+                        yield _sse_event("task_status", payload)
+                yield _sse_event("heartbeat", payload)
+                if once:
+                    break
+                time.sleep(2)
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
     @app.post("/research-tasks")
     def submit_research_task(request: ResearchTaskRequest):
-        return service.submit_research_task(**request.dict())
+        return service.submit_research_task(**_request_payload(request))
 
     @app.get("/research-tasks")
     def list_research_tasks(status: Optional[str] = None):
@@ -100,7 +183,35 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT):
             top_k=request.top_k,
         )
 
+    @app.post("/research-agent/ask")
+    def ask_research_agent(request: ResearchAgentAskRequest):
+        return service.ask_research_agent(**_request_payload(request))
+
     return app
+
+
+def _sse_event(event, payload):
+    return "event: {0}\ndata: {1}\n\n".format(
+        event,
+        json.dumps(payload, ensure_ascii=False),
+    )
+
+
+def _dashboard_file_response(dashboard_dir, filename):
+    from fastapi.responses import FileResponse
+
+    path = Path(dashboard_dir) / filename
+    if not path.exists():
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail=f"{filename} not found")
+    return FileResponse(path)
+
+
+def _request_payload(request):
+    if hasattr(request, "model_dump"):
+        return request.model_dump()
+    return request.dict()
 
 
 try:

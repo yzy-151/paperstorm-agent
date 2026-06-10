@@ -11,59 +11,108 @@
       <div>
         <p class="eyebrow">PaperStorm Agent Dashboard</p>
         <h1>论文调研 Agent 执行链路</h1>
+        <p class="header-subtitle">面向论文检索、RAG 生成、运行追踪与多 Agent 协作的本地演示控制台</p>
       </div>
-      <div class="status-pill" id="project-version">loading</div>
+      <div class="header-meta">
+        <span>release</span>
+        <strong id="project-version">v2.0</strong>
+      </div>
     </header>
 
     <section class="toolbar" aria-label="service data loader">
       <label>
-        Service URL
-        <input id="service-url" value="http://127.0.0.1:8000" />
+        服务地址
+        <input id="service-url" placeholder="默认使用当前页面地址" />
       </label>
       <label>
-        Task ID
+        任务 ID
         <input id="service-task-id" placeholder="输入 task_id" />
       </label>
       <button id="load-service-task" type="button">加载真实任务</button>
       <button id="load-sample-data" type="button">加载样例数据</button>
-      <span id="data-source-status">sample data</span>
+      <span id="data-source-status">
+        <span class="status-dot idle" id="runtime-status-dot" aria-hidden="true"></span>
+        <span id="runtime-status-text">sample data</span>
+      </span>
     </section>
 
     <main class="dashboard-grid">
+      <section class="panel wide" id="usage-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">How to Operate</p>
+            <h2>操作说明</h2>
+          </div>
+          <span class="soft-badge">本地 fake 调试优先，真实 API 再切 paperstorm</span>
+        </div>
+        <div class="help-grid">
+          <div class="help-card">
+            <strong>提交任务</strong>
+            <p>创建一个 queued 任务，只写入任务状态，不真正调用论文检索或 LLM。</p>
+          </div>
+          <div class="help-card">
+            <strong>运行选中任务</strong>
+            <p>执行当前 Task ID。fake 模式快速生成示例结果；paperstorm 模式调用真实检索和模型。</p>
+          </div>
+          <div class="help-card">
+            <strong>轮询选中任务</strong>
+            <p>主动读取任务最新状态、文章、分数、trace 和过程文件，用来确认是否执行完成。</p>
+          </div>
+          <div class="help-card">
+            <strong>刷新任务列表</strong>
+            <p>拉取服务端所有任务。选择某一条后，Task ID 会回填到顶部输入框。</p>
+          </div>
+          <div class="help-card">
+            <strong>加载真实任务</strong>
+            <p>根据 Task ID 读取完整 dashboard bundle，适合恢复历史运行结果。</p>
+          </div>
+          <div class="help-card">
+            <strong>Benchmark</strong>
+            <p>稳定性压测区展示 total、failed、failure_rate、p95_latency、并发峰值等指标，用于说明 Agent runtime 的可靠性。</p>
+          </div>
+        </div>
+      </section>
+
       <section class="panel wide" id="create-task-panel">
-        <h2>任务控制台</h2>
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Control Plane</p>
+            <h2>任务控制台</h2>
+          </div>
+          <span class="soft-badge">fake / real pipeline</span>
+        </div>
         <div class="control-grid">
           <label>
-            Topic
+            调研主题
             <input id="task-topic" value="pim 神经网络抑制" />
           </label>
           <label>
-            Run Mode
+            运行模式
             <select id="task-run-mode">
               <option value="fake">fake</option>
               <option value="paperstorm">paperstorm</option>
             </select>
           </label>
           <label>
-            Retriever
+            检索器
             <select id="task-retriever">
               <option value="arxiv">arxiv</option>
               <option value="local-pdf">local-pdf</option>
             </select>
           </label>
           <label>
-            Output Language
+            输出语言
             <select id="task-output-language">
               <option value="zh">zh</option>
               <option value="original">original</option>
             </select>
           </label>
           <label>
-            Expected Keyword
+            期望关键词
             <input id="task-expected-keyword" value="passive intermodulation" />
           </label>
           <label>
-            Forbidden Keyword
+            排除关键词
             <input id="task-forbidden-keyword" value="DRAM" />
           </label>
           <div class="button-row">
@@ -72,6 +121,46 @@
             <button id="poll-selected-task" type="button">轮询选中任务</button>
             <button id="refresh-task-list" type="button">刷新任务列表</button>
           </div>
+        </div>
+      </section>
+
+      <section class="panel wide" id="research-qa-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Research QA Agent</p>
+            <h2>文献检索问答</h2>
+          </div>
+          <span class="soft-badge">ask -> check evidence -> retrieve/answer</span>
+        </div>
+        <div class="chat-layout">
+          <div class="chat-controls">
+            <label>
+              问题
+              <textarea id="research-question" rows="3">PIM 是什么，神经网络如何抑制它？</textarea>
+            </label>
+            <button id="ask-research-agent" type="button">发送问题</button>
+          </div>
+          <div class="chat-transcript">
+            <div class="chat-message user">
+              <strong>你可以问</strong>
+              <p>围绕当前 task_id 提问；如果没有 task_id，Agent 会自动创建 fake 调研任务后回答。</p>
+            </div>
+            <div class="chat-message assistant" id="research-answer">等待提问。</div>
+          </div>
+        </div>
+        <div class="qa-debug-grid">
+          <section class="debug-card">
+            <h3>Decision</h3>
+            <pre id="research-decision"></pre>
+          </section>
+          <section class="debug-card">
+            <h3>Evidence Sufficiency</h3>
+            <pre id="research-sufficiency"></pre>
+          </section>
+          <section class="debug-card">
+            <h3>Citations</h3>
+            <div id="research-citations" class="stack"></div>
+          </section>
         </div>
       </section>
 
@@ -105,9 +194,42 @@
         <ol id="trace-list" class="timeline"></ol>
       </section>
 
+      <section class="panel" id="sse-panel">
+        <h2>SSE 事件流</h2>
+        <ol id="sse-event-list" class="timeline"></ol>
+      </section>
+
       <section class="panel wide" id="multi-agent-panel">
         <h2>Multi-Agent 编排</h2>
         <div id="multi-agent" class="stack"></div>
+      </section>
+
+      <section class="panel wide" id="process-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Process Introspection</p>
+            <h2>过程细节</h2>
+          </div>
+          <span class="soft-badge">outline / reflection / conversation / search</span>
+        </div>
+        <div class="process-grid">
+          <section class="process-card">
+            <h3>Outline</h3>
+            <pre id="outline-content"></pre>
+          </section>
+          <section class="process-card">
+            <h3>Reflection / Summary</h3>
+            <pre id="reflection-content"></pre>
+          </section>
+          <section class="process-card">
+            <h3>Plan / Search</h3>
+            <pre id="plan-content"></pre>
+          </section>
+          <section class="process-card">
+            <h3>Conversation</h3>
+            <pre id="conversation-content"></pre>
+          </section>
+        </div>
       </section>
 
       <section class="panel" id="pipeline-worker-panel">

@@ -25,7 +25,8 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
             self.assertIn("pipeline_worker", data)
             self.assertIn("service_snapshot", data)
             self.assertIn("stress_report", data)
-            self.assertEqual(data["project"]["version"], "v0.9")
+            self.assertEqual(data["project"]["version"], "v1.2")
+            self.assertIn("process", data)
             self.assertEqual(bundle["data_path"], str(data_path))
             self.assertEqual(bundle["js_path"], str(js_path))
 
@@ -86,6 +87,72 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("pollSelectedTask", script)
         self.assertIn("fetchTaskList", script)
         self.assertIn("/research-tasks", script)
+
+    def test_static_frontend_exposes_sse_event_stream_panel(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("sse-panel", index)
+        self.assertIn("sse-event-list", index)
+        self.assertIn("EventSource", script)
+        self.assertIn("/events", script)
+        self.assertIn("connectSSE", script)
+
+    def test_dashboard_exposes_debuggable_v20_runtime_ui(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        styles = (root / "frontend" / "paperstorm_dashboard" / "styles.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("v2.0", index)
+        self.assertIn("操作说明", index)
+        self.assertIn("Benchmark", index)
+        self.assertIn("过程细节", index)
+        self.assertIn("outline-content", index)
+        self.assertIn("reflection-content", index)
+        self.assertIn("conversation-content", index)
+        self.assertIn("formatTimestamp", script)
+        self.assertIn("setButtonBusy", script)
+        self.assertIn("getServiceBaseUrl", script)
+        self.assertIn("renderProcessDetails", script)
+        self.assertIn("log-event-service", styles)
+        self.assertIn("log-event-error", styles)
+        self.assertIn("log-event-task_status", styles)
+
+    def test_dashboard_exposes_research_qa_chat(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        styles = (root / "frontend" / "paperstorm_dashboard" / "styles.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("research-qa-panel", index)
+        self.assertIn("research-question", index)
+        self.assertIn("ask-research-agent", index)
+        self.assertIn("research-answer", index)
+        self.assertIn("research-citations", index)
+        self.assertIn("research-decision", index)
+        self.assertIn("research-sufficiency", index)
+        self.assertIn("/research-agent/ask", script)
+        self.assertIn("askResearchAgent", script)
+        self.assertIn("renderResearchQA", script)
+        self.assertIn("chat-transcript", styles)
 
     def test_official_chinese_doc_and_readme_include_storm_architecture(self):
         root = Path(__file__).resolve().parents[1]

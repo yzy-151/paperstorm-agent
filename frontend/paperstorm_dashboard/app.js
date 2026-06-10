@@ -1,13 +1,17 @@
+let sseSource = null;
+const DASHBOARD_VERSION = "v2.0";
+
 async function loadDashboard() {
   try {
+    initializeServiceUrl();
     const data = window.PAPERSTORM_SAMPLE_DATA || await fetchSampleData();
     renderDashboard(data);
-    setStatus("sample data");
+    setStatus("sample data", "idle");
   } catch (error) {
     document.querySelector("#task-list").innerHTML =
       `<div class="item">请先运行 <code>python examples/storm_examples/build_paperstorm_demo_bundle.py --output-dir frontend/paperstorm_dashboard</code></div>`;
     document.querySelector("#project-version").textContent = "no data";
-    setStatus(error.message);
+    setStatus(error.message, "error");
   }
 }
 
@@ -19,6 +23,7 @@ function renderDashboard(data) {
   renderQA(data.qa || {});
   renderTrace(data.trace || {});
   renderMultiAgent(data.multi_agent || {}, data.agent_trace || []);
+  renderProcessDetails(data.process || {});
   renderPipelineWorker(data.pipeline_worker || {}, data.service_snapshot || {});
   renderTaskError((data.tasks || [])[0] || {});
   renderStress(data.stress_report || {});
@@ -38,20 +43,29 @@ async function loadServiceTask() {
     setStatus("请输入 task_id");
     return;
   }
-  setStatus("loading service task");
+  setStatus("loading service task", "loading");
   try {
+    setButtonBusy("load-service-task", true, "加载中");
+    connectSSE(taskId);
     const data = await fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/dashboard`);
     renderDashboard(data);
-    setStatus(`service task ${taskId}`);
+    setStatus(`service task ${taskId}`, statusTone((data.tasks || [])[0]?.status));
   } catch (error) {
-    setStatus(error.message);
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("load-service-task", false);
   }
 }
 
 async function loadSampleData() {
-  const data = window.PAPERSTORM_SAMPLE_DATA || await fetchSampleData();
-  renderDashboard(data);
-  setStatus("sample data");
+  try {
+    setButtonBusy("load-sample-data", true, "加载中");
+    const data = window.PAPERSTORM_SAMPLE_DATA || await fetchSampleData();
+    renderDashboard(data);
+    setStatus("sample data ready", "success");
+  } finally {
+    setButtonBusy("load-sample-data", false);
+  }
 }
 
 async function submitTask() {
@@ -68,72 +82,178 @@ async function submitTask() {
     max_thread_num: 1,
   };
   if (!payload.topic) {
-    setStatus("请输入 topic");
+    setStatus("请输入 topic", "error");
     return;
   }
   try {
+    setStatus("submitting task", "loading");
+    setButtonBusy("submit-task", true, "提交中");
     const task = await fetchJson("/research-tasks", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload),
     });
     document.querySelector("#service-task-id").value = task.task_id;
+    connectSSE(task.task_id);
     await fetchTaskList();
-    setStatus(`created ${task.task_id}`);
+    setStatus(`created ${task.task_id}`, statusTone(task.status));
   } catch (error) {
-    setStatus(error.message);
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("submit-task", false);
   }
 }
 
 async function runSelectedTask() {
   const taskId = getSelectedTaskId();
   if (!taskId) {
-    setStatus("请输入 task_id");
+    setStatus("请输入 task_id", "error");
     return;
   }
   try {
+    connectSSE(taskId);
+    setStatus(`running ${taskId}`, "running");
+    setButtonBusy("run-selected-task", true, "运行中");
     const task = await fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/run`, {
       method: "POST",
     });
-    setStatus(`run ${task.status}`);
+    setStatus(`run ${task.status}`, statusTone(task.status));
     await pollSelectedTask();
   } catch (error) {
-    setStatus(error.message);
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("run-selected-task", false);
   }
 }
 
 async function pollSelectedTask() {
   const taskId = getSelectedTaskId();
   if (!taskId) {
-    setStatus("请输入 task_id");
+    setStatus("请输入 task_id", "error");
     return;
   }
   try {
+    connectSSE(taskId);
+    setStatus(`polling ${taskId}`, "loading");
+    setButtonBusy("poll-selected-task", true, "轮询中");
     const data = await fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/dashboard`);
     renderDashboard(data);
-    setStatus(`polled ${(data.tasks || [])[0]?.status || "unknown"}`);
+    const taskStatus = (data.tasks || [])[0]?.status || "unknown";
+    setStatus(`polled ${taskStatus}`, statusTone(taskStatus));
   } catch (error) {
-    setStatus(error.message);
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("poll-selected-task", false);
   }
 }
 
 async function fetchTaskList() {
   try {
+    setStatus("refreshing tasks", "loading");
+    setButtonBusy("refresh-task-list", true, "刷新中");
     const data = await fetchJson("/research-tasks");
     renderTasks(data.tasks || []);
-    setStatus(`tasks ${(data.tasks || []).length}`);
+    setStatus(`tasks ${(data.tasks || []).length}`, "success");
   } catch (error) {
-    setStatus(error.message);
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("refresh-task-list", false);
+  }
+}
+
+async function askResearchAgent() {
+  const question = document.querySelector("#research-question").value.trim();
+  if (!question) {
+    setStatus("请输入问题", "error");
+    return;
+  }
+  const payload = {
+    question,
+    topic: document.querySelector("#task-topic").value.trim() || question,
+    task_id: getSelectedTaskId() || undefined,
+    run_mode: document.querySelector("#task-run-mode").value,
+    retriever: document.querySelector("#task-retriever").value,
+    output_language: document.querySelector("#task-output-language").value,
+    expected_keywords: splitKeywords(document.querySelector("#task-expected-keyword").value),
+    forbidden_keywords: splitKeywords(document.querySelector("#task-forbidden-keyword").value),
+  };
+  try {
+    setStatus("research qa asking", "loading");
+    setButtonBusy("ask-research-agent", true, "回答中");
+    appendSSEEvent("planning", JSON.stringify({question}));
+    const answer = await fetchJson("/research-agent/ask", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    if (answer.used_task_id) {
+      document.querySelector("#service-task-id").value = answer.used_task_id;
+      connectSSE(answer.used_task_id);
+    }
+    renderResearchQA(answer);
+    setStatus(`qa ${answer.decision?.action || "answered"}`, answer.grounded ? "success" : "error");
+  } catch (error) {
+    setStatus(error.message, "error");
+    renderResearchQA({answer: error.message, citations: [], decision: {action: "failed"}, evidence_sufficiency: {}});
+  } finally {
+    setButtonBusy("ask-research-agent", false);
   }
 }
 
 async function fetchJson(path, options) {
-  const baseUrl = document.querySelector("#service-url").value.replace(/\/+$/, "");
+  const baseUrl = getServiceBaseUrl();
   const response = await fetch(`${baseUrl}${path}`, options);
   if (!response.ok) {
     throw new Error(`service ${response.status}`);
   }
   return response.json();
+}
+
+function connectSSE(taskId = "") {
+  const baseUrl = getServiceBaseUrl();
+  if (!baseUrl) {
+    appendSSEEvent("error", "missing service url");
+    return;
+  }
+  if (sseSource) {
+    sseSource.close();
+  }
+  const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : "";
+  sseSource = new EventSource(`${baseUrl}/events${query}`);
+  appendSSEEvent("connect", `${baseUrl}/events${query}`);
+  setStatus("SSE connecting", "loading");
+
+  ["service", "heartbeat", "task_status"].forEach(eventName => {
+    sseSource.addEventListener(eventName, event => {
+      appendSSEEvent(eventName, event.data);
+      if (eventName === "task_status") {
+        try {
+          const payload = JSON.parse(event.data);
+          setStatus(`SSE ${payload.task_status || "unknown"}`, statusTone(payload.task_status));
+        } catch {
+          setStatus("SSE task update", "running");
+        }
+      }
+    });
+  });
+
+  sseSource.onerror = () => {
+    appendSSEEvent("error", "SSE disconnected or service unavailable");
+    setStatus("SSE disconnected", "error");
+  };
+}
+
+function initializeServiceUrl() {
+  const input = document.querySelector("#service-url");
+  if (!input.value.trim()) {
+    input.value = window.location.origin;
+  }
+}
+
+function getServiceBaseUrl() {
+  const input = document.querySelector("#service-url");
+  const value = input.value.trim().replace(/\/+$/, "");
+  return value || window.location.origin;
 }
 
 function getSelectedTaskId() {
@@ -145,7 +265,7 @@ function splitKeywords(value) {
 }
 
 function renderProject(project) {
-  document.querySelector("#project-version").textContent = project.version || "v0.9";
+  document.querySelector("#project-version").textContent = DASHBOARD_VERSION;
 }
 
 function renderTasks(tasks) {
@@ -154,13 +274,16 @@ function renderTasks(tasks) {
       <div class="label">${escapeHtml(task.task_id || "")}</div>
       <div class="value">${escapeHtml(task.status || "")}</div>
       <p>${escapeHtml(task.topic || "")}</p>
+      <div class="label">created: ${escapeHtml(formatTimestamp(task.created_at || ""))}</div>
+      <div class="label">updated: ${escapeHtml(formatTimestamp(task.updated_at || ""))}</div>
       <button type="button" data-select-task="${escapeHtml(task.task_id || "")}">选择</button>
     </div>
   `).join("");
   document.querySelectorAll("[data-select-task]").forEach(button => {
     button.addEventListener("click", () => {
       document.querySelector("#service-task-id").value = button.dataset.selectTask;
-      setStatus(`selected ${button.dataset.selectTask}`);
+      setStatus(`selected ${button.dataset.selectTask}`, "idle");
+      connectSSE(button.dataset.selectTask);
     });
   });
 }
@@ -186,14 +309,85 @@ function renderQA(qa) {
   `;
 }
 
+function renderResearchQA(answer) {
+  document.querySelector("#research-answer").innerHTML = `
+    <strong>Agent</strong>
+    <p>${escapeHtml(answer.answer || "暂无回答。")}</p>
+    <div class="label">grounded: ${Boolean(answer.grounded)} · task_id: ${escapeHtml(answer.used_task_id || "")}</div>
+  `;
+  document.querySelector("#research-decision").textContent =
+    JSON.stringify(answer.decision || {}, null, 2);
+  document.querySelector("#research-sufficiency").textContent =
+    JSON.stringify(answer.evidence_sufficiency || {}, null, 2);
+  const citations = answer.citations || [];
+  document.querySelector("#research-citations").innerHTML = citations.length
+    ? citations.map(citation => `
+      <div class="item">
+        <strong>[${escapeHtml(citation.id || "")}] ${escapeHtml(citation.title || citation.document_id || "")}</strong>
+        <div class="label">${escapeHtml(citation.source || "")} ${escapeHtml(citation.url || "")}</div>
+      </div>
+    `).join("")
+    : `<div class="item">暂无引用。证据不足时 Agent 会拒答。</div>`;
+  (answer.trace || []).forEach(event => {
+    appendSSEEvent(event.event || "research_qa", JSON.stringify(event.payload || {}));
+  });
+}
+
 function renderTrace(trace) {
   const events = trace.events || [];
   document.querySelector("#trace-list").innerHTML = events.map(event => `
-    <li>
+    <li class="log-event-${escapeHtml(event.event || "unknown")}">
       <strong>${escapeHtml(event.event || "")}</strong>
-      <span>${escapeHtml(event.tool || event.status || "")}</span>
+      <span>${escapeHtml(formatTimestamp(event.timestamp || event.time || event.created_at || ""))}</span>
+      <br>${escapeHtml(event.tool || event.status || event.task_id || "")}
     </li>
   `).join("");
+}
+
+function appendSSEEvent(eventName, payload) {
+  const list = document.querySelector("#sse-event-list");
+  if (!list) {
+    return;
+  }
+  const item = document.createElement("li");
+  const parsed = parsePayload(payload);
+  const time = formatTimestamp(parsed.timestamp || Date.now());
+  item.className = `log-event-${eventName}`;
+  item.innerHTML = `<strong>${escapeHtml(eventName)}</strong> <span>${escapeHtml(time)}</span><br>${escapeHtml(formatPayloadForLog(parsed, payload))}`;
+  list.prepend(item);
+  while (list.children.length > 40) {
+    list.removeChild(list.lastChild);
+  }
+}
+
+function parsePayload(payload) {
+  if (typeof payload !== "string") {
+    return payload || {};
+  }
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return {};
+  }
+}
+
+function formatPayloadForLog(parsed, fallback) {
+  if (!parsed || !Object.keys(parsed).length) {
+    return String(fallback || "");
+  }
+  const compact = {
+    status: parsed.status,
+    task_status: parsed.task_status,
+    task_id: parsed.task_id,
+    task_count: parsed.task_count,
+    topic: parsed.topic,
+    message: parsed.message,
+  };
+  return JSON.stringify(
+    Object.fromEntries(Object.entries(compact).filter(([, value]) => value !== undefined && value !== "")),
+    null,
+    2,
+  );
 }
 
 function renderMultiAgent(report, agentTrace) {
@@ -211,6 +405,17 @@ function renderMultiAgent(report, agentTrace) {
       ${rejected.map(item => `<div class="item rejected"><strong>过滤</strong> ${escapeHtml(item.title || "")}<br>${escapeHtml(item.reason || "")}</div>`).join("")}
     </div>
   `;
+}
+
+function renderProcessDetails(process) {
+  document.querySelector("#outline-content").textContent =
+    process.outline || "暂无 outline。真实 paperstorm 任务完成后会读取 storm_gen_outline.txt。";
+  document.querySelector("#reflection-content").textContent =
+    process.reflection || process.run_summary || "暂无 reflection/run_summary。";
+  document.querySelector("#plan-content").textContent =
+    process.plan || process.raw_search_results || "暂无 plan/search 结果。";
+  document.querySelector("#conversation-content").textContent =
+    process.conversation || "暂无 conversation_log。真实 research 阶段完成后会显示访谈式调研对话。";
 }
 
 function renderPipelineWorker(worker, snapshot) {
@@ -244,8 +449,54 @@ function renderStress(report) {
   ].map(name => metric(name, report[name])).join("");
 }
 
-function setStatus(message) {
-  document.querySelector("#data-source-status").textContent = message;
+function setStatus(message, tone = "idle") {
+  const dot = document.querySelector("#runtime-status-dot");
+  document.querySelector("#runtime-status-text").textContent = message;
+  dot.className = `status-dot ${tone}`;
+}
+
+function statusTone(status) {
+  if (status === "succeeded") {
+    return "success";
+  }
+  if (status === "failed") {
+    return "error";
+  }
+  if (status === "running") {
+    return "running";
+  }
+  if (status === "queued") {
+    return "loading";
+  }
+  return "idle";
+}
+
+function setButtonBusy(buttonId, busy, busyText = "") {
+  const button = document.querySelector(`#${buttonId}`);
+  if (!button) {
+    return;
+  }
+  if (!button.dataset.idleText) {
+    button.dataset.idleText = button.textContent;
+  }
+  button.disabled = Boolean(busy);
+  button.textContent = busy ? busyText || button.dataset.idleText : button.dataset.idleText;
+}
+
+function formatTimestamp(value) {
+  if (!value) {
+    return "";
+  }
+  let date;
+  if (typeof value === "number") {
+    date = new Date(value > 100000000000 ? value : value * 1000);
+  } else {
+    date = new Date(value);
+  }
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  return date.toLocaleString("zh-CN", {hour12: false});
 }
 
 function metric(name, value) {
@@ -272,5 +523,7 @@ document.querySelector("#submit-task").addEventListener("click", submitTask);
 document.querySelector("#run-selected-task").addEventListener("click", runSelectedTask);
 document.querySelector("#poll-selected-task").addEventListener("click", pollSelectedTask);
 document.querySelector("#refresh-task-list").addEventListener("click", fetchTaskList);
+document.querySelector("#ask-research-agent").addEventListener("click", askResearchAgent);
+document.querySelector("#service-url").addEventListener("change", () => connectSSE(getSelectedTaskId()));
 
 loadDashboard();

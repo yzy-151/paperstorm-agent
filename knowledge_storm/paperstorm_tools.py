@@ -1,6 +1,7 @@
 from typing import Dict, Any
 
 from .paperstorm_qa import PaperStormKnowledgeBase
+from .paperstorm_service import PaperStormTaskService
 from .rm import ArxivRM, LocalPDFRM
 
 
@@ -151,8 +152,51 @@ class KnowledgeBaseQATool(PaperStormTool):
         )
 
 
+class ResearchQATool(PaperStormTool):
+    name = "research_qa"
+    description = (
+        "Ask the PaperStorm Research QA Agent. It can reuse an existing task_id or "
+        "create a research task before answering with citations and evidence."
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "question": {"type": "string", "description": "User question."},
+            "topic": {"type": "string", "description": "Research topic when no task_id is available."},
+            "task_id": {"type": "string", "description": "Existing PaperStorm task id."},
+            "run_mode": {"type": "string", "default": "fake"},
+            "retriever": {"type": "string", "default": "arxiv"},
+            "output_language": {"type": "string", "default": "zh"},
+            "expected_keywords": {"type": "array", "items": {"type": "string"}},
+            "forbidden_keywords": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["question"],
+    }
+    output_schema = {
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string"},
+            "citations": {"type": "array", "items": {"type": "object"}},
+            "decision": {"type": "object"},
+            "evidence_sufficiency": {"type": "object"},
+            "grounded": {"type": "boolean"},
+        },
+        "required": ["answer", "citations", "decision", "grounded"],
+    }
+
+    def __init__(self, service_root="./results/paperstorm_tool_service"):
+        self.service = PaperStormTaskService(root_dir=service_root)
+
+    def run(self, arguments: Dict[str, Any]):
+        arguments = arguments or {}
+        question = arguments.get("question")
+        if not question or not str(question).strip():
+            raise ValueError("Tool argument 'question' is required.")
+        return self.service.ask_research_agent(**arguments)
+
+
 def list_paperstorm_tools(pdf_dir=None):
-    tools = [ArxivSearchTool(), KnowledgeBaseQATool()]
+    tools = [ArxivSearchTool(), KnowledgeBaseQATool(), ResearchQATool()]
     if pdf_dir:
         tools.append(LocalPDFSearchTool(pdf_dir=pdf_dir))
     return tools

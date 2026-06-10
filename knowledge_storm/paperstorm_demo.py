@@ -84,7 +84,7 @@ def build_demo_bundle(output_dir):
         data = {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v0.9",
+                "version": "v1.2",
                 "description": "Task-control RAG + Memory + Multi-Agent dashboard demo",
             },
             "tasks": [task_state],
@@ -92,6 +92,7 @@ def build_demo_bundle(output_dir):
             "qa": qa,
             "scorecard": service.get_scorecard(task["task_id"]),
             "trace": service.get_trace(task["task_id"]),
+            "process": service.get_process_artifacts(task["task_id"]),
             "pipeline_worker": {
                 "runner": "fake",
                 "run_mode": "fake",

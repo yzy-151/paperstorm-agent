@@ -221,7 +221,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v0.8",
+                "version": "v1.2",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -229,6 +229,7 @@ class PaperStormTaskService:
             "qa": _read_json(output_dir / "qa_answer.json", {}),
             "scorecard": self.get_scorecard(task_id),
             "trace": self.get_trace(task_id),
+            "process": self.get_process_artifacts(task_id),
             "pipeline_worker": _read_json(output_dir / "pipeline_worker.json", {}),
             "service_snapshot": {
                 "task_id": task_id,
@@ -247,6 +248,36 @@ class PaperStormTaskService:
         answer = kb.answer_question(question, top_k=top_k)
         write_qa_artifact(output_dir, answer)
         return answer
+
+    def ask_research_agent(
+        self,
+        question: str,
+        topic: Optional[str] = None,
+        task_id: Optional[str] = None,
+        mode: str = "auto",
+        top_k: int = 3,
+        run_mode: str = "fake",
+        retriever: str = "arxiv",
+        output_language: str = "zh",
+        expected_keywords: Optional[List[str]] = None,
+        forbidden_keywords: Optional[List[str]] = None,
+        **options,
+    ):
+        from .paperstorm_research_qa import ResearchQAAgent
+
+        return ResearchQAAgent(self).ask(
+            question=question,
+            topic=topic,
+            task_id=task_id,
+            mode=mode,
+            top_k=top_k,
+            run_mode=run_mode,
+            retriever=retriever,
+            output_language=output_language,
+            expected_keywords=expected_keywords,
+            forbidden_keywords=forbidden_keywords,
+            **options,
+        )
 
     def _run_fake_research(self, state: Dict):
         output_dir = Path(state["output_dir"])
@@ -284,6 +315,23 @@ class PaperStormTaskService:
             article,
             encoding="utf-8",
         )
+        (output_dir / "conversation_log.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "role": "researcher",
+                        "message": "如何定义 RF 场景下的 PIM？",
+                    },
+                    {
+                        "role": "expert",
+                        "message": "这里 PIM 指 passive intermodulation，不是 processing-in-memory。",
+                    },
+                ],
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "raw_search_results.json").write_text(
             json.dumps(raw_results, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -292,11 +340,35 @@ class PaperStormTaskService:
             json.dumps(summary, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        (output_dir / "reflection.txt").write_text(
+            "Critic: 检索结果需要过滤 processing-in-memory / DRAM 语义，保留 RF passive intermodulation 方向。",
+            encoding="utf-8",
+        )
         trace_events = [
-            {"event": "run_start", "task_id": state["task_id"], "success": True},
-            {"event": "tool_start", "task_id": state["task_id"], "tool": "fake_research"},
-            {"event": "tool_end", "task_id": state["task_id"], "tool": "fake_research"},
-            {"event": "run_end", "task_id": state["task_id"], "success": True},
+            {
+                "event": "run_start",
+                "task_id": state["task_id"],
+                "timestamp": _now(),
+                "success": True,
+            },
+            {
+                "event": "tool_start",
+                "task_id": state["task_id"],
+                "timestamp": _now(),
+                "tool": "fake_research",
+            },
+            {
+                "event": "tool_end",
+                "task_id": state["task_id"],
+                "timestamp": _now(),
+                "tool": "fake_research",
+            },
+            {
+                "event": "run_end",
+                "task_id": state["task_id"],
+                "timestamp": _now(),
+                "success": True,
+            },
         ]
         (output_dir / "paperstorm_trace.jsonl").write_text(
             "\n".join(json.dumps(event, ensure_ascii=False) for event in trace_events) + "\n",
@@ -312,6 +384,19 @@ class PaperStormTaskService:
             min_sources=1,
         )
         write_scorecards(output_dir, evaluate_run(output_dir, case))
+
+    def get_process_artifacts(self, task_id: str):
+        state = self._read_state(task_id)
+        output_dir = Path(state["output_dir"])
+        return {
+            "outline": _read_text(output_dir / "storm_gen_outline.txt"),
+            "conversation": _read_text(output_dir / "conversation_log.json"),
+            "reflection": _read_text(output_dir / "reflection.txt"),
+            "run_summary": _read_text(output_dir / "run_summary.json"),
+            "raw_search_results": _read_text(output_dir / "raw_search_results.json"),
+            "plan": _read_text(output_dir / "query_plan.json")
+            or _read_text(output_dir / "raw_search_results.json"),
+        }
 
     def _run_paperstorm_pipeline(self, state: Dict):
         runner = self.pipeline_runner
@@ -415,6 +500,12 @@ def _read_json(path: Path, default):
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return default
+
+
+def _read_text(path: Path):
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def _load_jsonl(path: Path):

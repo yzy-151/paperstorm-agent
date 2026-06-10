@@ -545,3 +545,111 @@ Agent 系统的问题定位不能只看最终回答。Dashboard 的价值是把 
 
 ### 不能夸大的边界
 ```
+
+## 2026-07-29 面试与简历更新：v1.3 Research QA Agent 核心入口
+
+### 新增项目能力
+
+- 新增 `ResearchQAAgent`，把“论文调研任务”和“基于调研产物问答”串成统一 `ask` 入口。
+- 新增 `PaperStormTaskService.ask_research_agent(...)`。
+- 新增 FastAPI 路由 `POST /research-agent/ask`。
+- 当用户没有提供 `task_id` 时，系统会自动创建并运行 research task，再基于产物回答。
+- 当用户提供已完成 `task_id` 时，系统直接复用已有知识库回答，不重复调研。
+- 回答返回 `answer`、`citations`、`evidence`、`grounded`、`used_task_id`、`retrieval_triggered`、`decision` 和 `trace`。
+
+### 简历 bullet 更新
+
+可加入压缩版项目描述：
+
+```text
+- 将 PaperStorm 从“先离线调研、再手动问答”升级为 Research QA Agent，新增统一 ask 入口：系统可根据 task_id 状态自动复用已有调研产物或触发 research task，再生成带 citations、evidence、decision 和 trace 的 grounded answer。
+```
+
+### 面试可能追问
+
+1. 这个版本和普通 RAG QA 有什么区别？
+2. 为什么要让 ask 入口自动创建 research task？
+3. 如何避免每次提问都重新检索，造成成本浪费？
+4. 当前 decision 是规则还是 LLM？
+5. 这个版本离豆包那种自动检索回答还差什么？
+
+### 推荐回答
+
+```text
+v1.3 的核心是把调研 pipeline 和知识库 QA 打通成统一 Research QA Agent。普通 RAG QA 通常假设知识库已经建好，而我的场景是用户可能直接问一个新技术问题，所以 ask 入口需要先判断是否有可用 task_id：如果没有，就自动创建 research task，跑完后再基于产物回答；如果有已完成 task_id，就直接复用已有 evidence，避免重复检索和重复消耗。当前 decision 先用规则 baseline，保证可测试、可复现；后续 v1.4 再做 evidence sufficiency 评分，v1.5 做前端聊天式问答。
+```
+
+### 不能夸大的边界
+
+- v1.3 还不是完整豆包式联网搜索 Agent。
+- 当前自动检索决策是规则版，不是 LLM planner。
+- 证据充分性评分还在 v1.4 计划中。
+- 前端聊天式问答还在 v1.5 计划中。
+- 真实 `paperstorm` 模式仍依赖网络、API key、模型稳定性和外部检索服务。
+
+## 2026-07-29 面试与简历更新：v1.4 Evidence Sufficiency
+
+### 新增项目能力
+
+- `ResearchQAAgent` 返回 `evidence_sufficiency`，包含 `score`、`sufficient`、`evidence_count`、`citation_count`、`keyword_overlap`、`topic_relevance`、`expected_keyword_hits`、`forbidden_keyword_hits`。
+- 对已有 task_id 的问答先做证据充分性判断。
+- 证据足够时返回 `answer_from_existing_kb`。
+- 证据不足时返回 `reject_low_confidence`，避免把无关证据硬拼成答案。
+- 对 PIM 消歧问题记录 forbidden keywords，例如 `DRAM`、`processing-in-memory`，但如果证据明确命中 `passive intermodulation`，仍可回答消歧问题。
+- 修复中文单字 overlap 造成的误判，避免无关问题因为“和/关系/模型”等低信息量词被误判相关。
+
+### 简历 bullet 更新
+
+```text
+- 为 Research QA Agent 增加 evidence sufficiency 评分和低置信拒答机制，基于 evidence_count、citation_count、keyword_overlap、topic_relevance、expected/forbidden keyword hits 判断已有知识是否足以回答，避免无关检索片段被拼接成 hallucinated answer。
+```
+
+### 面试可能追问
+
+1. 为什么 RAG 系统需要 evidence sufficiency？
+2. 你怎么判断已有知识是否足够回答？
+3. 为什么证据不足时要拒答，而不是让 LLM 自己发挥？
+4. forbidden keywords 是不是一命中就拒绝？
+5. 这个评分是规则还是模型判断？
+
+### 推荐回答
+
+```text
+RAG 不能只要召回了片段就回答，因为检索器常常会返回“看似相关但无法支撑问题”的材料。v1.4 我加了 evidence sufficiency：综合 evidence_count、citation_count、问题和证据的关键词重叠、topic relevance、expected keyword hits 和 forbidden keyword hits。对于已有 task_id，如果证据不足，系统返回 reject_low_confidence，而不是把无关证据硬拼成 grounded answer。forbidden keywords 不是简单一票否决，比如用户问“为什么 PIM 不是 processing-in-memory”时，DRAM/processing-in-memory 是消歧上下文；只要证据明确命中 passive intermodulation，就可以回答并记录 forbidden hits。
+```
+
+### 不能夸大的边界
+
+- 当前 sufficiency 是规则版 baseline，不是训练出的 judge 模型。
+- 当前证据不足时先拒答，尚未自动触发补充检索。
+- 前端还没有把 sufficiency 单独可视化，后续 v1.5 聊天式问答再展示。
+
+## 2026-07-29 面试与简历更新：v2.0 Research QA Agent 收口
+
+### 新增项目能力
+
+- 前端新增“文献检索问答”聊天区，支持直接调用 `/research-agent/ask`。
+- 统一 evidence schema，证据和 citation 包含 `source_type`、`chunk_id`、`score`、`metadata`。
+- Research QA 支持 `qa_history.json`，保留最近问答历史，支撑连续追问。
+- 新增 `research_qa` 工具 schema，可被工具系统发现和调用。
+- 新增 Research QA benchmark，输出 `research_qa_benchmark_report.json/md`。
+- README 增加 v2.0 Research QA Agent 演示说明。
+
+### 最终简历 bullet 更新
+
+```text
+- 将 PaperStorm 从离线论文调研流程升级为 Research QA Agent：新增 `/research-agent/ask` 统一入口、Evidence Sufficiency 评分、低置信拒答、统一 evidence schema、QA history、research_qa Tool Schema、Benchmark 和 Dashboard 聊天式问答，实现“自动调研/复用知识库 -> grounded answer -> citations/decision/trace 可观测”的闭环。
+```
+
+### 推荐回答
+
+```text
+第二阶段我把 PaperStorm 的调研结果和问答能力融合起来。用户不需要先手动跑完调研再记 task_id，而是可以直接调用 `/research-agent/ask` 或在 Dashboard 聊天区提问。系统会根据 task_id 和 evidence sufficiency 判断是否能直接回答；如果没有 task_id，会先创建 fake research task，产出文章和检索结果后再回答。回答会返回 citations、evidence、decision、sufficiency、qa_history 和 trace。这样项目从“RAG 报告生成器”进一步接近企业知识库/科研助理 Agent。
+```
+
+### 不能夸大的边界
+
+- 当前 v2.0 仍是本地可演示原型，不是线上多租户系统。
+- Evidence Sufficiency 仍是规则版 baseline。
+- 真实 paperstorm 模式仍依赖网络、API key 和外部模型稳定性。
+- 前端是零构建静态 Dashboard，不是生产级 React 管理后台。

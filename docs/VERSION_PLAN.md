@@ -1,6 +1,6 @@
 # PaperStorm Agent 更新计划
 
-更新时间：2026-07-27
+更新时间：2026-07-29
 
 本文档是后续版本计划。每次项目更新都必须维护本文件，记录版本目标、完成情况、验收标准和下一步。
 
@@ -943,7 +943,512 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
 - 只补面试反馈暴露出的表达或证据缺口。
 - 只在明确岗位需求要求时扩展新能力。
 
-## 12. 每次版本更新模板
+## 12. 第二阶段路线：Research QA Agent 文献检索与问答融合
+
+状态：已完成第一阶段。
+
+背景：
+
+v1.2 已经完成 PaperStorm Agent 第一阶段包装：RAG 调研、Memory、Multi-Agent、Runtime Trace、Eval、Task Service 和 Dashboard 都有可演示闭环。下一阶段不再横向堆零散功能，而是围绕一个更有产品感、也更贴近 Agent/RAG 岗位的问题推进：
+
+```text
+用户直接提问后，Agent 能自动判断是否需要补充文献检索；
+如果已有知识足够，就直接基于已有证据回答；
+如果证据不足，就自动触发 PaperStorm 调研任务，更新知识库后再回答。
+```
+
+新的主线定位：
+
+```text
+PaperStorm Research QA Agent：面向科研调研与企业知识库场景的可追溯文献问答 Agent。
+```
+
+目标能力：
+
+- 文献检索与问答融合，而不是“先离线调研、再手动问答”。
+- 自动检索决策：判断已有证据是否足够。
+- Grounded Answer：回答必须返回 citations、evidence 和 grounded 标记。
+- 可观测 Agent Runtime：展示 planning、retrieving、filtering、answering、finished。
+- 可评估：用 benchmark 衡量检索触发准确率、引用质量、回答相关性和延迟。
+- 可演示：前端提供聊天式问答入口，能展示自动检索、引用和 trace。
+
+### v1.3：Research QA Agent 核心入口
+
+状态：已完成第一阶段。
+
+目标：
+
+打通“调研任务”和“知识库问答”，提供一个统一 ask 入口，让用户可以直接问问题。
+
+本次完成：
+
+1. 新增 `knowledge_storm/paperstorm_research_qa.py`。
+   - 实现 `ResearchQAAgent`。
+   - 提供 `ask(question, topic=None, task_id=None, mode="auto")`。
+   - 返回 answer、citations、used_task_id、retrieval_triggered、decision、trace、grounded。
+
+2. 新增 service 入口。
+   - `PaperStormTaskService.ask_research_agent(...)`。
+   - FastAPI 新增 `POST /research-agent/ask`。
+
+3. 基础决策逻辑。
+   - 没有 `task_id`：自动创建并运行 research task。
+   - 有已完成 `task_id`：直接调用已有 KB QA，不重复创建任务。
+   - 有未完成 `task_id` 且 `mode="auto"`：先运行任务，再基于产物回答。
+   - 第一阶段先使用可测试的规则决策，不调用额外 LLM 决策器。
+
+4. FastAPI 适配器。
+   - 新增 `ResearchAgentAskRequest`。
+   - 新增 `POST /research-agent/ask`。
+   - 支持 question、topic、task_id、mode、top_k、run_mode、retriever、output_language、expected_keywords、forbidden_keywords。
+   - 请求对象通过 `_request_payload()` 兼容 Pydantic v1/v2，避免 `dict()` 弃用 warning。
+
+5. 测试。
+   - 新增 `tests/test_paperstorm_research_qa.py`。
+   - 覆盖无 task_id 自动调研并回答。
+   - 覆盖已有完成 task_id 直接复用知识库。
+   - 覆盖 FastAPI `/research-agent/ask` 路由。
+
+返回结构。
+
+```json
+{
+  "question": "...",
+  "answer": "...",
+  "citations": [],
+  "used_task_id": "...",
+  "retrieval_triggered": true,
+  "decision": {
+    "action": "retrieve_then_answer",
+    "reason": "no task_id or insufficient evidence"
+  },
+  "trace": [],
+  "grounded": true
+}
+```
+
+验收标准：
+
+- 没有 task_id 时可以自动创建 fake research task 并回答。
+- 有已完成 task_id 时优先复用已有知识库，不重复调研。
+- 返回结果包含 citations、decision 和 trace。
+- 测试不依赖真实 LLM/API。
+
+验证命令：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_research_qa -v
+```
+
+面试价值：
+
+```text
+把离线论文调研 pipeline 改造成交互式 Research QA Agent，支持 evidence sufficiency 判断和自动补检索，回答过程可追踪、可解释。
+```
+
+当前边界：
+
+- v1.3 只做核心 ask 入口和规则版调度。
+- v1.4 再实现 evidence sufficiency 评分和更细的自动检索决策。
+- v1.5 再实现前端聊天式问答。
+- 当前保留 fake runner 作为稳定 baseline，真实 `paperstorm` 仍受网络、API key 和模型波动影响。
+
+### v1.4：Evidence Sufficiency 与自动检索决策
+
+状态：计划中。
+
+目标：
+
+让 Agent 不只是“没有 task_id 就查”，而是能解释为什么查、为什么不查。
+
+本次完成：
+
+- 证据充分性评分：
+  - `evidence_count`
+  - `keyword_overlap`
+  - `citation_count`
+  - `forbidden_keyword_hits`
+  - `topic_relevance`
+  - `expected_keyword_hits`
+  - `has_relevance_signal`
+  - `score`
+  - `sufficient`
+- 决策类型：
+
+```text
+answer_from_existing_kb
+retrieve_then_answer
+reject_low_confidence
+```
+
+- `ResearchQAAgent` 返回 `evidence_sufficiency` 字段。
+- `qa_end` trace payload 记录 evidence sufficiency 明细。
+- 已完成 task_id 的问答会先评估证据是否足够：
+  - 足够：`answer_from_existing_kb`。
+  - 不足：`reject_low_confidence`，返回低置信提示，不伪造 grounded answer。
+- 对 PIM 消歧问题保留特殊规则：如果问题包含 forbidden keywords 但 evidence 命中 expected keywords，可作为“消歧说明”回答。
+- 修复中文单字 overlap 造成的误判：过滤“和/的/是/关系”等低信息量字符，避免 Transformer 这类无关问题误判为 PIM 相关。
+
+验收标准：
+
+- 证据足够时不会重复创建任务。
+- 证据不足时返回 `reject_low_confidence`，不把无关 evidence 硬拼成回答。
+- 跑题关键词命中会记录到 `forbidden_keyword_hits`。
+- decision 和 evidence sufficiency 可在 API 返回中展示。
+- 新增和既有 Research QA 测试通过。
+
+验证命令：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_research_qa -v
+```
+
+面试价值：
+
+```text
+Agent Runtime 不是黑盒，而是有可解释的检索触发策略和 evidence sufficiency 指标。
+```
+
+当前边界：
+
+- v1.4 第一阶段先做规则版 sufficiency，不调用 LLM judge。
+- 证据不足时当前先拒答，不自动创建新补充调研任务；自动补检索策略后续可以在 v1.5/v1.6 与前端聊天和 evidence schema 一起完善。
+- Dashboard 暂未新增 sufficiency 可视化面板，v1.5 聊天式问答时统一展示。
+
+### v1.5：前端聊天式问答
+
+状态：已完成第一阶段。
+
+目标：
+
+让项目可以像真实产品一样演示“我问一句，Agent 自动查文献并回答”。
+
+计划实现：
+
+- Dashboard 新增聊天区：
+  - 问题输入框。
+  - 发送按钮。
+  - 回答气泡。
+  - 引用列表。
+  - 当前 task_id。
+  - 是否触发自动检索。
+  - evidence sufficiency 分数。
+- SSE 实时阶段：
+
+```text
+planning
+checking_evidence
+retrieving
+filtering
+answering
+finished
+failed
+```
+
+- 支持继续追问，默认复用上一次 task_id。
+- 问答历史写入 `qa_history.json`。
+
+验收标准：
+
+- fake 模式下可以在网页里完成一次“提问 -> 自动调研 -> 回答 -> 展示引用”。
+- 用户能看出按钮是否执行中、是否完成、是否失败。
+- SSE 和 trace 能同步展示关键阶段。
+
+面试价值：
+
+```text
+把 Agent 能力做成可演示交互，而不是只提供后端接口或静态报告。
+```
+
+### v1.6：文献证据融合与引用质量
+
+状态：已完成第一阶段。
+
+目标：
+
+提升 QA 的证据来源质量，让回答不只依赖 article 和 raw_search_results。
+
+计划实现：
+
+统一 evidence schema：
+
+```text
+source_type: article / arxiv / local_pdf / conversation / outline / memory
+title
+content
+url
+score
+chunk_id
+metadata
+```
+
+证据来源扩展：
+
+- `storm_gen_article_polished.txt`
+- `raw_search_results.json`
+- `storm_gen_outline.txt`
+- `conversation_log.json`
+- local PDF chunks
+- memory records
+- run summary / reflection
+
+增强：
+
+- evidence 去重。
+- 来源类型标注。
+- 引用片段高亮。
+- 低质量 citation 过滤。
+- citation precision 评估。
+
+验收标准：
+
+- QA 返回 citations 时能说明来源类型。
+- 同一 URL / 同一 chunk 不重复引用。
+- local-pdf 与 arXiv 证据能统一进入回答。
+- 前端能展示引用来源和片段。
+
+面试价值：
+
+```text
+展示标准 RAG 知识库能力：chunk、metadata、evidence schema、引用溯源、去重和 citation quality。
+```
+
+### v1.7：Memory 与上下文压缩升级
+
+状态：已完成第一阶段。
+
+目标：
+
+支持连续追问和长期调研，不每次从零开始。
+
+计划实现：
+
+- 三层记忆明确化：
+
+```text
+working memory：当前问答会话和最近工具调用。
+episodic memory：历史运行经历、失败原因、跑题检索经验。
+semantic memory：稳定领域知识和用户确认过的事实。
+```
+
+- 新增 `qa_history.json`。
+- 支持多轮追问中的上下文继承。
+- 上下文压缩策略：
+  - 保留最近 N 轮。
+  - 保留高分 evidence。
+  - 将旧问答压缩为 summary。
+  - 丢弃低相关 trace。
+  - 保留 expected / forbidden keywords。
+- trace 记录压缩前后字符数或 token 估算。
+
+验收标准：
+
+- 连续追问能复用上一轮 task_id 和 evidence。
+- 历史问答过长时自动压缩。
+- 压缩结果保留核心约束，不混入 forbidden keywords。
+
+面试价值：
+
+```text
+对齐 Agent 岗常问的 memory、context compression、多轮对话状态管理和 token 成本控制。
+```
+
+### v1.8：Tool Schema 与 Runtime Hook 完整化
+
+状态：已完成第一阶段。
+
+目标：
+
+把 Research QA Agent 内部能力抽象成可发现、可调用、可观测的工具系统，进一步贴近 Agent Harness。
+
+计划实现：
+
+工具封装：
+
+```text
+submit_research_task
+run_research_task
+search_kb
+query_local_pdf
+query_arxiv
+evaluate_answer
+compress_context
+check_evidence_sufficiency
+```
+
+每个 tool 包含：
+
+```text
+name
+description
+input_schema
+output_schema
+timeout
+retry_policy
+```
+
+Runtime Hook：
+
+```text
+before_tool_call
+after_tool_call
+on_tool_error
+on_retry
+on_state_change
+on_answer_ready
+```
+
+Dashboard 展示 tool calls：
+
+- 工具名。
+- 输入摘要。
+- 输出摘要。
+- 耗时。
+- 成功/失败。
+- retry 次数。
+
+验收标准：
+
+- Research QA Agent 内部关键动作都经过 ToolRegistry。
+- 每次工具调用都进入统一 trace。
+- 工具失败时返回结构化错误，不让前端只看到 NetworkError。
+
+面试价值：
+
+```text
+直接对应 Agent Harness、Tool Calling、MCP-style tools、Hook 机制和可观测 Runtime。
+```
+
+### v1.9：Benchmark 与评估体系
+
+状态：已完成第一阶段。
+
+目标：
+
+证明 Agent 做得好不好，而不是只说“能回答”。
+
+计划 benchmark cases：
+
+```text
+概念解释
+方法综述
+论文对比
+跑题消歧
+本地 PDF 问答
+连续追问
+证据不足拒答
+自动检索触发
+已有知识复用
+```
+
+指标：
+
+```text
+grounded_rate
+citation_precision
+retrieval_trigger_accuracy
+forbidden_hit_rate
+answer_relevance
+evidence_sufficiency_accuracy
+latency
+failure_rate
+p95_latency
+```
+
+产物：
+
+```text
+research_qa_benchmark_report.json
+research_qa_benchmark_report.md
+dashboard benchmark panel
+```
+
+验收标准：
+
+- 一条命令能跑 fake benchmark。
+- benchmark 能覆盖自动检索、直接回答和拒答场景。
+- 报告能用于 README 和面试展示。
+
+面试价值：
+
+```text
+说明自己不是只做 demo，而是能定义可量化指标，用数据驱动 Agent 迭代。
+```
+
+### v2.0：完整演示版与简历包装
+
+状态：已完成第一阶段。
+
+目标：
+
+形成第二阶段可投递版本：一个完整 Research QA Agent 演示。
+
+计划实现：
+
+- README 增加 Research QA Agent 章节。
+- 新增一键启动脚本：
+
+```text
+start service
+open dashboard
+run fake research qa demo
+run benchmark
+```
+
+- 前端首页支持完整演示：
+  - 输入问题。
+  - 自动检索。
+  - 生成回答。
+  - 展示引用。
+  - 展示 trace。
+  - 展示 benchmark。
+- 文档更新：
+  - 架构设计。
+  - Agent loop。
+  - RAG 流程。
+  - Memory。
+  - Tool calling。
+  - Trace。
+  - Benchmark。
+  - 稳定性。
+  - 不足与边界。
+- `docs/RESUME_INTERVIEW_PLAN.md` 更新最终简历 bullet 和面试 FAQ。
+
+验收标准：
+
+- 面试演示 5 分钟内可完成。
+- README 能说明项目如何从 STORM 演进为 Research QA Agent。
+- 版本计划、简历文档和前端演示一致。
+- benchmark 有可复现报告。
+
+面试价值：
+
+```text
+从论文调研工具升级为可交互、可追踪、可评估的文献问答 Agent，覆盖 RAG、Memory、Tool Calling、Multi-Agent、Runtime、Benchmark 和 Dashboard。
+```
+
+### 第二阶段优先级
+
+时间紧时的最小路线：
+
+```text
+v1.3 -> v1.5 -> v1.9 -> v2.0
+```
+
+完整路线：
+
+```text
+v1.3 -> v1.4 -> v1.5 -> v1.6 -> v1.7 -> v1.8 -> v1.9 -> v2.0
+```
+
+维护原则：
+
+- 每个版本都必须能讲清楚“新增能力解决了什么 Agent 工程问题”。
+- 每个版本都要有测试和可演示结果。
+- 每次功能更新都维护 README、VERSION_PLAN 和 RESUME_INTERVIEW_PLAN。
+- 只改计划、不改代码的文档更新，按 Master 规则可以不推送 GitHub。
+
+## 13. 每次版本更新模板
 
 ```markdown
 ## vX.Y：版本名称

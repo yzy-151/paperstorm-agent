@@ -90,10 +90,12 @@ class PaperStormServiceTest(unittest.TestCase):
 
         bundle = service.get_dashboard_bundle(task["task_id"])
 
-        self.assertEqual(bundle["project"]["version"], "v0.8")
+        self.assertEqual(bundle["project"]["version"], "v1.2")
         self.assertEqual(bundle["tasks"][0]["task_id"], task["task_id"])
         self.assertIn("passive intermodulation", bundle["article"]["content"])
         self.assertTrue(bundle["trace"]["events"])
+        self.assertIn("神经网络抑制", bundle["process"]["outline"])
+        self.assertIn("passive intermodulation", bundle["process"]["conversation"])
         self.assertGreater(bundle["scorecard"]["scores"]["total"], 50)
         self.assertTrue(bundle["qa"]["grounded"])
         self.assertIn("service_snapshot", bundle)
@@ -161,6 +163,33 @@ class PaperStormServiceTest(unittest.TestCase):
 
         self.assertTrue(hasattr(paperstorm_service_api, "create_app"))
         self.assertTrue(hasattr(paperstorm_service_api, "DEFAULT_SERVICE_ROOT"))
+
+    def test_fastapi_adapter_serves_dashboard_home_and_sse_events(self):
+        from fastapi.testclient import TestClient
+
+        from examples.storm_examples.paperstorm_service_api import create_app
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app = create_app(service_root=Path(temp_dir))
+            client = TestClient(app)
+
+            home = client.get("/")
+            self.assertEqual(home.status_code, 200)
+            self.assertIn("PaperStorm Agent Dashboard", home.text)
+
+            styles = client.get("/styles.css")
+            self.assertEqual(styles.status_code, 200)
+            self.assertIn("dashboard-grid", styles.text)
+
+            app_js = client.get("/app.js")
+            self.assertEqual(app_js.status_code, 200)
+            self.assertIn("renderDashboard", app_js.text)
+
+            with client.stream("GET", "/events?once=true") as response:
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("text/event-stream", response.headers["content-type"])
+                first = next(response.iter_lines())
+                self.assertIn("event: service", first)
 
     def test_paperstorm_run_mode_uses_injected_pipeline_runner(self):
         calls = []

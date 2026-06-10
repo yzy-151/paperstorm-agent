@@ -28,6 +28,21 @@ class PaperStormFinalPackagingTest(unittest.TestCase):
         self.assertIn("最终面试 FAQ 精简版", resume_plan)
         self.assertIn("不要继续堆版本", resume_plan)
 
+    def test_readme_and_plans_include_research_qa_v2_direction(self):
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        version_plan = (root / "docs" / "VERSION_PLAN.md").read_text(encoding="utf-8")
+        resume_plan = (root / "docs" / "RESUME_INTERVIEW_PLAN.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Research QA Agent", readme)
+        self.assertIn("/research-agent/ask", readme)
+        self.assertIn("research_qa_benchmark_report", readme)
+        self.assertIn("v2.0：完整演示版与简历包装", version_plan)
+        self.assertIn("v1.9：Benchmark", version_plan)
+        self.assertIn("Evidence Sufficiency", resume_plan)
+
 
 if __name__ == "__main__":
     unittest.main()

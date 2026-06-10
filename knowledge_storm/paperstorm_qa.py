@@ -26,10 +26,14 @@ class PaperStormKnowledgeBase:
                 documents.append(
                     {
                         "id": "article-{0}".format(index),
+                        "chunk_id": "article-{0}".format(index),
                         "title": "Generated article paragraph {0}".format(index),
                         "content": paragraph,
                         "url": str(run_dir / "storm_gen_article_polished.txt"),
                         "source": "article",
+                        "source_type": "article",
+                        "score": 0,
+                        "metadata": {"paragraph_index": index},
                     }
                 )
 
@@ -47,10 +51,17 @@ class PaperStormKnowledgeBase:
                 documents.append(
                     {
                         "id": "retrieval-{0}".format(index),
+                        "chunk_id": "retrieval-{0}".format(index),
                         "title": result.get("title") or "Retrieved source {0}".format(index),
                         "content": content,
                         "url": result.get("url") or "",
                         "source": "retrieval",
+                        "source_type": result.get("source_type") or "retrieval",
+                        "score": 0,
+                        "metadata": {
+                            "result_index": index,
+                            "query": result.get("query", ""),
+                        },
                     }
                 )
         return cls(documents=documents, run_dir=run_dir)
@@ -90,9 +101,9 @@ class PaperStormKnowledgeBase:
                 score = _cjk_overlap(query, text)
             scored.append((score, index, doc))
         scored.sort(key=lambda item: (item[0], -item[1]), reverse=True)
-        selected = [doc for score, _, doc in scored if score > 0]
+        selected = [_with_score(doc, score) for score, _, doc in scored if score > 0]
         if not selected:
-            selected = self.documents[:top_k]
+            selected = [_with_score(doc, 0) for doc in self.documents[:top_k]]
         return selected[:top_k]
 
 
@@ -131,8 +142,20 @@ def _citation_from_doc(index: int, doc: Dict):
         "title": doc.get("title") or "",
         "url": doc.get("url") or "",
         "source": doc.get("source") or "",
+        "source_type": doc.get("source_type") or doc.get("source") or "",
         "document_id": doc.get("id") or "",
+        "chunk_id": doc.get("chunk_id") or doc.get("id") or "",
+        "score": doc.get("score", 0),
     }
+
+
+def _with_score(doc: Dict, score: int):
+    enriched = dict(doc)
+    enriched["score"] = score
+    enriched.setdefault("source_type", enriched.get("source", ""))
+    enriched.setdefault("chunk_id", enriched.get("id", ""))
+    enriched.setdefault("metadata", {})
+    return enriched
 
 
 def _read_first_existing(paths):
