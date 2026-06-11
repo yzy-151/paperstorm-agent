@@ -103,7 +103,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("/events", script)
         self.assertIn("connectSSE", script)
 
-    def test_dashboard_exposes_debuggable_v20_runtime_ui(self):
+    def test_dashboard_exposes_debuggable_v21_runtime_ui(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
             encoding="utf-8"
@@ -115,7 +115,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("v2.0", index)
+        self.assertIn("v2.1", index)
         self.assertIn("操作说明", index)
         self.assertIn("Benchmark", index)
         self.assertIn("过程细节", index)
@@ -153,6 +153,35 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("askResearchAgent", script)
         self.assertIn("renderResearchQA", script)
         self.assertIn("chat-transcript", styles)
+
+    def test_dashboard_exposes_dual_mode_research_and_chat_context(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        styles = (root / "frontend" / "paperstorm_dashboard" / "styles.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("mode-switcher", index)
+        self.assertIn("research-mode-panel", index)
+        self.assertIn("chat-mode-panel", index)
+        self.assertIn("chat-session-id", index)
+        self.assertIn("create-chat-session", index)
+        self.assertIn("send-chat-message", index)
+        self.assertIn("chat-message-list", index)
+        self.assertIn("chat-context-window", index)
+        self.assertIn("chat-compressed-context", index)
+        self.assertIn("chat-memory-context", index)
+        self.assertIn("/chat/sessions", script)
+        self.assertIn("createChatSession", script)
+        self.assertIn("sendChatMessage", script)
+        self.assertIn("renderChatSession", script)
+        self.assertIn("setDashboardMode", script)
+        self.assertIn("chat-shell", styles)
 
     def test_official_chinese_doc_and_readme_include_storm_architecture(self):
         root = Path(__file__).resolve().parents[1]

@@ -15,7 +15,7 @@
       </div>
       <div class="header-meta">
         <span>release</span>
-        <strong id="project-version">v2.0</strong>
+        <strong id="project-version">v2.1</strong>
       </div>
     </header>
 
@@ -37,6 +37,20 @@
     </section>
 
     <main class="dashboard-grid">
+      <section class="panel wide" id="mode-switcher">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Product Mode</p>
+            <h2>两种使用模式</h2>
+          </div>
+          <span class="soft-badge">research workflow / chat agent</span>
+        </div>
+        <div class="mode-tabs" role="tablist" aria-label="PaperStorm modes">
+          <button id="show-research-mode" class="mode-tab active" type="button">调研写文章</button>
+          <button id="show-chat-mode" class="mode-tab" type="button">聊天问答</button>
+        </div>
+      </section>
+
       <section class="panel wide" id="usage-panel">
         <div class="panel-heading">
           <div>
@@ -73,7 +87,7 @@
         </div>
       </section>
 
-      <section class="panel wide" id="create-task-panel">
+      <section class="panel wide research-mode-panel" id="create-task-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Control Plane</p>
@@ -121,6 +135,55 @@
             <button id="poll-selected-task" type="button">轮询选中任务</button>
             <button id="refresh-task-list" type="button">刷新任务列表</button>
           </div>
+        </div>
+      </section>
+
+      <section class="panel wide chat-mode-panel" id="chat-mode-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Conversational Research Agent</p>
+            <h2>聊天问答模式</h2>
+          </div>
+          <span class="soft-badge">chat -> memory -> evidence -> auto research</span>
+        </div>
+        <div class="chat-shell">
+          <aside class="chat-sidebar">
+            <label>
+              Chat Session ID
+              <input id="chat-session-id" placeholder="新建后自动填入" />
+            </label>
+            <button id="create-chat-session" type="button">新建聊天</button>
+            <div class="chat-hint">
+              <strong>执行逻辑</strong>
+              <p>直接提问即可。已有任务足够时复用知识库；证据不足或没有任务时自动触发调研，再带引用回答。</p>
+            </div>
+          </aside>
+          <section class="chat-main">
+            <div id="chat-message-list" class="chat-message-list">
+              <div class="chat-message assistant">
+                <strong>PaperStorm</strong>
+                <p>我是带论文检索、上下文压缩和记忆面板的 Research Chat Agent。你可以直接问问题。</p>
+              </div>
+            </div>
+            <div class="chat-input-row">
+              <textarea id="chat-message-input" rows="3">PIM 是什么，神经网络如何抑制它？</textarea>
+              <button id="send-chat-message" type="button">发送</button>
+            </div>
+          </section>
+          <aside class="chat-debug">
+            <section class="debug-card">
+              <h3>Context Window</h3>
+              <pre id="chat-context-window"></pre>
+            </section>
+            <section class="debug-card">
+              <h3>Compressed Context</h3>
+              <pre id="chat-compressed-context"></pre>
+            </section>
+            <section class="debug-card">
+              <h3>Memory Context</h3>
+              <pre id="chat-memory-context"></pre>
+            </section>
+          </aside>
         </div>
       </section>
 

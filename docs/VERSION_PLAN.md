@@ -1448,6 +1448,67 @@ v1.3 -> v1.4 -> v1.5 -> v1.6 -> v1.7 -> v1.8 -> v1.9 -> v2.0
 - 每次功能更新都维护 README、VERSION_PLAN 和 RESUME_INTERVIEW_PLAN。
 - 只改计划、不改代码的文档更新，按 Master 规则可以不推送 GitHub。
 
+### v2.1：Research Chat Agent 双模式聊天层
+
+状态：已完成。
+
+目标：
+
+把 PaperStorm 从“任务控制台 + Research QA 输入框”推进为更接近真实产品的双模式 Agent：
+
+```text
+调研写文章模式：面向长文综述生成、trace、scorecard 和过程复盘。
+聊天问答模式：面向用户直接提问、上下文滑窗、压缩摘要、记忆命中和自动检索。
+```
+
+本次完成：
+
+1. 新增 `knowledge_storm/paperstorm_chat_agent.py`
+   - `PaperStormChatAgent.create_session(...)`
+   - `PaperStormChatAgent.get_session(chat_id)`
+   - `PaperStormChatAgent.send_message(chat_id, message)`
+   - 会话落盘到 `service_root/chat_sessions/{chat_id}.json`。
+
+2. 新增 service 方法
+   - `create_chat_session`
+   - `get_chat_session`
+   - `send_chat_message`
+
+3. 新增 FastAPI 路由
+   - `POST /chat/sessions`
+   - `GET /chat/sessions/{chat_id}`
+   - `POST /chat/sessions/{chat_id}/messages`
+
+4. 聊天上下文机制
+   - `context_window`：展示最近 N 条对话。
+   - `compressed_context`：用 `compress_context` 保留被滑出窗口的摘要和关键词校验。
+   - `memory_context`：展示 working / episodic / semantic / preferences。
+   - 第二轮追问会复用上一轮 `task_id`，避免重复检索。
+
+5. 前端双模式
+   - `调研写文章` 模式保留原任务生命周期。
+   - `聊天问答` 模式新增聊天窗口、Chat Session ID、上下文窗口、压缩上下文和记忆面板。
+   - Dashboard 版本号升级到 `v2.1`。
+
+验收标准：
+
+- 不创建 task 时，聊天第一问可自动触发 fake research 并回答。
+- 第二轮追问能复用第一轮 task，不重复创建调研任务。
+- 页面能显示上下文滑窗、压缩上下文和 memory context。
+- FastAPI 三个 chat routes 可用。
+
+验证命令：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_chat_agent tests.test_paperstorm_frontend_docs -v
+```
+
+面试价值：
+
+```text
+v2.1 可以把项目讲成“从 Workflow 到 Conversational Agent Runtime”的升级：原 STORM 负责深度调研和长文生成，PaperStorm Chat Agent 负责会话持久化、上下文滑窗、压缩摘要、memory 读写、证据充分性判断和自动检索触发，更贴近企业 Agent Harness / RAG Chat / 知识库助手的岗位要求。
+```
+
 ## 13. 每次版本更新模板
 
 ```markdown

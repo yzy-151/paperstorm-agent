@@ -279,6 +279,42 @@ class PaperStormTaskService:
             **options,
         )
 
+    def create_chat_session(
+        self,
+        title: str = "",
+        topic: str = "",
+        run_mode: str = "fake",
+        retriever: str = "arxiv",
+        output_language: str = "zh",
+        expected_keywords: Optional[List[str]] = None,
+        forbidden_keywords: Optional[List[str]] = None,
+        context_window_size: int = 6,
+        **options,
+    ):
+        from .paperstorm_chat_agent import PaperStormChatAgent
+
+        return PaperStormChatAgent(self).create_session(
+            title=title,
+            topic=topic,
+            run_mode=run_mode,
+            retriever=retriever,
+            output_language=output_language,
+            expected_keywords=expected_keywords,
+            forbidden_keywords=forbidden_keywords,
+            context_window_size=context_window_size,
+            **options,
+        )
+
+    def get_chat_session(self, chat_id: str):
+        from .paperstorm_chat_agent import PaperStormChatAgent
+
+        return PaperStormChatAgent(self).get_session(chat_id)
+
+    def send_chat_message(self, chat_id: str, message: str):
+        from .paperstorm_chat_agent import PaperStormChatAgent
+
+        return PaperStormChatAgent(self).send_message(chat_id, message)
+
     def _run_fake_research(self, state: Dict):
         output_dir = Path(state["output_dir"])
         topic = state["topic"]

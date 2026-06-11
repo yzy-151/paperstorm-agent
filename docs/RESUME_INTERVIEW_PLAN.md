@@ -653,3 +653,54 @@ RAG 不能只要召回了片段就回答，因为检索器常常会返回“看�
 - Evidence Sufficiency 仍是规则版 baseline。
 - 真实 paperstorm 模式仍依赖网络、API key 和外部模型稳定性。
 - 前端是零构建静态 Dashboard，不是生产级 React 管理后台。
+
+## 2026-07-29 面试与简历更新：v2.1 Research Chat Agent
+
+### 新增项目能力
+
+- 新增 `PaperStormChatAgent`，在 Research QA Agent 外层增加聊天会话层。
+- 新增 `chat_sessions/{chat_id}.json` 文件持久化，保存消息、主题、task_id、上下文摘要和记忆上下文。
+- 新增 FastAPI 路由：
+  - `POST /chat/sessions`
+  - `GET /chat/sessions/{chat_id}`
+  - `POST /chat/sessions/{chat_id}/messages`
+- Dashboard 增加双模式：
+  - `调研写文章`：保留 submit/run/article/trace/scorecard 流程。
+  - `聊天问答`：用户直接提问，系统自动判断是否复用知识库或触发调研。
+- 聊天回答返回：
+  - `context_window`
+  - `compressed_context`
+  - `memory_context`
+  - `retrieval_triggered`
+  - `used_task_id`
+  - `research_answer`
+- 修复“上下文压缩不像聊天机器人”的问题：最近对话作为滑窗展示，被滑出窗口的信息通过上一轮压缩摘要继续进入下一轮压缩。
+
+### 简历 bullet 更新
+
+```text
+- 在 Research QA Agent 外层设计会话式 Chat Agent，支持 chat session 持久化、上下文滑窗、结构化上下文压缩、三层 memory context 展示和自动检索触发；Dashboard 提供“调研写文章 / 聊天问答”双模式，实现从离线调研 workflow 到可交互 RAG Chat Agent 的升级。
+```
+
+### 面试可能追问
+
+1. 这和普通聊天机器人有什么区别？
+2. 为什么还要保留“调研写文章”模式？
+3. 你的上下文压缩具体压缩了什么？
+4. 记忆系统现在是真三层吗？
+5. 用户第二轮追问时如何避免重复检索？
+6. 这个版本离生产级 Agent Chat 还差什么？
+
+### 推荐回答
+
+```text
+v2.1 我把 PaperStorm 拆成两个产品模式。调研写文章模式负责完整 research -> outline -> article -> polish，适合生成长文综述和展示 trace/scorecard；聊天问答模式负责用户直接提问，系统维护 chat session、最近上下文滑窗、compressed_context 和 memory_context。第一轮没有 task_id 时自动创建 research task 并基于证据回答，第二轮会复用上一轮 task_id，如果 evidence sufficiency 足够就不重复检索。这样它不是简单聊天壳，而是把 STORM 的深度调研能力包装成一个可追踪的 RAG Chat Agent。
+```
+
+### 不能夸大的边界
+
+- 当前 chat session 是文件持久化，不是数据库或分布式 session store。
+- `compressed_context` 是规则压缩 baseline，不是 LLM summary，也没有 token-level 预算调度。
+- 三层 memory 目前可展示和参与上下文组装，但还不是长期用户画像系统。
+- 自动检索触发依赖 ResearchQAAgent 的规则 decision 和 evidence sufficiency，不是复杂 LLM planner。
+- 前端是本地演示 Dashboard，不是生产级 SaaS 前端。

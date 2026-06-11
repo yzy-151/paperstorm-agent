@@ -1,8 +1,9 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v2.0";
+const DASHBOARD_VERSION = "v2.1";
 
 async function loadDashboard() {
   try {
+    setDashboardMode("research");
     initializeServiceUrl();
     const data = window.PAPERSTORM_SAMPLE_DATA || await fetchSampleData();
     renderDashboard(data);
@@ -55,6 +56,14 @@ async function loadServiceTask() {
   } finally {
     setButtonBusy("load-service-task", false);
   }
+}
+
+function setDashboardMode(mode) {
+  const isChat = mode === "chat";
+  document.body.dataset.mode = isChat ? "chat" : "research";
+  document.querySelector("#show-research-mode").classList.toggle("active", !isChat);
+  document.querySelector("#show-chat-mode").classList.toggle("active", isChat);
+  setStatus(isChat ? "chat mode ready" : "research workflow ready", "idle");
 }
 
 async function loadSampleData() {
@@ -200,6 +209,74 @@ async function askResearchAgent() {
   }
 }
 
+async function createChatSession() {
+  const payload = {
+    title: document.querySelector("#task-topic").value.trim() || "PaperStorm Chat",
+    topic: document.querySelector("#task-topic").value.trim(),
+    run_mode: document.querySelector("#task-run-mode").value,
+    retriever: document.querySelector("#task-retriever").value,
+    output_language: document.querySelector("#task-output-language").value,
+    expected_keywords: splitKeywords(document.querySelector("#task-expected-keyword").value),
+    forbidden_keywords: splitKeywords(document.querySelector("#task-forbidden-keyword").value),
+    context_window_size: 6,
+  };
+  try {
+    setDashboardMode("chat");
+    setStatus("creating chat session", "loading");
+    setButtonBusy("create-chat-session", true, "创建中");
+    const session = await fetchJson("/chat/sessions", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    document.querySelector("#chat-session-id").value = session.chat_id;
+    renderChatSession(session);
+    setStatus(`chat ${session.chat_id}`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("create-chat-session", false);
+  }
+}
+
+async function sendChatMessage() {
+  let chatId = document.querySelector("#chat-session-id").value.trim();
+  const message = document.querySelector("#chat-message-input").value.trim();
+  if (!message) {
+    setStatus("请输入聊天问题", "error");
+    return;
+  }
+  try {
+    setDashboardMode("chat");
+    setStatus("chat agent thinking", "loading");
+    setButtonBusy("send-chat-message", true, "思考中");
+    if (!chatId) {
+      await createChatSession();
+      chatId = document.querySelector("#chat-session-id").value.trim();
+    }
+    appendChatMessage({role: "user", content: message});
+    const reply = await fetchJson(`/chat/sessions/${encodeURIComponent(chatId)}/messages`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message}),
+    });
+    if (reply.used_task_id) {
+      document.querySelector("#service-task-id").value = reply.used_task_id;
+      connectSSE(reply.used_task_id);
+    }
+    renderChatSession(reply);
+    setStatus(
+      reply.retrieval_triggered ? "chat answered after research" : "chat answered from memory/kb",
+      reply.research_answer?.grounded ? "success" : "running",
+    );
+  } catch (error) {
+    setStatus(error.message, "error");
+    appendChatMessage({role: "assistant", content: error.message});
+  } finally {
+    setButtonBusy("send-chat-message", false);
+  }
+}
+
 async function fetchJson(path, options) {
   const baseUrl = getServiceBaseUrl();
   const response = await fetch(`${baseUrl}${path}`, options);
@@ -331,6 +408,54 @@ function renderResearchQA(answer) {
   (answer.trace || []).forEach(event => {
     appendSSEEvent(event.event || "research_qa", JSON.stringify(event.payload || {}));
   });
+}
+
+function renderChatSession(session) {
+  const messages = session.messages || [];
+  const list = document.querySelector("#chat-message-list");
+  if (messages.length) {
+    list.innerHTML = messages.map(message => chatBubble(message)).join("");
+    list.scrollTop = list.scrollHeight;
+  }
+  document.querySelector("#chat-context-window").textContent =
+    JSON.stringify(session.context_window || [], null, 2);
+  document.querySelector("#chat-compressed-context").textContent =
+    JSON.stringify(session.compressed_context || {}, null, 2);
+  document.querySelector("#chat-memory-context").textContent =
+    JSON.stringify(session.memory_context || {}, null, 2);
+  if (session.chat_id) {
+    document.querySelector("#chat-session-id").value = session.chat_id;
+  }
+  const answer = session.research_answer || {};
+  document.querySelector("#research-decision").textContent =
+    JSON.stringify(answer.decision || {}, null, 2);
+  document.querySelector("#research-sufficiency").textContent =
+    JSON.stringify(answer.evidence_sufficiency || {}, null, 2);
+  if (answer.citations) {
+    renderResearchQA(answer);
+  }
+}
+
+function appendChatMessage(message) {
+  const list = document.querySelector("#chat-message-list");
+  list.insertAdjacentHTML("beforeend", chatBubble(message));
+  list.scrollTop = list.scrollHeight;
+}
+
+function chatBubble(message) {
+  const role = message.role === "user" ? "user" : "assistant";
+  const label = role === "user" ? "你" : "PaperStorm";
+  const metadata = message.metadata || {};
+  const meta = metadata.used_task_id
+    ? `<div class="label">task: ${escapeHtml(metadata.used_task_id)} · retrieval: ${Boolean(metadata.retrieval_triggered)}</div>`
+    : "";
+  return `
+    <div class="chat-message ${role}">
+      <strong>${label}</strong>
+      <p>${escapeHtml(message.content || "")}</p>
+      ${meta}
+    </div>
+  `;
 }
 
 function renderTrace(trace) {
@@ -525,5 +650,9 @@ document.querySelector("#poll-selected-task").addEventListener("click", pollSele
 document.querySelector("#refresh-task-list").addEventListener("click", fetchTaskList);
 document.querySelector("#ask-research-agent").addEventListener("click", askResearchAgent);
 document.querySelector("#service-url").addEventListener("change", () => connectSSE(getSelectedTaskId()));
+document.querySelector("#show-research-mode").addEventListener("click", () => setDashboardMode("research"));
+document.querySelector("#show-chat-mode").addEventListener("click", () => setDashboardMode("chat"));
+document.querySelector("#create-chat-session").addEventListener("click", createChatSession);
+document.querySelector("#send-chat-message").addEventListener("click", sendChatMessage);
 
 loadDashboard();

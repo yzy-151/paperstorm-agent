@@ -84,6 +84,19 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         expected_keywords: list[str] = []
         forbidden_keywords: list[str] = []
 
+    class ChatSessionRequest(BaseModel):
+        title: str = ""
+        topic: str = ""
+        run_mode: str = "fake"
+        retriever: str = "arxiv"
+        output_language: str = "zh"
+        expected_keywords: list[str] = []
+        forbidden_keywords: list[str] = []
+        context_window_size: int = 6
+
+    class ChatMessageRequest(BaseModel):
+        message: str
+
     @app.get("/")
     def get_dashboard_home():
         index_path = dashboard_dir / "index.html"
@@ -186,6 +199,21 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.post("/research-agent/ask")
     def ask_research_agent(request: ResearchAgentAskRequest):
         return service.ask_research_agent(**_request_payload(request))
+
+    @app.post("/chat/sessions")
+    def create_chat_session(request: ChatSessionRequest):
+        return service.create_chat_session(**_request_payload(request))
+
+    @app.get("/chat/sessions/{chat_id}")
+    def get_chat_session(chat_id: str):
+        return service.get_chat_session(chat_id)
+
+    @app.post("/chat/sessions/{chat_id}/messages")
+    def send_chat_message(chat_id: str, request: ChatMessageRequest):
+        return service.send_chat_message(
+            chat_id,
+            message=request.message,
+        )
 
     return app
 

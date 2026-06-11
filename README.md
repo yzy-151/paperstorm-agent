@@ -138,6 +138,37 @@ Research QA Agent 的阶段能力：
 
 本地 service 启动后，可在 Dashboard 的“文献检索问答”区域直接提问；如果没有 Task ID，fake 模式会自动跑一次可复现调研任务。
 
+## v2.1 Research Chat Agent
+
+v2.1 把 Dashboard 从“任务控制台 + 问答输入框”推进为双模式产品：
+
+```text
+调研写文章模式：submit task -> run task -> article / trace / scorecard
+聊天问答模式：chat message -> context window -> memory -> evidence check -> auto research / answer
+```
+
+新增后端入口：
+
+```text
+POST /chat/sessions
+GET  /chat/sessions/{chat_id}
+POST /chat/sessions/{chat_id}/messages
+```
+
+聊天问答模式的返回内容包括：
+
+```text
+messages
+context_window
+compressed_context
+memory_context
+retrieval_triggered
+used_task_id
+research_answer
+```
+
+它解决的是“像豆包一样直接问”的体验问题：用户不用先理解 task_id 和调研产物目录，可以直接创建聊天并发送问题。系统会保留最近对话作为 sliding context window，同时把被滑出窗口的信息压缩进 `compressed_context`，并显示 working / episodic / semantic memory 命中情况。如果当前会话没有可用知识，Agent 会自动创建并运行 research task，再基于证据回答；如果已有 task_id 且证据足够，则复用已有知识库，避免重复检索。
+
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
 ```text
