@@ -704,3 +704,61 @@ v2.1 我把 PaperStorm 拆成两个产品模式。调研写文章模式负责完
 - 三层 memory 目前可展示和参与上下文组装，但还不是长期用户画像系统。
 - 自动检索触发依赖 ResearchQAAgent 的规则 decision 和 evidence sufficiency，不是复杂 LLM planner。
 - 前端是本地演示 Dashboard，不是生产级 SaaS 前端。
+
+## 2026-07-29 面试与简历更新：RAG / Memory 后续主线
+
+### 当前真实状态
+
+```text
+已做：
+- arXiv / LocalPDF 检索接入。
+- LocalPDFRM 支持字符 chunk，默认 chunk_size=1200，chunk_overlap=150。
+- PaperStormKnowledgeBase 能从文章段落和 raw_search_results 构造 evidence。
+- QA 返回 citations、chunk_id、source_type、score、metadata。
+- Evidence Sufficiency 能做低置信拒答和跑题关键词检测。
+- Chat Agent 有短期上下文窗口、压缩摘要和本地 JSON 记忆。
+
+未做成主链路：
+- PaperStorm Chat 主链路还没接正式 embedding 向量库。
+- 没有完成 Hybrid BM25 + Vector 检索。
+- 没有完成 cross-encoder / LLM rerank。
+- 没有 HNSW 参数调优。
+- 没有动态 token 预算分配。
+- 没有长期向量记忆。
+```
+
+### 面试推荐回答：当前 RAG 链路
+
+```text
+当前 PaperStorm 的主链路是可追踪 RAG baseline：文档来源包括 arXiv、本地 PDF 和一次 STORM 运行产物；LocalPDFRM 支持 chunk_size 和 chunk_overlap；QA 层会把生成文章段落和 raw_search_results 转成 evidence，并返回 citations、chunk_id、source_type 和 metadata。当前排序主要是 lexical / CJK overlap 和 evidence sufficiency，不会夸大成已经完成生产级向量库 RAG。下一步我计划把原项目已有的 Qdrant/VectorRM 能力接入 PaperStorm Chat 主链路，形成 Chunk -> Embedding -> Vector Store -> Hybrid Retrieval -> Rerank -> Context Compression -> Prompt 的完整链路。
+```
+
+### 面试推荐回答：什么时候用 RAG，什么时候微调
+
+```text
+知识频繁变化、需要引用溯源、面向企业私有文档或论文资料时优先 RAG；模型行为风格、固定任务格式、领域表达习惯或工具调用模式需要稳定提升时考虑 SFT/微调。PaperStorm 这种论文调研和知识库问答场景优先 RAG，因为资料变化快、必须返回 citation，而且用户会追问具体来源。微调可以后续用于 query planner、reranker 或 answer style，但不应该替代知识检索。
+```
+
+### 面试推荐回答：召回低、幻觉严重怎么排查
+
+```text
+我会先拆链路排查：query 是否被正确改写，chunk 是否切得过大或过小，embedding 是否适合中英文和领域术语，top_k 是否太小，rerank 是否把正确证据过滤掉，prompt 是否没有明确要求引用证据。指标上看 context_recall、citation_precision、forbidden_hit_rate、grounded_rate 和 hallucination_rate。PaperStorm 已经有 PIM expected/forbidden keyword 和 scorecard baseline，后续会扩展成标准 RAG benchmark。
+```
+
+### 面试推荐回答：Hybrid 检索为什么更稳
+
+```text
+纯向量检索适合语义相近表达，但对专有名词、缩写、公式、型号、接口名不一定稳；BM25/关键词检索对精确词命中稳，但处理同义表达弱。Hybrid 把两者合并，既能召回语义相关 chunk，又不丢专业关键词。PIM 这种缩写消歧场景很适合 Hybrid，因为 passive intermodulation、RF、DRAM、processing-in-memory 这些词面信号非常关键。
+```
+
+### 面试推荐回答：多轮对话 RAG 如何保存历史上下文
+
+```text
+我会分短期窗口和长期记忆。短期窗口保存当前 session 最近 N 轮对话，直接参与当前回答；超出窗口后生成 compressed_context，保留用户问题、约束、关键事实和引用。长期记忆保存跨会话偏好、稳定事实和历史任务经验，可以用 JSON baseline 起步，后续写入向量库做 semantic recall。PaperStorm v2.1 已经有短期窗口、压缩摘要和 JSON memory，v2.4 计划补长期向量记忆。
+```
+
+### 后续简历增强 bullet
+
+```text
+- 规划并推进 PaperStorm RAG 主链路升级：将当前 lexical evidence baseline 演进为 Chunk/Embedding/VectorStore/Hybrid Retrieval/Rerank/ContextCompressionRetriever，补充动态 token 预算、长期向量记忆和 RAG benchmark，指标覆盖 context_recall、citation_precision、grounded_rate、hallucination_rate、p95 latency 和 QPS。
+```

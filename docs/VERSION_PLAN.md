@@ -1509,6 +1509,188 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_chat_
 v2.1 可以把项目讲成“从 Workflow 到 Conversational Agent Runtime”的升级：原 STORM 负责深度调研和长文生成，PaperStorm Chat Agent 负责会话持久化、上下文滑窗、压缩摘要、memory 读写、证据充分性判断和自动检索触发，更贴近企业 Agent Harness / RAG Chat / 知识库助手的岗位要求。
 ```
 
+### v2.2：RAG Index 与 Hybrid Retrieval
+
+状态：计划中。
+
+目标：
+
+把当前 `PaperStormKnowledgeBase` 的段落/词法检索升级为更标准的 RAG 检索链路：
+
+```text
+文档解析 -> Chunk -> Metadata -> Embedding -> Vector Store -> BM25/lexical -> Hybrid Merge -> Rerank -> Prompt Context
+```
+
+当前真实状态：
+
+- LocalPDFRM 已支持本地 PDF 文本 chunk，默认 `chunk_size=1200`、`chunk_overlap=150`。
+- `PaperStormKnowledgeBase` 当前按文章段落和 raw search snippets 形成 evidence，使用关键词/CJK overlap 排序。
+- 原项目已有 `VectorRM`、`QdrantVectorStoreManager` 和 embedding wrapper，但还没有接入 PaperStorm Chat 主链路。
+- 暂未完成 Hybrid 检索、Rerank、HNSW 参数调优、向量库持久化记忆。
+
+计划实现：
+
+1. 新增 `PaperStormRAGIndex`
+   - 支持 `chunk_size`、`chunk_overlap`、`document_id`、`source_type`、`page`、`section`。
+   - 输出稳定 `chunk_id`。
+
+2. 新增向量索引适配层
+   - 优先复用项目已有 Qdrant offline vector store。
+   - 支持本地路径存储，便于 demo 和面试复现。
+   - embedding 模型先做可插拔配置，不把某个云厂商写死。
+
+3. 新增 Hybrid Retriever
+   - lexical score：关键词/BM25 baseline。
+   - vector score：embedding cosine/Qdrant score。
+   - merge score：`alpha * vector + (1 - alpha) * lexical`。
+   - 输出 retrieval audit：每个 chunk 为什么被召回。
+
+4. 新增 Rerank baseline
+   - 第一版用规则 rerank：expected keywords、forbidden keywords、source freshness、citation density。
+   - 后续再接 cross-encoder 或 LLM reranker。
+
+验收指标：
+
+```text
+recall@k
+precision@k
+MRR
+citation_precision
+off_topic_rate
+forbidden_hit_rate
+retrieval_latency_ms
+index_build_time
+```
+
+面试价值：
+
+```text
+能回答“为什么 Hybrid 比单向量更稳”“召回低怎么排查”“向量检索慢怎么优化”“如何评估 RAG 检索质量”。
+```
+
+### v2.3：ContextCompressionRetriever 与动态 token 预算
+
+状态：计划中。
+
+目标：
+
+在 Retriever 和 LLM/Answer Composer 中间加压缩 wrapper：
+
+```text
+Query -> Hybrid Retriever -> candidate chunks -> coarse filter -> fine compression -> prompt context
+```
+
+计划实现：
+
+1. 新增 `ContextCompressionRetriever`
+   - 包装任意 retriever，不侵入原检索器。
+   - 输入 query 和 top_k，输出 compressed evidence。
+
+2. 动态上下文预算
+   - 默认总预算先用字符近似 token。
+   - 聊天历史 30%。
+   - RAG evidence 70%。
+   - 超限后先过滤低分 chunk，再压缩历史摘要。
+
+3. 层级压缩
+   - 粗压缩：过滤低分/跑题/重复 chunk。
+   - 细压缩：第一版规则句子抽取，后续可接小模型 summarizer。
+
+4. 前端展示
+   - 显示原始召回 chunk 数。
+   - 显示压缩后 chunk 数。
+   - 显示 token/字符预算使用。
+
+面试价值：
+
+```text
+能回答“几十万字 PDF 如何处理”“上下文太长怎么办”“上下文蒸馏和普通截断有什么区别”“RAG 文档和历史对话如何分配预算”。
+```
+
+### v2.4：长期记忆与跨会话 Memory
+
+状态：计划中。
+
+目标：
+
+区分短期上下文和长期记忆：
+
+```text
+short-term context：当前 chat session 的最近 N 轮对话。
+long-term memory：跨会话保存的用户偏好、领域事实、历史任务经验。
+```
+
+当前真实状态：
+
+- `PaperStormMemoryStore` 是本地 JSON 文字记忆，不是向量库。
+- Chat session 存在 `chat_sessions/{chat_id}.json`，跨重启可恢复，但不做向量检索。
+- working / episodic / semantic / preferences 已有数据结构，但长期检索能力仍是词法 baseline。
+
+计划实现：
+
+1. MemoryRecord embedding
+   - semantic / episodic memory 可选择写入向量库。
+   - 支持跨 session recall。
+
+2. Memory policy
+   - working：只保留当前会话最近上下文。
+   - episodic：记录任务经历、失败、跑题检索、用户确认。
+   - semantic：稳定事实。
+   - preferences：语言、输出格式、专业方向。
+
+3. Memory eval
+   - memory_recall_rate。
+   - stale_memory_rate。
+   - user_preference_hit_rate。
+
+面试价值：
+
+```text
+能回答“多轮对话 RAG 如何保存历史上下文”“短期窗口和长期记忆怎么区分”“长期记忆如何避免污染回答”。
+```
+
+### v2.5：RAG Benchmark 与性能优化
+
+状态：计划中。
+
+目标：
+
+把 RAG 系统做成可量化优化对象。
+
+计划指标：
+
+```text
+grounded_rate
+faithfulness
+answer_relevance
+context_precision
+context_recall
+citation_precision
+retrieval_trigger_accuracy
+hallucination_rate
+p50_latency
+p95_latency
+QPS
+failure_rate
+cache_hit_rate
+```
+
+性能优化计划：
+
+- embedding cache。
+- vector index 持久化。
+- HNSW 参数调优：`M`、`ef_construct`、`ef_search`。
+- top_k 分阶段：召回 top 50，rerank top 10，prompt top 5。
+- 并发 worker 隔离。
+- timeout / retry / rate limit。
+- 热门 query 和热门 chunk cache。
+
+面试价值：
+
+```text
+能回答“RAG 系统怎么打分”“召回低和幻觉高怎么排查”“QPS 高时怎么优化”“向量库内存不足怎么办”。
+```
+
 ## 13. 每次版本更新模板
 
 ```markdown

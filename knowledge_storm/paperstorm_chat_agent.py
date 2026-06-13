@@ -71,16 +71,8 @@ class PaperStormChatAgent:
             max_chars=1200,
         )
 
-        answer = self.task_service.ask_research_agent(
-            question=message,
-            topic=session.get("topic") or message,
-            task_id=session.get("task_id") or None,
-            run_mode=session.get("run_mode") or "fake",
-            retriever=session.get("retriever") or "arxiv",
-            output_language=session.get("output_language") or "zh",
-            expected_keywords=session.get("expected_keywords") or [],
-            forbidden_keywords=session.get("forbidden_keywords") or [],
-        )
+        research_question = _contextualize_question(session, message)
+        answer = self._answer_message(session, message, research_question)
         session["task_id"] = answer.get("used_task_id") or session.get("task_id", "")
         assistant_message = _message(
             "assistant",
@@ -162,6 +154,46 @@ class PaperStormChatAgent:
             )
         return memory
 
+    def _answer_message(self, session: Dict, message: str, research_question: str):
+        if _is_casual_chat(message):
+            return _casual_chat_answer(message)
+
+        answer = self.task_service.ask_research_agent(
+            question=research_question,
+            topic=session.get("topic") or message,
+            task_id=session.get("task_id") or None,
+            run_mode=session.get("run_mode") or "fake",
+            retriever=session.get("retriever") or "arxiv",
+            output_language=session.get("output_language") or "zh",
+            expected_keywords=session.get("expected_keywords") or [],
+            forbidden_keywords=session.get("forbidden_keywords") or [],
+        )
+        if (answer.get("decision") or {}).get("action") != "reject_low_confidence":
+            return answer
+
+        fresh_answer = self.task_service.ask_research_agent(
+            question=research_question,
+            topic=_research_topic(session, message),
+            task_id=None,
+            run_mode=session.get("run_mode") or "fake",
+            retriever=session.get("retriever") or "arxiv",
+            output_language=session.get("output_language") or "zh",
+            expected_keywords=session.get("expected_keywords") or [],
+            forbidden_keywords=session.get("forbidden_keywords") or [],
+        )
+        fresh_answer["trace"] = (answer.get("trace") or []) + [
+            {
+                "event": "chat_auto_research_after_low_confidence",
+                "timestamp": _now(),
+                "payload": {
+                    "previous_task_id": answer.get("used_task_id", ""),
+                    "fresh_task_id": fresh_answer.get("used_task_id", ""),
+                    "reason": (answer.get("decision") or {}).get("reason", ""),
+                },
+            }
+        ] + (fresh_answer.get("trace") or [])
+        return fresh_answer
+
     def _session_path(self, chat_id: str):
         return self.chat_dir / "{0}.json".format(chat_id)
 
@@ -209,6 +241,108 @@ def _context_keywords(session: Dict, message: str):
         if token in topic and token not in keywords:
             keywords.append(token)
     return keywords
+
+
+def _is_casual_chat(message: str):
+    text = str(message or "").strip().lower()
+    casual_hits = [
+        "你好",
+        "您好",
+        "hello",
+        "hi",
+        "你是谁",
+        "你能做什么",
+        "介绍一下你",
+        "怎么使用",
+        "帮助",
+    ]
+    research_markers = [
+        "论文",
+        "文献",
+        "检索",
+        "调研",
+        "rag",
+        "pim",
+        "无源互调",
+        "神经网络",
+        "citation",
+        "引用",
+    ]
+    return any(hit in text for hit in casual_hits) and not any(
+        marker in text for marker in research_markers
+    )
+
+
+def _casual_chat_answer(message: str):
+    answer = (
+        "你好，我是 PaperStorm Research Chat Agent。"
+        "我可以像聊天机器人一样解释项目用法，也可以在论文调研场景里自动检索、"
+        "生成带引用的回答，并展示上下文窗口、压缩摘要、记忆命中和 trace。"
+        "如果你问的是具体技术问题，我会优先复用已有知识；证据不足时会自动补充调研。"
+    )
+    return {
+        "question": message,
+        "answer": answer,
+        "citations": [],
+        "evidence": [],
+        "grounded": False,
+        "memory_context": {},
+        "used_task_id": "",
+        "task_status": "",
+        "retrieval_triggered": False,
+        "decision": {
+            "action": "chat_fallback",
+            "reason": "casual service question does not need research retrieval",
+        },
+        "evidence_sufficiency": {
+            "sufficient": False,
+            "score": 0,
+            "reason": "casual chat fallback",
+        },
+        "trace": [
+            {
+                "event": "chat_fallback",
+                "timestamp": _now(),
+                "payload": {"reason": "casual_chat"},
+            }
+        ],
+        "qa_history": [],
+        "qa_history_count": 0,
+    }
+
+
+def _research_topic(session: Dict, message: str):
+    topic = str(session.get("topic") or "").strip()
+    if topic and _keyword_overlap(topic, message):
+        return topic
+    return message
+
+
+def _contextualize_question(session: Dict, message: str):
+    text = str(message or "").strip()
+    if not _looks_like_followup(text):
+        return text
+    previous_user = ""
+    for item in reversed(session.get("messages") or []):
+        if item.get("role") == "user" and item.get("content") != text:
+            previous_user = item.get("content", "")
+            break
+    parts = [session.get("topic", ""), previous_user, text]
+    return "\n".join(part for part in parts if part)
+
+
+def _looks_like_followup(text: str):
+    markers = ["那", "它", "这个", "上述", "继续", "为什么", "如何"]
+    return any(marker in text for marker in markers) and len(text) < 80
+
+
+def _keyword_overlap(left: str, right: str):
+    left_lower = left.lower()
+    right_lower = right.lower()
+    for token in ["pim", "无源互调", "神经网络", "passive intermodulation"]:
+        if token in left_lower and token in right_lower:
+            return True
+    return False
 
 
 def _now():

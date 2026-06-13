@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -57,6 +58,63 @@ class PaperStormChatAgentTest(unittest.TestCase):
         self.assertLessEqual(len(second["context_window"]), 3)
         self.assertIn("PIM 是什么", second["compressed_context"]["summary"])
         self.assertIn("qa_history_count", second["research_answer"])
+
+    def test_chat_auto_researches_when_existing_task_has_insufficient_evidence(self):
+        service = self.make_service()
+        stale_task = service.submit_research_task(
+            topic="Transformer 注意力机制",
+            run_mode="fake",
+            expected_keywords=["attention"],
+            forbidden_keywords=[],
+        )
+        stale_state = service.run_task(stale_task["task_id"])
+        stale_output = Path(stale_state["output_dir"])
+        (stale_output / "storm_gen_article_polished.txt").write_text(
+            "Transformer attention uses query, key, and value projections for language modeling.",
+            encoding="utf-8",
+        )
+        (stale_output / "raw_search_results.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "title": "Transformer attention",
+                        "description": "Attention mechanisms for language models.",
+                        "url": "https://example.com/attention",
+                        "snippets": ["Query key value attention."],
+                    }
+                ],
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        session = service.create_chat_session(
+            topic="pim 神经网络抑制",
+            run_mode="fake",
+            expected_keywords=["passive intermodulation"],
+            forbidden_keywords=["DRAM"],
+            task_id=stale_task["task_id"],
+        )
+
+        reply = service.send_chat_message(session["chat_id"], "PIM 是什么？")
+
+        self.assertTrue(reply["retrieval_triggered"])
+        self.assertNotEqual(reply["used_task_id"], stale_task["task_id"])
+        self.assertEqual(
+            reply["research_answer"]["decision"]["action"],
+            "retrieve_then_answer",
+        )
+        self.assertIn("passive intermodulation", reply["assistant_message"]["content"])
+
+    def test_chat_can_answer_casual_service_questions_without_research(self):
+        service = self.make_service()
+        session = service.create_chat_session(topic="pim 神经网络抑制", run_mode="fake")
+
+        reply = service.send_chat_message(session["chat_id"], "你好，你能做什么？")
+
+        self.assertFalse(reply["retrieval_triggered"])
+        self.assertFalse(reply["used_task_id"])
+        self.assertEqual(reply["research_answer"]["decision"]["action"], "chat_fallback")
+        self.assertIn("论文调研", reply["assistant_message"]["content"])
 
     def test_fastapi_adapter_exposes_chat_session_routes(self):
         from fastapi.testclient import TestClient
