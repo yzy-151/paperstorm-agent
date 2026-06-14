@@ -1691,6 +1691,90 @@ cache_hit_rate
 能回答“RAG 系统怎么打分”“召回低和幻觉高怎么排查”“QPS 高时怎么优化”“向量库内存不足怎么办”。
 ```
 
+### v3.0：RAG / Memory / Compression / Benchmark 合并版
+
+状态：已完成。
+
+目标：
+
+把 v2.2 到 v2.5 合并落地为一版可测试 RAG 工程 baseline：
+
+```text
+Chunk -> Metadata -> Hash Embedding -> Local Vector Index -> Hybrid Retrieval
+  -> Rule Rerank -> ContextCompressionRetriever -> Long-term Memory -> RAG Benchmark
+```
+
+本次完成：
+
+1. `PaperStormRAGIndex`
+   - 从 `run_dir` 读取 `storm_gen_article_polished.txt` / `storm_gen_article.txt` 和 `raw_search_results.json`。
+   - 支持 `chunk_size` 和 `chunk_overlap`。
+   - 为每个 chunk 生成稳定 `chunk_id`、`document_id`、`source_type`、`metadata`。
+   - 使用可复现 hash embedding，写入本地 JSON 索引。
+   - 搜索时同时计算 `lexical_score`、`vector_score`、`hybrid_score` 和 `rerank_score`。
+
+2. Hybrid Retrieval
+   - 默认 `alpha=0.65`，融合 vector score 与 lexical score。
+   - rerank baseline 使用 expected keywords 加分、forbidden keywords 扣分。
+   - 返回 retrieval audit 字段，便于解释为什么召回某个 chunk。
+
+3. `ContextCompressionRetriever`
+   - 作为 wrapper 放在检索器和 prompt 拼接之间。
+   - 支持 history/evidence 字符预算比例，默认 30% / 70%。
+   - 粗压缩：过滤低价值或跑题 chunk。
+   - 细压缩：规则句子抽取，保留 query 命中句和 expected keyword 命中句。
+   - 返回 `prompt_context`、`compressed_history`、`compressed_evidence`、`budget` 和 `audit`。
+
+4. `PaperStormLongTermMemoryIndex`
+   - 将 `PaperStormMemoryStore` 的 working / episodic / semantic / preferences 写成本地长期记忆索引。
+   - 支持跨会话 recall。
+   - 当前为本地 JSON + hash embedding baseline。
+
+5. `run_rag_benchmark`
+   - 输出 `rag_benchmark_report.json` 和 `rag_benchmark_report.md`。
+   - 指标包括：
+
+```text
+context_recall
+citation_precision
+off_topic_rate
+avg_latency_ms
+p95_latency_ms
+qps_estimate
+```
+
+6. QA 主链路接入
+   - `PaperStormKnowledgeBase.search()` 优先使用 `PaperStormRAGIndex`。
+   - 如果索引构建失败，回退旧 lexical/CJK overlap 检索。
+
+验收标准：
+
+- RAG index 能 chunk、embedding、保存、加载、hybrid search。
+- ContextCompressionRetriever 能执行预算压缩并返回 audit。
+- Long-term memory index 能跨会话 recall。
+- RAG benchmark 能生成 JSON/Markdown 报告。
+- 旧 QA、Chat、Service 测试不回退。
+
+验证命令：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_rag_v3 -v
+```
+
+边界：
+
+- v3.0 的 embedding 是本地 hash embedding baseline，不是生产 embedding 模型。
+- 本地 JSON 索引不是 Qdrant、Milvus 或 FAISS。
+- HNSW 仅保留配置位和面试解释入口，当前搜索仍是 linear scan baseline。
+- rerank 是规则版，不是 cross-encoder 或 LLM reranker。
+- token 预算用字符近似，不是 tokenizer 精确 token 计数。
+
+面试价值：
+
+```text
+v3.0 能系统回答 RAG 高频问题：chunk/overlap 怎么设、Hybrid Retrieval 为什么更稳、Rerank 怎么做、上下文太长如何压缩、长期记忆和短期窗口怎么区分、RAG 系统如何用 context_recall/citation_precision/p95_latency/QPS 评估。
+```
+
 ## 13. 每次版本更新模板
 
 ```markdown

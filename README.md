@@ -169,6 +169,48 @@ research_answer
 
 它解决的是“像豆包一样直接问”的体验问题：用户不用先理解 task_id 和调研产物目录，可以直接创建聊天并发送问题。系统会保留最近对话作为 sliding context window，同时把被滑出窗口的信息压缩进 `compressed_context`，并显示 working / episodic / semantic memory 命中情况。如果当前会话没有可用知识，Agent 会自动创建并运行 research task，再基于证据回答；如果已有 task_id 且证据足够，则复用已有知识库，避免重复检索。
 
+## v3.0 RAG Memory Benchmark
+
+v3.0 将 v2.2 到 v2.5 合并为一版可测试 baseline，补齐标准 RAG 面试主线：
+
+```text
+Chunk -> Hash Embedding -> Local JSON Vector Index -> Hybrid Retrieval -> Rerank
+  -> ContextCompressionRetriever -> Long-term Memory Recall -> RAG Benchmark
+```
+
+新增核心模块：
+
+```text
+knowledge_storm/paperstorm_rag.py
+knowledge_storm/paperstorm_rag_benchmark.py
+```
+
+核心类：
+
+- `PaperStormRAGIndex`：从 PaperStorm run_dir 构建 chunk、metadata、hash embedding 和本地 JSON 索引。
+- `ContextCompressionRetriever`：作为 retriever 与 prompt assembly 之间的 wrapper，执行粗过滤、规则压缩和上下文预算分配。
+- `PaperStormLongTermMemoryIndex`：把 working / episodic / semantic / preferences 记忆写入本地长期记忆索引，支持跨会话 recall。
+
+当前 v3.0 是无外部依赖 baseline：embedding 使用可复现 hash embedding，向量存储使用本地 JSON，ANN 标记为 `linear_scan_baseline`，并保留 HNSW-ready 参数位。它不是生产级 Qdrant/HNSW/cross-encoder 方案，但已经把 RAG 工程链路和评测接口做通，后续可以替换底层索引和 reranker。
+
+新增 benchmark 输出：
+
+```text
+rag_benchmark_report.json
+rag_benchmark_report.md
+```
+
+指标包括：
+
+```text
+context_recall
+citation_precision
+off_topic_rate
+avg_latency_ms
+p95_latency_ms
+qps_estimate
+```
+
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
 ```text
@@ -428,6 +470,8 @@ knowledge_storm/paperstorm_service.py
 knowledge_storm/paperstorm_demo.py
 knowledge_storm/paperstorm_pipeline.py
 knowledge_storm/paperstorm_release.py
+knowledge_storm/paperstorm_rag.py
+knowledge_storm/paperstorm_rag_benchmark.py
 ```
 
 测试：
@@ -450,6 +494,7 @@ tests/test_paperstorm_release_demo.py
 tests/test_paperstorm_release_docs.py
 tests/test_paperstorm_demo_runbook.py
 tests/test_paperstorm_final_packaging.py
+tests/test_paperstorm_rag_v3.py
 ```
 
 维护文档：

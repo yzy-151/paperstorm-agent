@@ -43,6 +43,22 @@ class PaperStormFinalPackagingTest(unittest.TestCase):
         self.assertIn("v1.9：Benchmark", version_plan)
         self.assertIn("Evidence Sufficiency", resume_plan)
 
+    def test_readme_and_plans_include_v30_rag_memory_direction(self):
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        version_plan = (root / "docs" / "VERSION_PLAN.md").read_text(encoding="utf-8")
+        resume_plan = (root / "docs" / "RESUME_INTERVIEW_PLAN.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("v3.0 RAG Memory Benchmark", readme)
+        self.assertIn("PaperStormRAGIndex", readme)
+        self.assertIn("ContextCompressionRetriever", readme)
+        self.assertIn("PaperStormLongTermMemoryIndex", readme)
+        self.assertIn("v3.0：RAG / Memory / Compression / Benchmark 合并版", version_plan)
+        self.assertIn("Hybrid Retrieval", version_plan)
+        self.assertIn("RAG Benchmark", resume_plan)
+
 
 if __name__ == "__main__":
     unittest.main()

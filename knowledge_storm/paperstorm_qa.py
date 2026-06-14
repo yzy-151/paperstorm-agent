@@ -92,6 +92,16 @@ class PaperStormKnowledgeBase:
         }
 
     def search(self, query: str, top_k: int = 3):
+        if self.run_dir:
+            try:
+                from .paperstorm_rag import PaperStormRAGIndex
+
+                index = PaperStormRAGIndex.from_run_dir(self.run_dir)
+                results = index.search(query, top_k=top_k)
+                if results:
+                    return [_rag_chunk_to_doc(item) for item in results]
+            except Exception:
+                pass
         terms = _tokenize(query)
         scored = []
         for index, doc in enumerate(self.documents):
@@ -156,6 +166,24 @@ def _with_score(doc: Dict, score: int):
     enriched.setdefault("chunk_id", enriched.get("id", ""))
     enriched.setdefault("metadata", {})
     return enriched
+
+
+def _rag_chunk_to_doc(chunk: Dict):
+    return {
+        "id": chunk.get("chunk_id") or "",
+        "chunk_id": chunk.get("chunk_id") or "",
+        "title": chunk.get("title") or "",
+        "content": chunk.get("content") or "",
+        "url": chunk.get("url") or "",
+        "source": chunk.get("source_type") or "",
+        "source_type": chunk.get("source_type") or "",
+        "score": chunk.get("score", 0),
+        "metadata": chunk.get("metadata") or {},
+        "lexical_score": chunk.get("lexical_score", 0),
+        "vector_score": chunk.get("vector_score", 0),
+        "hybrid_score": chunk.get("hybrid_score", 0),
+        "rerank_score": chunk.get("rerank_score", 0),
+    }
 
 
 def _read_first_existing(paths):

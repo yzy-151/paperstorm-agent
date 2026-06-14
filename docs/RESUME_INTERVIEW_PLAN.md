@@ -762,3 +762,49 @@ v2.1 我把 PaperStorm 拆成两个产品模式。调研写文章模式负责完
 ```text
 - 规划并推进 PaperStorm RAG 主链路升级：将当前 lexical evidence baseline 演进为 Chunk/Embedding/VectorStore/Hybrid Retrieval/Rerank/ContextCompressionRetriever，补充动态 token 预算、长期向量记忆和 RAG benchmark，指标覆盖 context_recall、citation_precision、grounded_rate、hallucination_rate、p95 latency 和 QPS。
 ```
+
+## 2026-07-29 面试与简历更新：v3.0 RAG Memory Benchmark
+
+### 新增项目能力
+
+- 新增 `PaperStormRAGIndex`，支持从 PaperStorm run artifacts 构建 chunk、metadata、hash embedding 和本地 JSON 索引。
+- 新增 RAG Benchmark 能力，用可复现指标评估检索、引用、跑题率和延迟。
+- 新增 Hybrid Retrieval baseline，同时返回 `lexical_score`、`vector_score`、`hybrid_score` 和 `rerank_score`。
+- 新增规则 rerank：expected keywords 加分，forbidden keywords 扣分。
+- 新增 `ContextCompressionRetriever`，在 retriever 和 prompt 拼接之间做粗过滤、细压缩和上下文预算分配。
+- 新增 `PaperStormLongTermMemoryIndex`，将三层记忆写入本地长期记忆索引，支持跨会话 recall。
+- 新增 `run_rag_benchmark`，输出 `rag_benchmark_report.json/md`。
+- `PaperStormKnowledgeBase.search()` 优先接入 v3.0 RAG index，失败时回退旧检索。
+
+### 简历 bullet 更新
+
+```text
+- 为 PaperStorm 设计 RAG v3.0 检索与压缩链路：实现 Chunk/Metadata/Hash Embedding/Local Vector Index/Hybrid Retrieval/Rule Rerank/ContextCompressionRetriever/Long-term Memory Index，并建立 RAG benchmark，指标覆盖 context_recall、citation_precision、off_topic_rate、p95 latency 和 QPS estimate。
+```
+
+### 面试推荐回答：Hybrid 检索和 rerank
+
+```text
+v3.0 我先做了一个无外部依赖 baseline：每个 chunk 同时计算 lexical score 和 hash embedding vector score，然后按 alpha 融合成 hybrid score，最后用 expected/forbidden keywords 做规则 rerank。这个版本不是为了替代 Qdrant 或 cross-encoder，而是把检索链路、score 字段、audit 和 benchmark 接口做通。后续把 hash embedding 换成 bge-m3 / text-embedding，把本地 JSON 换成 Qdrant，把规则 rerank 换成 cross-encoder，业务接口不需要大改。
+```
+
+### 面试推荐回答：ContextCompressionRetriever
+
+```text
+我没有直接把所有召回片段塞进 prompt，而是在 retriever 和 prompt assembly 中间加了 ContextCompressionRetriever wrapper。它先召回多一些候选 chunk，再粗过滤跑题或低分 chunk，然后按历史 30%、证据 70% 做字符预算分配，最后抽取 query 命中句和 expected keyword 命中句形成 compressed evidence。这样既能解释上下文怎么被压缩，也方便后续无侵入替换为小模型总结器。
+```
+
+### 面试推荐回答：长期记忆和短期窗口
+
+```text
+短期窗口是 chat session 最近 N 轮对话，用来处理指代和连续追问；长期记忆是跨会话保存的 semantic/episodic/preferences。v3.0 的长期记忆索引是本地 JSON + hash embedding baseline，能展示 recall 链路，但我不会把它夸大成生产级用户画像或向量数据库。生产化下一步会接 Qdrant、增加记忆写入策略、过期策略和 memory eval。
+```
+
+### 不能夸大的边界
+
+- v3.0 是本地 baseline，不是生产级向量数据库系统。
+- 当前 embedding 是 hash embedding，不是语义 embedding 模型。
+- 当前 ANN 仍是 linear scan，不是真 HNSW。
+- 当前 rerank 是规则版，不是 cross-encoder。
+- 当前 token 预算是字符近似，不是 tokenizer 精确估算。
+- 当前 QPS 是本地估算值，不代表真实线上吞吐。
