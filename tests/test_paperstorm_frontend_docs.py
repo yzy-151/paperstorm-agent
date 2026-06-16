@@ -103,7 +103,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("/events", script)
         self.assertIn("connectSSE", script)
 
-    def test_dashboard_exposes_debuggable_v21_runtime_ui(self):
+    def test_dashboard_exposes_debuggable_v30_runtime_ui(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
             encoding="utf-8"
@@ -115,7 +115,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("v2.1", index)
+        self.assertIn("v3.0", index)
         self.assertIn("操作说明", index)
         self.assertIn("Benchmark", index)
         self.assertIn("过程细节", index)

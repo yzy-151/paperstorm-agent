@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v2.1";
+const DASHBOARD_VERSION = "v3.0";
 
 async function loadDashboard() {
   try {
