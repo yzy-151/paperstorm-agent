@@ -116,6 +116,21 @@ class PaperStormChatAgentTest(unittest.TestCase):
         self.assertEqual(reply["research_answer"]["decision"]["action"], "chat_fallback")
         self.assertIn("论文调研", reply["assistant_message"]["content"])
 
+    def test_chat_answers_bot_identity_model_and_ui_questions_without_research(self):
+        service = self.make_service()
+        session = service.create_chat_session(topic="pim 神经网络抑制", run_mode="fake")
+
+        for question in ["你是什么模型？", "当前上下文怎么压缩？", "这个网页怎么使用？"]:
+            reply = service.send_chat_message(session["chat_id"], question)
+            self.assertFalse(reply["retrieval_triggered"], question)
+            self.assertFalse(reply["used_task_id"], question)
+            self.assertEqual(
+                reply["research_answer"]["decision"]["action"],
+                "chat_fallback",
+                question,
+            )
+            self.assertNotIn("无源器件非线性导致", reply["assistant_message"]["content"])
+
     def test_fastapi_adapter_exposes_chat_session_routes(self):
         from fastapi.testclient import TestClient
 

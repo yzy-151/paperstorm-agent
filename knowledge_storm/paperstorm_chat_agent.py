@@ -245,17 +245,6 @@ def _context_keywords(session: Dict, message: str):
 
 def _is_casual_chat(message: str):
     text = str(message or "").strip().lower()
-    casual_hits = [
-        "你好",
-        "您好",
-        "hello",
-        "hi",
-        "你是谁",
-        "你能做什么",
-        "介绍一下你",
-        "怎么使用",
-        "帮助",
-    ]
     research_markers = [
         "论文",
         "文献",
@@ -265,21 +254,78 @@ def _is_casual_chat(message: str):
         "pim",
         "无源互调",
         "神经网络",
+        "passive intermodulation",
         "citation",
         "引用",
     ]
-    return any(hit in text for hit in casual_hits) and not any(
-        marker in text for marker in research_markers
-    )
+    bot_or_ui_hits = [
+        "你是什么模型",
+        "你是模型",
+        "你用的什么模型",
+        "你是谁",
+        "你的身份",
+        "你叫什么",
+        "你能做什么",
+        "你可以做什么",
+        "介绍一下你",
+        "怎么使用",
+        "如何使用",
+        "这个网页",
+        "这个界面",
+        "按钮",
+        "service",
+        "端口",
+        "api",
+        "上下文",
+        "记忆",
+        "压缩",
+        "聊天模式",
+        "调研模式",
+        "版本",
+        "帮助",
+        "报错",
+    ]
+    greeting_hits = [
+        "你好",
+        "您好",
+        "hello",
+        "hi",
+    ]
+    if any(hit in text for hit in bot_or_ui_hits):
+        if "pim" in text or "无源互调" in text or "passive intermodulation" in text:
+            return False
+        return True
+    return any(hit in text for hit in greeting_hits) and not any(marker in text for marker in research_markers)
 
 
 def _casual_chat_answer(message: str):
-    answer = (
-        "你好，我是 PaperStorm Research Chat Agent。"
-        "我可以像聊天机器人一样解释项目用法，也可以在论文调研场景里自动检索、"
-        "生成带引用的回答，并展示上下文窗口、压缩摘要、记忆命中和 trace。"
-        "如果你问的是具体技术问题，我会优先复用已有知识；证据不足时会自动补充调研。"
-    )
+    text = str(message or "").lower()
+    if "模型" in text or "你是谁" in text or "身份" in text:
+        answer = (
+            "我是 PaperStorm Research Chat Agent 的本地演示层，不是一个单独训练出来的新基础模型。"
+            "真实生成能力取决于你配置的 LLM provider；当前 fake 模式使用可复现的本地示例回答，"
+            "paperstorm 模式才会调用真实检索和模型。"
+        )
+    elif "上下文" in text or "压缩" in text or "记忆" in text:
+        answer = (
+            "当前聊天会保留最近 6 条消息作为短期 context_window。超过窗口后，系统会把上一轮摘要、"
+            "最近消息、expected keywords 和 forbidden keywords 送入规则版 compress_context，"
+            "保留命中关键词或约束的句子，生成 compressed_context。记忆分 working、episodic、"
+            "semantic 和 preferences，当前以本地 JSON/文本 baseline 存储。"
+        )
+    elif "网页" in text or "界面" in text or "按钮" in text or "使用" in text or "端口" in text:
+        answer = (
+            "网页端有两种模式：调研写文章用于 submit/run/poll 生成文章和 trace；聊天问答用于直接提问。"
+            "fake 模式不需要 API key，适合本地演示；paperstorm 模式会调用真实检索和 LLM。"
+            "如果你更新过代码，请重启 start_paperstorm_service.py，否则浏览器可能还连着旧服务。"
+        )
+    else:
+        answer = (
+            "你好，我是 PaperStorm Research Chat Agent。"
+            "我可以像聊天机器人一样解释项目用法，也可以在论文调研场景里自动检索、"
+            "生成带引用的回答，并展示上下文窗口、压缩摘要、记忆命中和 trace。"
+            "如果你问的是具体技术问题，我会优先复用已有知识；证据不足时会自动补充调研。"
+        )
     return {
         "question": message,
         "answer": answer,
