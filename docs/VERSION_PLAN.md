@@ -1775,6 +1775,90 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_rag_v
 v3.0 能系统回答 RAG 高频问题：chunk/overlap 怎么设、Hybrid Retrieval 为什么更稳、Rerank 怎么做、上下文太长如何压缩、长期记忆和短期窗口怎么区分、RAG 系统如何用 context_recall/citation_precision/p95_latency/QPS 评估。
 ```
 
+### v3.1：企业 Agent 四层路由链路
+
+状态：已完成。
+
+目标：
+
+把聊天模式从“ChatAgent 内部散落 if/else 判断”升级为企业 Agent Runtime 常见的四层链路：
+
+```text
+Intent Router -> Tool & Query Decision -> RAG / Memory Execution -> Trace / UI Observability
+```
+
+本次完成：
+
+1. `PaperStormIntentRouter`
+   - 新增独立模块 `knowledge_storm/paperstorm_intent_router.py`。
+   - 支持 LLM JSON Router：生产环境可注入 LLM callable，让模型返回结构化 `intent/tool/need_retrieval/rewritten_query/confidence/reason`。
+   - 支持 deterministic rule fallback：本地 fake demo 和单元测试不依赖 API key，也能稳定复现。
+   - Router 输出统一结构，便于后续接入 OpenAI-compatible / DeepSeek / Qwen 等模型路由器。
+
+2. LLM JSON Router schema
+
+```json
+{
+  "intent": "casual_chat | system_help | research_qa | run_research | clarify",
+  "need_retrieval": true,
+  "tool": "chat_fallback | kb_qa | research_qa | paper_research | clarify",
+  "rewritten_query": "standalone query",
+  "confidence": 0.86,
+  "reason": "short reason"
+}
+```
+
+3. Query Rewrite
+   - 对“那它为什么不是 DRAM？”这类指代追问，把 `topic + 上一轮用户问题 + 当前问题` 重写成独立 query。
+   - 避免多轮对话中只把代词问题发给检索器，导致召回跑题。
+
+4. Tool Decision
+   - `chat_fallback`：用于“你是什么模型/你是谁/按钮怎么用/上下文怎么压缩”等系统与闲聊问题。
+   - `research_qa`：用于基于已有或自动补充 evidence 的论文问答。
+   - `paper_research`：用于明确要求论文、文献、调研、综述、引用的任务。
+   - `clarify`：保留给问题不完整或风险较高时的澄清。
+
+5. ChatAgent 精简
+   - `PaperStormChatAgent` 不再直接维护一堆闲聊/追问判断。
+   - ChatAgent 只消费 `router_decision`，并把结果交给 ResearchQAAgent 或 chat fallback。
+   - 回答 metadata 和 API 返回中新增 `router_decision`、`tool_decision`。
+
+6. Dashboard 可观测
+   - 版本号升级为 `v3.1`。
+   - 聊天调试区新增：
+
+```text
+Router Decision
+Tool Decision
+Rewritten Query
+```
+
+验收标准：
+
+- 用户问“你是什么模型？”不会被 PIM topic 带偏成论文调研回答。
+- 用户问“PIM 神经网络抑制有哪些论文方向？”会进入 research / retrieval 链路。
+- 用户追问“那它为什么不是 DRAM？”会生成包含 topic 和上一轮问题的 standalone query。
+- API 返回和前端都能看到 router/tool/query 决策，便于排查。
+
+验证命令：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_intent_router tests.test_paperstorm_chat_agent tests.test_paperstorm_frontend_docs tests.test_paperstorm_final_packaging -v
+```
+
+边界：
+
+- v3.1 已经支持 LLM Router 注入，但默认 fake/local 路径仍使用 fallback，不会偷偷调用外部 API。
+- fallback 仍包含规则，但规则集中在 Router 层，而不是散落在 ChatAgent 和 UI。
+- 当前没有接企业级权限 ACL、租户隔离、灰度策略、真实线上监控和分布式 trace。
+- 当前 LLM Router 只做结构化决策，不负责最终回答。
+
+面试价值：
+
+```text
+v3.1 可以回答“企业 Agent 如何判断该聊天、检索还是调用工具”。我把路由层从业务逻辑里抽出来，形成 LLM JSON Router + rule fallback 的可替换组件；每次决策都会返回 intent、tool、confidence、reason 和 rewritten_query，并在 Dashboard 展示。这样既有智能路由入口，又保留本地可回归测试和可观测性。
+```
+
 ## 13. 每次版本更新模板
 
 ```markdown

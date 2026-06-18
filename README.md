@@ -200,6 +200,42 @@ rag_benchmark_report.json
 rag_benchmark_report.md
 ```
 
+## v3.1 Enterprise Intent Router
+
+v3.1 补齐企业 Agent Chat 常见的“四层执行链路”，解决此前聊天模式容易被 topic 绑架的问题，例如用户问“你是什么模型”时不应该硬套 PIM 调研结果。
+
+新增核心模块：
+
+```text
+knowledge_storm/paperstorm_intent_router.py
+```
+
+四层链路：
+
+```text
+Layer 1 Intent Router
+  LLM JSON Router / rule fallback -> intent, confidence, reason
+
+Layer 2 Tool & Query Decision
+  chat_fallback / research_qa / paper_research / clarify
+  follow-up query rewrite
+
+Layer 3 RAG / Memory Execution
+  context_window -> compressed_context -> memory_context -> evidence QA / auto research
+
+Layer 4 Trace / UI Observability
+  router_decision -> tool_decision -> rewritten_query -> citations / sufficiency / trace
+```
+
+`PaperStormIntentRouter` 支持注入 LLM callable，让企业版可以用大模型输出结构化 JSON 决策；本地演示和测试环境使用 deterministic fallback，保证没有 API key 时也能复现。ChatAgent 不再散落写死“聊天还是检索”的判断，而是消费统一的 `router_decision` 和 `tool_decision`，并把这些字段显示到 Dashboard 的聊天调试面板。
+
+面试可讲重点：
+
+- Router 层负责判断用户是闲聊、系统帮助、知识库问答、触发调研还是需要澄清。
+- Tool Decision 层负责选择 `chat_fallback`、`research_qa`、`paper_research` 等工具，并输出可审计 reason。
+- Query Rewrite 层把“那它为什么不是 DRAM”这类追问改写成带 topic 和上一轮问题的独立 query。
+- Trace/UI 层让每次回答都能看到为什么检索、为什么不检索、用了哪个 task、证据是否足够。
+
 指标包括：
 
 ```text

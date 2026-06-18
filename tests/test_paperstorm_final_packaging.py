@@ -59,6 +59,20 @@ class PaperStormFinalPackagingTest(unittest.TestCase):
         self.assertIn("Hybrid Retrieval", version_plan)
         self.assertIn("RAG Benchmark", resume_plan)
 
+    def test_readme_and_plans_include_v31_enterprise_router_direction(self):
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        version_plan = (root / "docs" / "VERSION_PLAN.md").read_text(encoding="utf-8")
+        resume_plan = (root / "docs" / "RESUME_INTERVIEW_PLAN.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("v3.1 Enterprise Intent Router", readme)
+        self.assertIn("PaperStormIntentRouter", readme)
+        self.assertIn("v3.1：企业 Agent 四层路由链路", version_plan)
+        self.assertIn("LLM JSON Router", version_plan)
+        self.assertIn("意图路由", resume_plan)
+
 
 if __name__ == "__main__":
     unittest.main()

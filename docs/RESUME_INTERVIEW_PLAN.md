@@ -808,3 +808,45 @@ v3.0 我先做了一个无外部依赖 baseline：每个 chunk 同时计算 lexi
 - 当前 rerank 是规则版，不是 cross-encoder。
 - 当前 token 预算是字符近似，不是 tokenizer 精确估算。
 - 当前 QPS 是本地估算值，不代表真实线上吞吐。
+
+## 2026-07-29 面试与简历更新：v3.1 Enterprise Intent Router
+
+### 新增项目能力
+
+- 新增 `PaperStormIntentRouter`，把聊天模式中的意图路由从 ChatAgent 内部抽成独立 runtime 层。
+- 支持 LLM JSON Router 注入：模型只负责输出结构化决策，不直接写业务逻辑。
+- 支持 rule fallback：没有 API key 或本地测试时仍可稳定复现。
+- Router 输出字段包括 `intent`、`need_retrieval`、`tool`、`rewritten_query`、`confidence`、`reason`、`router`。
+- ChatAgent 返回新增 `router_decision` 和 `tool_decision`，Dashboard 可以直接看到每轮回答为什么检索、为什么不检索。
+- 多轮追问支持 query rewrite，例如把“那它为什么不是 DRAM？”改写为包含 topic 和上一轮用户问题的独立 query。
+
+### 简历 bullet 更新
+
+```text
+- 设计 PaperStorm v3.1 企业 Agent 路由层：将聊天/知识库问答/论文调研的判断抽象为 LLM JSON Router + rule fallback，输出 intent、tool、confidence、reason 与 rewritten_query，并接入 ChatAgent、RAG QA 和 Dashboard trace，解决多轮对话中闲聊问题被 topic 误导、追问 query 不完整、工具调用不可观测等问题。
+```
+
+### 面试推荐回答：豆包、千问或企业内部知识库如何判断是否检索
+
+```text
+不会只靠一个 if/else。更常见的是先有一个 Router 或 Planner：输入当前用户问题、最近对话、用户画像/记忆、已有知识状态和工具列表，输出结构化决策，例如 intent、是否需要检索、该调用哪个工具、是否需要 query rewrite、置信度和原因。简单问题直接走 chat fallback；需要事实依据或内部文档时走 RAG；证据不足时触发检索或反问澄清；涉及外部动作时走 tool calling。PaperStorm v3.1 就是按这个思路做的，Router 可由 LLM 产出 JSON，也有本地 fallback，决策结果会进入 trace 和前端面板。
+```
+
+### 面试推荐回答：为什么不能直接让 LLM 决定一切
+
+```text
+生产系统不能只相信模型口头判断，因为要稳定、可测、可审计。我的做法是让 LLM 只输出受 schema 约束的 JSON 决策，再由 runtime 校验 intent/tool/confidence，低置信或格式异常就 fallback。这样既保留模型对复杂语义的判断能力，又不会让业务链路被自由文本带偏。这个设计也便于单元测试、灰度、日志审计和后续替换模型。
+```
+
+### 面试推荐回答：这个版本离企业级还差什么
+
+```text
+v3.1 已经补齐了企业 Agent 的核心形态：Router、Tool Decision、RAG/Memory、Trace/UI 四层，但还不是生产系统。后续如果继续做，要补权限 ACL、租户隔离、真实向量库、真实 embedding/cross-encoder rerank、模型路由灰度、限流熔断、分布式 trace、线上指标看板和安全审计。简历上我会明确说这是可演示的工程化 Agent baseline，而不是已上线的企业平台。
+```
+
+### 不能夸大的边界
+
+- 默认演示不调用真实 LLM Router，使用 fallback；真实 LLM Router 需要注入 provider。
+- 当前 `PaperStormIntentRouter` 是路由层，不是完整 LangGraph/PydanticAI 编排框架。
+- 当前 tool decision 只覆盖 PaperStorm 本项目的 chat/research/RAG 工具，不是通用企业 Tool Marketplace。
+- 当前 trace 是本地 JSON/前端面板级别，不是 OpenTelemetry 或分布式 tracing。

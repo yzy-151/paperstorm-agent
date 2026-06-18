@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v3.0";
+const DASHBOARD_VERSION = "v3.1";
 
 async function loadDashboard() {
   try {
@@ -423,6 +423,12 @@ function renderChatSession(session) {
     JSON.stringify(session.compressed_context || {}, null, 2);
   document.querySelector("#chat-memory-context").textContent =
     JSON.stringify(session.memory_context || {}, null, 2);
+  document.querySelector("#chat-router-decision").textContent =
+    JSON.stringify(session.router_decision || {}, null, 2);
+  document.querySelector("#chat-tool-decision").textContent =
+    JSON.stringify(session.tool_decision || {}, null, 2);
+  document.querySelector("#chat-rewritten-query").textContent =
+    (session.router_decision || {}).rewritten_query || "";
   if (session.chat_id) {
     document.querySelector("#chat-session-id").value = session.chat_id;
   }

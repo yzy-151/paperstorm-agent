@@ -4,14 +4,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .paperstorm_intent_router import PaperStormIntentRouter
 from .paperstorm_memory import PaperStormMemoryStore, compress_context
 
 
 class PaperStormChatAgent:
     """File-backed conversational layer over ResearchQAAgent."""
 
-    def __init__(self, task_service):
+    def __init__(self, task_service, intent_router: Optional[PaperStormIntentRouter] = None):
         self.task_service = task_service
+        self.intent_router = intent_router or PaperStormIntentRouter()
         self.chat_dir = Path(task_service.root_dir) / "chat_sessions"
         self.chat_dir.mkdir(parents=True, exist_ok=True)
 
@@ -71,8 +73,13 @@ class PaperStormChatAgent:
             max_chars=1200,
         )
 
-        research_question = _contextualize_question(session, message)
-        answer = self._answer_message(session, message, research_question)
+        router_decision = self.intent_router.route(
+            message=message,
+            session=session,
+            context_window=context_window,
+            memory_context=memory.get_context_bundle(query=message, max_items=5),
+        )
+        answer = self._answer_message(session, message, router_decision)
         session["task_id"] = answer.get("used_task_id") or session.get("task_id", "")
         assistant_message = _message(
             "assistant",
@@ -82,6 +89,8 @@ class PaperStormChatAgent:
                 "used_task_id": answer.get("used_task_id", ""),
                 "retrieval_triggered": answer.get("retrieval_triggered", False),
                 "decision": answer.get("decision", {}),
+                "router_decision": router_decision,
+                "tool_decision": _tool_decision(router_decision, answer),
                 "citation_count": len(answer.get("citations") or []),
             },
         )
@@ -121,6 +130,8 @@ class PaperStormChatAgent:
             "memory_context": memory_context,
             "retrieval_triggered": answer.get("retrieval_triggered", False),
             "used_task_id": session.get("task_id", ""),
+            "router_decision": router_decision,
+            "tool_decision": _tool_decision(router_decision, answer),
             "research_answer": answer,
         }
 
@@ -154,9 +165,14 @@ class PaperStormChatAgent:
             )
         return memory
 
-    def _answer_message(self, session: Dict, message: str, research_question: str):
-        if _is_casual_chat(message):
-            return _casual_chat_answer(message)
+    def _answer_message(self, session: Dict, message: str, router_decision: Dict):
+        if router_decision.get("tool") == "chat_fallback":
+            return _casual_chat_answer(message, router_decision)
+
+        if router_decision.get("tool") == "clarify":
+            return _clarify_answer(message, router_decision)
+
+        research_question = router_decision.get("rewritten_query") or message
 
         answer = self.task_service.ask_research_agent(
             question=research_question,
@@ -169,6 +185,7 @@ class PaperStormChatAgent:
             forbidden_keywords=session.get("forbidden_keywords") or [],
         )
         if (answer.get("decision") or {}).get("action") != "reject_low_confidence":
+            answer["router_decision"] = router_decision
             return answer
 
         fresh_answer = self.task_service.ask_research_agent(
@@ -189,9 +206,11 @@ class PaperStormChatAgent:
                     "previous_task_id": answer.get("used_task_id", ""),
                     "fresh_task_id": fresh_answer.get("used_task_id", ""),
                     "reason": (answer.get("decision") or {}).get("reason", ""),
+                    "router": router_decision,
                 },
             }
         ] + (fresh_answer.get("trace") or [])
+        fresh_answer["router_decision"] = router_decision
         return fresh_answer
 
     def _session_path(self, chat_id: str):
@@ -243,62 +262,7 @@ def _context_keywords(session: Dict, message: str):
     return keywords
 
 
-def _is_casual_chat(message: str):
-    text = str(message or "").strip().lower()
-    research_markers = [
-        "论文",
-        "文献",
-        "检索",
-        "调研",
-        "rag",
-        "pim",
-        "无源互调",
-        "神经网络",
-        "passive intermodulation",
-        "citation",
-        "引用",
-    ]
-    bot_or_ui_hits = [
-        "你是什么模型",
-        "你是模型",
-        "你用的什么模型",
-        "你是谁",
-        "你的身份",
-        "你叫什么",
-        "你能做什么",
-        "你可以做什么",
-        "介绍一下你",
-        "怎么使用",
-        "如何使用",
-        "这个网页",
-        "这个界面",
-        "按钮",
-        "service",
-        "端口",
-        "api",
-        "上下文",
-        "记忆",
-        "压缩",
-        "聊天模式",
-        "调研模式",
-        "版本",
-        "帮助",
-        "报错",
-    ]
-    greeting_hits = [
-        "你好",
-        "您好",
-        "hello",
-        "hi",
-    ]
-    if any(hit in text for hit in bot_or_ui_hits):
-        if "pim" in text or "无源互调" in text or "passive intermodulation" in text:
-            return False
-        return True
-    return any(hit in text for hit in greeting_hits) and not any(marker in text for marker in research_markers)
-
-
-def _casual_chat_answer(message: str):
+def _casual_chat_answer(message: str, router_decision: Optional[Dict] = None):
     text = str(message or "").lower()
     if "模型" in text or "你是谁" in text or "身份" in text:
         answer = (
@@ -338,7 +302,9 @@ def _casual_chat_answer(message: str):
         "retrieval_triggered": False,
         "decision": {
             "action": "chat_fallback",
-            "reason": "casual service question does not need research retrieval",
+            "reason": (router_decision or {}).get(
+                "reason", "casual service question does not need research retrieval"
+            ),
         },
         "evidence_sufficiency": {
             "sufficient": False,
@@ -349,11 +315,45 @@ def _casual_chat_answer(message: str):
             {
                 "event": "chat_fallback",
                 "timestamp": _now(),
-                "payload": {"reason": "casual_chat"},
+                "payload": {"router_decision": router_decision or {}},
             }
         ],
         "qa_history": [],
         "qa_history_count": 0,
+        "router_decision": router_decision or {},
+    }
+
+
+def _clarify_answer(message: str, router_decision: Dict):
+    return {
+        "question": message,
+        "answer": "这个问题需要再明确一点：你希望我基于已有调研材料回答，还是先检索论文后再回答？",
+        "citations": [],
+        "evidence": [],
+        "grounded": False,
+        "memory_context": {},
+        "used_task_id": "",
+        "task_status": "",
+        "retrieval_triggered": False,
+        "decision": {
+            "action": "clarify",
+            "reason": router_decision.get("reason", "router requested clarification"),
+        },
+        "evidence_sufficiency": {
+            "sufficient": False,
+            "score": 0,
+            "reason": "clarification required before retrieval",
+        },
+        "trace": [
+            {
+                "event": "chat_clarify",
+                "timestamp": _now(),
+                "payload": {"router_decision": router_decision},
+            }
+        ],
+        "qa_history": [],
+        "qa_history_count": 0,
+        "router_decision": router_decision,
     }
 
 
@@ -364,24 +364,6 @@ def _research_topic(session: Dict, message: str):
     return message
 
 
-def _contextualize_question(session: Dict, message: str):
-    text = str(message or "").strip()
-    if not _looks_like_followup(text):
-        return text
-    previous_user = ""
-    for item in reversed(session.get("messages") or []):
-        if item.get("role") == "user" and item.get("content") != text:
-            previous_user = item.get("content", "")
-            break
-    parts = [session.get("topic", ""), previous_user, text]
-    return "\n".join(part for part in parts if part)
-
-
-def _looks_like_followup(text: str):
-    markers = ["那", "它", "这个", "上述", "继续", "为什么", "如何"]
-    return any(marker in text for marker in markers) and len(text) < 80
-
-
 def _keyword_overlap(left: str, right: str):
     left_lower = left.lower()
     right_lower = right.lower()
@@ -389,6 +371,18 @@ def _keyword_overlap(left: str, right: str):
         if token in left_lower and token in right_lower:
             return True
     return False
+
+
+def _tool_decision(router_decision: Dict, answer: Dict):
+    return {
+        "tool": router_decision.get("tool", ""),
+        "intent": router_decision.get("intent", ""),
+        "need_retrieval": router_decision.get("need_retrieval", False),
+        "rewritten_query": router_decision.get("rewritten_query", ""),
+        "router": router_decision.get("router", ""),
+        "action": (answer.get("decision") or {}).get("action", ""),
+        "retrieval_triggered": answer.get("retrieval_triggered", False),
+    }
 
 
 def _now():
