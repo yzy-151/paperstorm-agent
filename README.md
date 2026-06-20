@@ -236,6 +236,52 @@ Layer 4 Trace / UI Observability
 - Query Rewrite 层把“那它为什么不是 DRAM”这类追问改写成带 topic 和上一轮问题的独立 query。
 - Trace/UI 层让每次回答都能看到为什么检索、为什么不检索、用了哪个 task、证据是否足够。
 
+## v3.2 Enterprise Knowledge Base Agent
+
+v3.2 把原计划中的“真实 RAG 底座、LLM Router/压缩、企业知识库 UI”合并为一个可演示版本。它不是强制依赖外部服务的生产系统，而是把生产替换点补齐，让项目从论文调研 Agent 进一步靠近企业内部文档知识库 Agent。
+
+新增核心模块：
+
+```text
+knowledge_storm/paperstorm_enterprise_kb.py
+```
+
+新增核心类：
+
+- `CallableEmbeddingProvider`：允许注入真实 embedding 后端，例如 BGE、OpenAI-compatible embedding 或公司内部 embedding 服务。
+- `SentenceTransformerEmbeddingProvider`：可选接入 sentence-transformers / BGE，本地没有依赖时不影响默认运行。
+- `EnterpriseKnowledgeBaseService`：支持本地 `.txt / .pdf` 文档路径建库、保存 manifest、构建 RAG index、问答和 citation 返回。
+
+v3.2 链路：
+
+```text
+Local docs / PDF paths
+  -> document text extraction
+  -> chunk + overlap
+  -> embedding provider
+  -> local RAG index
+  -> hybrid retrieval + rerank
+  -> ContextCompressionRetriever / optional LLM compressor
+  -> enterprise KB answer + citations + retrieval trace
+```
+
+新增 API：
+
+```text
+POST /enterprise-kbs
+GET  /enterprise-kbs
+POST /enterprise-kbs/{kb_id}/ask
+```
+
+Dashboard 新增“企业知识库 Agent”面板，可输入本地文档路径创建知识库，回填 KB ID 后直接提问，并查看 `KB Manifest`、`KB Retrieval` 和 `KB Citations`。
+
+边界说明：
+
+- 默认 embedding 仍是 hash baseline，保证无外部依赖可测试。
+- 真实 embedding 可通过 provider 替换，但当前没有把 Qdrant/Milvus/FAISS 作为强依赖。
+- LLM compressor 已支持 callable 注入，默认不偷偷调用外部 API。
+- 当前企业知识库是本地文件版，没有 ACL、租户隔离、权限过滤和生产审计。
+
 指标包括：
 
 ```text

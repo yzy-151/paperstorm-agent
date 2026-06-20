@@ -97,6 +97,19 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     class ChatMessageRequest(BaseModel):
         message: str
 
+    class EnterpriseKnowledgeBaseCreateRequest(BaseModel):
+        name: str = "Enterprise Knowledge Base"
+        source_paths: list[str] = []
+        expected_keywords: list[str] = []
+        forbidden_keywords: list[str] = []
+        chunk_size: int = 500
+        chunk_overlap: int = 100
+        embedding_provider: str = "hash"
+
+    class EnterpriseKnowledgeBaseAskRequest(BaseModel):
+        question: str
+        top_k: int = 4
+
     @app.get("/")
     def get_dashboard_home():
         index_path = dashboard_dir / "index.html"
@@ -192,6 +205,22 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     def query_knowledge_base(task_id: str, request: KnowledgeBaseQueryRequest):
         return service.query_knowledge_base(
             task_id,
+            question=request.question,
+            top_k=request.top_k,
+        )
+
+    @app.post("/enterprise-kbs")
+    def create_enterprise_kb(request: EnterpriseKnowledgeBaseCreateRequest):
+        return service.create_enterprise_knowledge_base(**_request_payload(request))
+
+    @app.get("/enterprise-kbs")
+    def list_enterprise_kbs():
+        return {"knowledge_bases": service.list_enterprise_knowledge_bases()}
+
+    @app.post("/enterprise-kbs/{kb_id}/ask")
+    def ask_enterprise_kb(kb_id: str, request: EnterpriseKnowledgeBaseAskRequest):
+        return service.ask_enterprise_knowledge_base(
+            kb_id=kb_id,
             question=request.question,
             top_k=request.top_k,
         )

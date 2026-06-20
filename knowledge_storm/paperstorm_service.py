@@ -249,6 +249,42 @@ class PaperStormTaskService:
         write_qa_artifact(output_dir, answer)
         return answer
 
+    def create_enterprise_knowledge_base(
+        self,
+        name: str,
+        source_paths: List[str],
+        expected_keywords: Optional[List[str]] = None,
+        forbidden_keywords: Optional[List[str]] = None,
+        chunk_size: int = 500,
+        chunk_overlap: int = 100,
+        embedding_provider: str = "hash",
+    ):
+        from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
+
+        return EnterpriseKnowledgeBaseService(self.root_dir).create_knowledge_base(
+            name=name,
+            source_paths=source_paths,
+            expected_keywords=expected_keywords,
+            forbidden_keywords=forbidden_keywords,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            embedding_provider=embedding_provider,
+        )
+
+    def list_enterprise_knowledge_bases(self):
+        from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
+
+        return EnterpriseKnowledgeBaseService(self.root_dir).list_knowledge_bases()
+
+    def ask_enterprise_knowledge_base(self, kb_id: str, question: str, top_k: int = 4):
+        from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
+
+        return EnterpriseKnowledgeBaseService(self.root_dir).ask(
+            kb_id=kb_id,
+            question=question,
+            top_k=top_k,
+        )
+
     def ask_research_agent(
         self,
         question: str,

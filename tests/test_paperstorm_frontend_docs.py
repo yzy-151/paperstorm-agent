@@ -103,7 +103,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("/events", script)
         self.assertIn("connectSSE", script)
 
-    def test_dashboard_exposes_debuggable_v31_runtime_ui(self):
+    def test_dashboard_exposes_debuggable_v32_runtime_ui(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
             encoding="utf-8"
@@ -115,7 +115,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("v3.1", index)
+        self.assertIn("v3.2", index)
         self.assertIn("操作说明", index)
         self.assertIn("Benchmark", index)
         self.assertIn("过程细节", index)
@@ -187,6 +187,25 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("tool_decision", script)
         self.assertIn("setDashboardMode", script)
         self.assertIn("chat-shell", styles)
+
+    def test_dashboard_exposes_enterprise_kb_v32_workflow(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("enterprise-kb-panel", index)
+        self.assertIn("enterprise-kb-source-paths", index)
+        self.assertIn("create-enterprise-kb", index)
+        self.assertIn("enterprise-kb-question", index)
+        self.assertIn("ask-enterprise-kb", index)
+        self.assertIn("enterprise-kb-answer", index)
+        self.assertIn("/enterprise-kbs", script)
+        self.assertIn("createEnterpriseKB", script)
+        self.assertIn("askEnterpriseKB", script)
 
     def test_official_chinese_doc_and_readme_include_storm_architecture(self):
         root = Path(__file__).resolve().parents[1]

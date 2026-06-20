@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v3.1";
+const DASHBOARD_VERSION = "v3.2";
 
 async function loadDashboard() {
   try {
@@ -277,6 +277,81 @@ async function sendChatMessage() {
   }
 }
 
+async function createEnterpriseKB() {
+  const payload = {
+    name: document.querySelector("#enterprise-kb-name").value.trim() || "Enterprise Knowledge Base",
+    source_paths: splitLines(document.querySelector("#enterprise-kb-source-paths").value),
+    expected_keywords: splitKeywords(document.querySelector("#task-expected-keyword").value),
+    forbidden_keywords: splitKeywords(document.querySelector("#task-forbidden-keyword").value),
+    chunk_size: 500,
+    chunk_overlap: 100,
+    embedding_provider: "hash",
+  };
+  if (!payload.source_paths.length) {
+    setStatus("请输入本地文档路径", "error");
+    return;
+  }
+  try {
+    setStatus("building enterprise kb", "loading");
+    setButtonBusy("create-enterprise-kb", true, "建库中");
+    const kb = await fetchJson("/enterprise-kbs", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    document.querySelector("#enterprise-kb-id").value = kb.kb_id || "";
+    renderEnterpriseKBManifest(kb);
+    setStatus(`kb ${kb.kb_id}`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("create-enterprise-kb", false);
+  }
+}
+
+async function listEnterpriseKB() {
+  try {
+    setStatus("loading enterprise kbs", "loading");
+    setButtonBusy("list-enterprise-kb", true, "刷新中");
+    const result = await fetchJson("/enterprise-kbs");
+    const latest = (result.knowledge_bases || []).slice(-1)[0] || {};
+    if (latest.kb_id) {
+      document.querySelector("#enterprise-kb-id").value = latest.kb_id;
+    }
+    renderEnterpriseKBManifest(result);
+    setStatus(`knowledge bases ${(result.knowledge_bases || []).length}`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("list-enterprise-kb", false);
+  }
+}
+
+async function askEnterpriseKB() {
+  const kbId = document.querySelector("#enterprise-kb-id").value.trim();
+  const question = document.querySelector("#enterprise-kb-question").value.trim();
+  if (!kbId || !question) {
+    setStatus("请输入 KB ID 和问题", "error");
+    return;
+  }
+  try {
+    setStatus("enterprise kb asking", "loading");
+    setButtonBusy("ask-enterprise-kb", true, "回答中");
+    const answer = await fetchJson(`/enterprise-kbs/${encodeURIComponent(kbId)}/ask`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question, top_k: 4}),
+    });
+    renderEnterpriseKBAnswer(answer);
+    setStatus(answer.grounded ? "enterprise kb answered" : "enterprise kb no evidence", answer.grounded ? "success" : "error");
+  } catch (error) {
+    setStatus(error.message, "error");
+    renderEnterpriseKBAnswer({answer: error.message, citations: [], retrieval: {}});
+  } finally {
+    setButtonBusy("ask-enterprise-kb", false);
+  }
+}
+
 async function fetchJson(path, options) {
   const baseUrl = getServiceBaseUrl();
   const response = await fetch(`${baseUrl}${path}`, options);
@@ -339,6 +414,10 @@ function getSelectedTaskId() {
 
 function splitKeywords(value) {
   return value.split(",").map(item => item.trim()).filter(Boolean);
+}
+
+function splitLines(value) {
+  return value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);
 }
 
 function renderProject(project) {
@@ -408,6 +487,32 @@ function renderResearchQA(answer) {
   (answer.trace || []).forEach(event => {
     appendSSEEvent(event.event || "research_qa", JSON.stringify(event.payload || {}));
   });
+}
+
+function renderEnterpriseKBManifest(manifest) {
+  document.querySelector("#enterprise-kb-manifest").textContent =
+    JSON.stringify(manifest || {}, null, 2);
+}
+
+function renderEnterpriseKBAnswer(answer) {
+  document.querySelector("#enterprise-kb-answer").innerHTML = `
+    <strong>Enterprise KB Agent</strong>
+    <p>${escapeHtml(answer.answer || "暂无回答。")}</p>
+    <div class="label">grounded: ${Boolean(answer.grounded)} · kb_id: ${escapeHtml(answer.kb_id || "")}</div>
+  `;
+  document.querySelector("#enterprise-kb-retrieval").textContent =
+    JSON.stringify(answer.retrieval || {}, null, 2);
+  document.querySelector("#enterprise-kb-citations").innerHTML = (answer.citations || []).length
+    ? answer.citations.map(citation => `
+      <div class="item">
+        <strong>[${escapeHtml(citation.id || "")}] ${escapeHtml(citation.title || citation.document_id || "")}</strong>
+        <div class="label">${escapeHtml(citation.source_type || citation.source || "")} ${escapeHtml(citation.url || "")}</div>
+      </div>
+    `).join("")
+    : `<div class="item">暂无引用。</div>`;
+  if (answer.manifest) {
+    renderEnterpriseKBManifest(answer.manifest);
+  }
 }
 
 function renderChatSession(session) {
@@ -660,5 +765,8 @@ document.querySelector("#show-research-mode").addEventListener("click", () => se
 document.querySelector("#show-chat-mode").addEventListener("click", () => setDashboardMode("chat"));
 document.querySelector("#create-chat-session").addEventListener("click", createChatSession);
 document.querySelector("#send-chat-message").addEventListener("click", sendChatMessage);
+document.querySelector("#create-enterprise-kb").addEventListener("click", createEnterpriseKB);
+document.querySelector("#list-enterprise-kb").addEventListener("click", listEnterpriseKB);
+document.querySelector("#ask-enterprise-kb").addEventListener("click", askEnterpriseKB);
 
 loadDashboard();

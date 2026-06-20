@@ -1859,6 +1859,95 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_inten
 v3.1 可以回答“企业 Agent 如何判断该聊天、检索还是调用工具”。我把路由层从业务逻辑里抽出来，形成 LLM JSON Router + rule fallback 的可替换组件；每次决策都会返回 intent、tool、confidence、reason 和 rewritten_query，并在 Dashboard 展示。这样既有智能路由入口，又保留本地可回归测试和可观测性。
 ```
 
+### v3.2：企业知识库 Agent 合并版
+
+状态：已完成。
+
+目标：
+
+把原计划中的三件事合并落地为一个版本：
+
+```text
+真实 embedding / 向量库可替换接口
+LLM Router / LLM Context Compression 可注入接口
+企业知识库 UI：本地文档路径 -> 建索引 -> 聊天问答 -> citation / retrieval trace
+```
+
+本次完成：
+
+1. Embedding Provider 抽象
+   - 新增 `HashEmbeddingProvider`，保留无依赖 baseline。
+   - 新增 `CallableEmbeddingProvider`，支持注入真实 embedding 服务。
+   - 新增 `SentenceTransformerEmbeddingProvider`，可选接入 BGE / sentence-transformers。
+   - `PaperStormRAGIndex.from_documents()` 支持 `embedding_provider` 参数。
+   - index config 记录 `embedding_provider`，便于 trace 和面试解释。
+
+2. LLM Context Compression
+   - `ContextCompressionRetriever` 新增 `llm_compressor` callable。
+   - 如果传入 LLM compressor，则用结构化 payload 让小模型/压缩模型生成 `compressed_evidence`。
+   - 如果 LLM compressor 报错或为空，自动 fallback 到规则压缩。
+   - audit 中记录 `llm_context_compressor` 或 `coarse_filter_then_rule_sentence_extract`。
+
+3. EnterpriseKnowledgeBaseService
+   - 新增 `knowledge_storm/paperstorm_enterprise_kb.py`。
+   - 支持从本地 `.txt / .pdf` 路径读取文档。
+   - 支持 `chunk_size`、`chunk_overlap`、expected/forbidden keywords。
+   - 构建并保存 `rag_index.json` 与 `manifest.json`。
+   - 问答返回 answer、grounded、citations、evidence、retrieval 和 trace。
+   - 增加轻量中英 query expansion，用于没有真实 embedding 时的本地演示。
+
+4. Service / API
+   - `PaperStormTaskService` 新增：
+
+```text
+create_enterprise_knowledge_base
+list_enterprise_knowledge_bases
+ask_enterprise_knowledge_base
+```
+
+   - FastAPI 新增：
+
+```text
+POST /enterprise-kbs
+GET  /enterprise-kbs
+POST /enterprise-kbs/{kb_id}/ask
+```
+
+5. Dashboard
+   - 版本号升级为 `v3.2`。
+   - 新增“企业知识库 Agent”面板。
+   - 支持输入本地文档路径创建 KB。
+   - 支持 KB ID 回填、知识库问答、citation 展示。
+   - 可查看 `KB Manifest`、`KB Retrieval`、`KB Citations`。
+
+验收标准：
+
+- `CallableEmbeddingProvider` 能被 RAG index 使用，且 index config 记录 provider 名称。
+- `ContextCompressionRetriever` 能使用 LLM compressor，并保留 fallback 结构。
+- 企业知识库能从本地文档建库、保存索引、返回 grounded answer 和 citations。
+- TaskService 和 FastAPI 暴露企业知识库 workflow。
+- Dashboard 暴露企业知识库创建和问答入口。
+
+验证命令：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_enterprise_v32 tests.test_paperstorm_frontend_docs tests.test_paperstorm_final_packaging -v
+```
+
+边界：
+
+- 默认仍是本地 hash embedding baseline，不代表生产语义 embedding。
+- `SentenceTransformerEmbeddingProvider` 是可选 provider，本地没装依赖不会影响默认测试。
+- 当前没有强制接 Qdrant / Milvus / FAISS；向量库替换点已预留在 index/provider 边界。
+- 当前没有 ACL、租户隔离、chunk 级权限过滤。
+- 当前前端输入的是本地文件路径，不是浏览器 multipart 上传。
+
+面试价值：
+
+```text
+v3.2 能把项目讲成企业内部知识库 Agent 原型：我实现了本地文档建库、chunk/overlap、embedding provider 抽象、hybrid retrieval、context compression、问答 citation、API 和前端面板。默认实现保证离线可测，生产替换点包括 embedding 服务、向量数据库、cross-encoder rerank、权限过滤和分布式 trace。
+```
+
 ## 13. 每次版本更新模板
 
 ```markdown

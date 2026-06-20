@@ -73,6 +73,20 @@ class PaperStormFinalPackagingTest(unittest.TestCase):
         self.assertIn("LLM JSON Router", version_plan)
         self.assertIn("意图路由", resume_plan)
 
+    def test_readme_and_plans_include_v32_enterprise_kb_direction(self):
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        version_plan = (root / "docs" / "VERSION_PLAN.md").read_text(encoding="utf-8")
+        resume_plan = (root / "docs" / "RESUME_INTERVIEW_PLAN.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("v3.2 Enterprise Knowledge Base Agent", readme)
+        self.assertIn("EnterpriseKnowledgeBaseService", readme)
+        self.assertIn("v3.2：企业知识库 Agent 合并版", version_plan)
+        self.assertIn("CallableEmbeddingProvider", version_plan)
+        self.assertIn("企业知识库 Agent", resume_plan)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,7 +15,7 @@
       </div>
       <div class="header-meta">
         <span>release</span>
-        <strong id="project-version">v3.1</strong>
+        <strong id="project-version">v3.2</strong>
       </div>
     </header>
 
@@ -135,6 +135,58 @@
             <button id="poll-selected-task" type="button">轮询选中任务</button>
             <button id="refresh-task-list" type="button">刷新任务列表</button>
           </div>
+        </div>
+      </section>
+
+      <section class="panel wide" id="enterprise-kb-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Enterprise Knowledge Base</p>
+            <h2>企业知识库 Agent</h2>
+          </div>
+          <span class="soft-badge">upload path -> index -> RAG chat -> citations</span>
+        </div>
+        <div class="chat-layout">
+          <div class="chat-controls">
+            <label>
+              知识库名称
+              <input id="enterprise-kb-name" value="PIM 企业知识库" />
+            </label>
+            <label>
+              本地文档路径
+              <textarea id="enterprise-kb-source-paths" rows="4" placeholder="每行一个 .txt / .pdf 路径"></textarea>
+            </label>
+            <label>
+              KB ID
+              <input id="enterprise-kb-id" placeholder="建库后自动填入" />
+            </label>
+            <div class="button-row">
+              <button id="create-enterprise-kb" type="button">创建知识库</button>
+              <button id="list-enterprise-kb" type="button">刷新知识库</button>
+            </div>
+          </div>
+          <div class="chat-transcript">
+            <label>
+              知识库问题
+              <textarea id="enterprise-kb-question" rows="3">PIM 是什么？</textarea>
+            </label>
+            <button id="ask-enterprise-kb" type="button">知识库问答</button>
+            <div class="chat-message assistant" id="enterprise-kb-answer">等待知识库问答。</div>
+          </div>
+        </div>
+        <div class="qa-debug-grid">
+          <section class="debug-card">
+            <h3>KB Manifest</h3>
+            <pre id="enterprise-kb-manifest"></pre>
+          </section>
+          <section class="debug-card">
+            <h3>KB Retrieval</h3>
+            <pre id="enterprise-kb-retrieval"></pre>
+          </section>
+          <section class="debug-card">
+            <h3>KB Citations</h3>
+            <div id="enterprise-kb-citations" class="stack"></div>
+          </section>
         </div>
       </section>
 

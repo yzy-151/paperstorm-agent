@@ -850,3 +850,47 @@ v3.1 已经补齐了企业 Agent 的核心形态：Router、Tool Decision、RAG/
 - 当前 `PaperStormIntentRouter` 是路由层，不是完整 LangGraph/PydanticAI 编排框架。
 - 当前 tool decision 只覆盖 PaperStorm 本项目的 chat/research/RAG 工具，不是通用企业 Tool Marketplace。
 - 当前 trace 是本地 JSON/前端面板级别，不是 OpenTelemetry 或分布式 tracing。
+
+## 2026-07-29 面试与简历更新：v3.2 企业知识库 Agent
+
+### 新增项目能力
+
+- 新增企业知识库 Agent workflow：本地文档路径 -> 文档读取 -> chunk/overlap -> embedding provider -> RAG index -> 问答 citation。
+- RAG index 支持 `CallableEmbeddingProvider`，可以把默认 hash embedding 替换为真实 embedding 服务。
+- 支持可选 `SentenceTransformerEmbeddingProvider`，生产或实验环境可接 BGE / sentence-transformers。
+- `ContextCompressionRetriever` 支持 LLM compressor callable，能把召回 evidence 压缩为更短 prompt context。
+- 新增 `EnterpriseKnowledgeBaseService`，负责知识库 manifest、index、问答和 trace。
+- FastAPI 新增 `/enterprise-kbs` 系列接口。
+- Dashboard 新增“企业知识库 Agent”面板，可创建 KB、提问、查看 retrieval/citation。
+
+### 简历 bullet 更新
+
+```text
+- 将 PaperStorm 扩展为企业知识库 Agent 原型：实现本地文档建库、chunk/overlap、Embedding Provider 抽象、Hybrid Retrieval、ContextCompressionRetriever、KB 问答 Citation、FastAPI 接口与 Dashboard 面板；默认本地 baseline 可复现，生产替换点覆盖 BGE/OpenAI embedding、向量数据库、cross-encoder rerank、ACL 权限过滤和分布式 trace。
+```
+
+### 面试推荐回答：为什么 v3.2 没有直接强依赖 Qdrant/Milvus
+
+```text
+我没有把 Qdrant/Milvus 直接设成必需依赖，因为这个项目首先要保证本地可复现和测试稳定。v3.2 的重点是把边界抽出来：EmbeddingProvider、RAGIndex、ContextCompressionRetriever、EnterpriseKnowledgeBaseService 和 API 都是稳定接口。默认用 hash embedding + JSON index 跑通测试，生产时把 provider 换成 BGE/OpenAI embedding，把 index 存储替换成 Qdrant/Milvus/FAISS，业务接口和前端不用大改。面试中我会明确说当前是工程化 baseline，不会夸大为已部署生产向量库。
+```
+
+### 面试推荐回答：企业内部知识库 Agent 需要哪些能力
+
+```text
+我会拆成四层：第一层是文档接入和索引，包括 PDF/Word/网页/内部文档解析、chunk、metadata、embedding 和向量库；第二层是检索和重排，包括 Hybrid Retrieval、权限过滤、rerank、上下文压缩；第三层是 Agent Runtime，包括 Router、Tool Decision、Memory、会话上下文和错误容灾；第四层是可观测和评估，包括 citation、trace、groundedness、context_recall、p95 latency、QPS、失败率和审计日志。PaperStorm v3.2 已经把这四层做成本地可演示版本，但生产化还要补 ACL、多租户、真实向量库和线上监控。
+```
+
+### 面试推荐回答：长文档如何处理
+
+```text
+长文档不能整篇塞给模型。v3.2 先做文件读取，再用 chunk_size 和 chunk_overlap 切分，给每个 chunk 记录 document_id、chunk_id、title、source_type、metadata 和 token_count_estimate。检索时先召回候选 chunk，再通过 expected/forbidden keywords 和 hybrid score 做 rerank，最后由 ContextCompressionRetriever 压缩成 prompt context。后续生产化会引入按标题层级切分、表格/图片 OCR、HNSW 索引和 cross-encoder rerank。
+```
+
+### 不能夸大的边界
+
+- 当前企业知识库前端输入的是本地文件路径，不是浏览器真实上传文件流。
+- 当前默认 embedding 仍是 hash baseline，真实语义 embedding 需要额外 provider。
+- 当前没有真正接入 Qdrant/Milvus/FAISS。
+- 当前没有 ACL、租户隔离和 chunk 级权限过滤。
+- 当前 LLM compressor 是 callable 接口，默认不会自动调用外部模型。
