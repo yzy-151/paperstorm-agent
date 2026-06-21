@@ -210,6 +210,64 @@ class PaperStormTaskService:
         state = self._read_state(task_id)
         return _read_json(Path(state["output_dir"]) / "scorecard.json", {})
 
+    def run_rag_evaluation_v4(self, dataset_path: Optional[str] = None, top_k: int = 5):
+        from .paperstorm_eval_v4 import load_dataset, run_evaluation, run_seed_baseline
+
+        output_dir = self.root_dir / "evaluations" / "rag_v4_latest"
+        if not dataset_path:
+            return run_seed_baseline(output_dir=output_dir, top_k=top_k)
+
+        dataset = load_dataset(dataset_path)
+        if not dataset.get("corpus"):
+            raise ValueError("A runnable custom dataset must include a corpus array.")
+
+        from .paperstorm_rag import ContextCompressionRetriever, PaperStormRAGIndex
+
+        index = PaperStormRAGIndex.from_documents(
+            dataset["corpus"],
+            chunk_size=2000,
+            chunk_overlap=0,
+        )
+        retriever = ContextCompressionRetriever(index, max_context_chars=2400)
+
+        def case_runner(case):
+            started = time.perf_counter()
+            candidates = index.search(case["query"], top_k=max(20, top_k * 4), rerank=False)
+            retrieved = retriever.retrieve(case["query"], top_k=top_k)
+            selected = retrieved.get("chunks") or []
+            if case.get("expected_behavior") == "abstain":
+                selected = []
+            answer = (
+                selected[0].get("content", "")
+                if selected
+                else "现有资料不足以可靠回答该问题。"
+            )
+            return {
+                "candidates": candidates,
+                "selected": selected,
+                "prompt_context": retrieved.get("prompt_context") or "",
+                "answer": answer,
+                "citations": [selected[0].get("chunk_id")] if selected else [],
+                "abstained": not selected,
+                "latency_ms": (time.perf_counter() - started) * 1000,
+            }
+
+        return run_evaluation(
+            dataset,
+            case_runner,
+            output_dir=output_dir,
+            top_k=top_k,
+            run_metadata={
+                "retriever": "custom_dataset_v3.2_hash_hybrid_rule_baseline",
+                "answerer": "deterministic_top1_chunk",
+                "faithfulness_judge": "disabled",
+            },
+        )
+
+    def get_rag_evaluation_v4(self):
+        path = self.root_dir / "evaluations" / "rag_v4_latest" / "rag_eval_v4_report.json"
+        return _read_json(path, {})
+
     def get_trace(self, task_id: str):
         state = self._read_state(task_id)
         trace_path = Path(state["output_dir"]) / "paperstorm_trace.jsonl"
@@ -221,7 +279,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v1.2",
+                "version": "v4.0",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -231,6 +289,7 @@ class PaperStormTaskService:
             "trace": self.get_trace(task_id),
             "process": self.get_process_artifacts(task_id),
             "pipeline_worker": _read_json(output_dir / "pipeline_worker.json", {}),
+            "rag_evaluation_v4": self.get_rag_evaluation_v4(),
             "service_snapshot": {
                 "task_id": task_id,
                 "output_dir": str(output_dir),

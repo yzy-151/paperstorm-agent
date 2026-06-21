@@ -293,6 +293,50 @@ p95_latency_ms
 qps_estimate
 ```
 
+## v4.0 RAG Evaluation Baseline
+
+v4.0 先建立评测基线，再进入真实 Hybrid Retrieval 改造。它解决的是“回答很差，但不知道问题发生在哪一层”的排查困难。
+
+新增能力：
+
+- 100 条可审计种子集：80 条 PIM/RAG 可回答问题，20 条无答案问题。
+- 检索指标：Recall@K、Precision@K、MRR、nDCG@K。
+- 回答指标：required-term recall、citation precision/recall、abstention accuracy。
+- 失败归因：retrieval、rerank、compression、generation、citation。
+- 报告：`rag_eval_v4_report.json`、`rag_eval_v4_report.md`、`rag_eval_v4_bad_cases.jsonl`。
+- Service/API：`POST /evaluations/rag-v4`、`GET /evaluations/rag-v4/latest`。
+- Dashboard：RAG 指标、Failure Counts、Dataset Metadata 和 Bad Cases。
+
+运行离线基线：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_eval_v4.py `
+  --output-dir .\results\paperstorm_eval_v4 `
+  --top-k 5
+```
+
+导出种子集，作为人工扩充模板：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_eval_v4.py `
+  --export-seed-dataset .\results\paperstorm_eval_v4\seed_dataset.json
+```
+
+首次 v3.2 Hash/规则基线结果：
+
+```text
+pass_rate                0.39
+retrieval_recall_at_k    0.3625
+MRR                      0.2804
+nDCG@K                   0.3006
+citation_precision       0.2375
+abstention_accuracy      1.0
+retrieval_miss           51
+generation_miss          10
+```
+
+这些分数的价值是作为后续 `BM25 -> Dense -> RRF -> Cross-Encoder` 消融实验的起点，不代表生产效果。内置数据明确标记为 `synthetic_seed`；真实论文 Golden Set 仍需人工审核。没有配置 Judge 时，系统不会用关键词覆盖冒充 faithfulness 分数。
+
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
 ```text
@@ -918,16 +962,15 @@ docs/VERSION_PLAN.md
 
 当前建议路线：
 
-- v0.2：RAG 质量与 Memory 模块。
-- v0.4：Multi-Agent 论文调研协作。
-- v0.5：知识库平台化与服务 API。
-- v0.6：前端展示 Demo。
-- v0.7：真实 Pipeline Worker 接入。
-- v0.8：Dashboard 读取真实 service 产物。
-- v0.9：端到端本地 Demo 与任务轮询。
-- v1.0：可投递、可演示的 Agent 平台化 Demo。
-- v1.1：本地演示链路打磨。
-- v1.2：最终包装与投递收口。
+- v3.2（已完成）：企业知识库 Agent 本地 baseline，打通文档建库、问答、引用、API 与 Dashboard。
+- v4.0（计划）：建立 RAG golden set、坏例工作台和检索/生成分层评测。
+- v4.1（计划）：真实 BM25 + Dense + RRF + Cross-Encoder，并评测 Contextual Chunk。
+- v4.2（计划）：参考 Claude/Hermes 重建可恢复 Context Engine 与分层压缩。
+- v4.3（计划）：实现可治理的跨会话长期 Memory Service。
+- v4.4（计划）：使用 LangGraph 编排聊天、知识库问答和 STORM 深度调研工具。
+- v4.5（计划）：补齐 ACL、增量索引、可靠性、可观测、压测和最终面试演示。
+
+第三阶段要求每个版本同时交付代码、测试、Benchmark、Trace 和面试学习记录；未完成的真实 Embedding、向量库、Reranker 和 LangGraph 能力不会提前写入简历。
 
 ## 15. 求职与面试材料
 

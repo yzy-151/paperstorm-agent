@@ -894,3 +894,235 @@ v3.1 已经补齐了企业 Agent 的核心形态：Router、Tool Decision、RAG/
 - 当前没有真正接入 Qdrant/Milvus/FAISS。
 - 当前没有 ACL、租户隔离和 chunk 级权限过滤。
 - 当前 LLM compressor 是 callable 接口，默认不会自动调用外部模型。
+
+## 2026-08-01 学习专题：Claude、Hermes 与成熟 RAG/Memory 设计
+
+这部分不是为了背框架名，而是为 v4.0-v4.5 建立可实现、可测试、可在面试中讲清楚的技术依据。
+
+### 1. Claude Code 值得借鉴什么
+
+Claude Code 公开文档显示，每个新会话从新的上下文窗口开始，跨会话信息主要通过人工维护的 `CLAUDE.md` 和自动记忆文件继续存在。自动记忆使用一个精简索引文件，详细主题文件按需读取；长会话压缩时，旧工具输出会先被清理，再对历史进行摘要，项目根规则和自动记忆会在压缩后重新注入。研究型子 Agent 使用独立上下文，只把摘要返回主会话。
+
+PaperStorm 应借鉴：
+
+- 把“当前模型输入”“原始会话历史”“持久记忆”分成三套数据，不再把它们叫成同一个 context。
+- 持久规则和用户记忆不依赖聊天摘要幸存，而应从独立存储重新注入。
+- 详细记忆按需检索，只在启动时加载精简目录或用户摘要。
+- 大型检索结果、网页和工具日志保存在 artifact store，Prompt 中只保留摘要与引用。
+- 深度调研使用隔离上下文，主聊天只接收研究结论、引用和产物地址。
+
+不应照搬：
+
+- Claude Code 面向编码 Agent，其文件、Shell 和 MCP 上下文结构不能直接代替论文知识库的文档索引。
+- 官方公开的是产品行为和设计机制，不是可整体复制的核心源码。
+
+参考：[Claude Code Context Window](https://code.claude.com/docs/en/context-window)、[Claude Code Memory](https://code.claude.com/docs/en/memory)、[How Claude Code Works](https://code.claude.com/docs/en/how-claude-code-works)。
+
+### 2. Hermes 值得借鉴什么
+
+Hermes 的会话系统把完整消息和元数据保存在 SQLite，并使用 FTS5 搜索历史会话。`session_search` 不返回整段历史，而是返回会话开头、关键词命中附近窗口和会话结尾，使模型用较小上下文理解“目标 -> 相关过程 -> 最终结果”。
+
+Hermes 的 Context Compressor 采用以下策略：
+
+1. Agent 主压缩根据真实 token 使用量触发。
+2. Gateway 在更高水位执行安全压缩，防止跨轮累积直接超过模型限制。
+3. 先清理保护区之外的大型旧工具输出。
+4. 保留系统/开头消息和最近消息，对中间部分生成结构化摘要。
+5. 摘要包含目标、约束、进度、关键决定、文件、下一步和关键错误。
+6. 再次压缩时更新上一份摘要，并修复孤立的 tool call/tool result。
+
+PaperStorm 应借鉴：
+
+- SQLite/PostgreSQL 原始会话表 + FTS 历史检索。
+- `ContextEngine` 可插拔接口，不把压缩逻辑写死在 ChatAgent。
+- 主阈值与高水位安全阈值双层保护。
+- 头尾保护、工具输出先清理、结构化交接摘要和压缩失败回退。
+- `session_search` 的 bookend + hit window 设计。
+
+Hermes 也有不能直接照抄的地方：其公开讨论显示，平面 Markdown Memory、只有 FTS5 的历史搜索、缺少类型/时间冲突/语义召回仍有局限；摘要模型失败时如果静默丢历史，会造成严重信息损失。因此 PaperStorm 必须对压缩失败、记忆冲突和多次摘要衰减建立测试。
+
+参考：[Hermes Context Compression](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/context-compression-and-caching.md)、[Hermes Sessions](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/sessions.md)。
+
+### 3. 业界成熟 Memory 不是“三个列表”
+
+更实用的划分方式是：
+
+| 层级 | 保存内容 | 存储与召回 |
+|---|---|---|
+| Thread State | 当前消息、任务状态、工具状态 | Checkpointer，按 thread_id 精确恢复 |
+| Semantic Memory | 用户事实、偏好、项目事实 | 结构化记录 + FTS/向量混合召回 |
+| Episodic Memory | 过去任务、操作步骤、成功和失败结果 | 事件记录，按任务相似度和时间召回 |
+| Procedural Memory | Agent 规则、操作规范、Prompt/Skill | 版本化配置，按作用域注入 |
+| Session Archive | 完整消息和工具事件 | Append-only，FTS 搜索和审计 |
+| Document Knowledge | 企业文档、论文、网页 | 独立 RAG 索引和 ACL，不属于用户记忆 |
+
+长期记忆必须有写入策略，而不是每轮都写：
+
+```text
+消息
+-> 提取候选事实
+-> Schema 校验
+-> 判断是否稳定且未来有用
+-> 去重/冲突检测
+-> upsert 或使旧事实失效
+-> 保存 source_message_ids、confidence、valid_time、ACL
+```
+
+热路径写入能立即使用，但增加延迟并干扰主回答；后台写入延迟更低、质量更容易独立优化，但新记忆不会马上可见。成熟系统通常结合两者：明确偏好立即写，普通会话在后台批量整理。LangGraph 官方也把短期 thread state、跨线程 Store，以及热路径/后台记忆写入作为不同问题处理。[LangGraph Memory Overview](https://docs.langchain.com/oss/python/concepts/memory)
+
+时间变化很强的用户事实可以研究 Zep/Graphiti 的 temporal fact 思路：事实不是简单覆盖，而是记录何时生效、何时失效，并保留历史。但 v4.3 应先实现结构化事实、冲突失效和 Hybrid recall，只有 Benchmark 证明关系推理必要时再引入图数据库。[Zep Key Concepts](https://help.getzep.com/concepts)
+
+### 4. BM25、向量检索、RRF 和 Rerank 到底是什么
+
+#### BM25
+
+BM25 是稀疏关键词检索。它关注 query 中的词是否出现在文档里，并综合词频、文档长度和词的稀有程度。型号、缩写、数字、专有名词通常是它的强项；同义表达和跨语言语义是弱项。
+
+#### Dense Retrieval
+
+Embedding 把 query 和 chunk 映射到同一向量空间，通过相似度寻找语义接近内容。它能找到“不使用相同词但意思相近”的文本，但可能忽略一个决定性的型号、否定词或数字。
+
+#### Hybrid Retrieval 与 RRF
+
+Hybrid 让 BM25 和 Dense 分别召回候选。两套原始分数的尺度不同，直接做 `0.5 * bm25 + 0.5 * cosine` 往往需要反复校准。RRF 只根据各候选在每个结果列表中的名次融合：
+
+```text
+RRF(d) = sum(1 / (k + rank_i(d)))
+```
+
+因此它更容易跨检索器组合，也能让只被其中一种检索命中的材料进入候选集。Qdrant 已提供 Hybrid Query 与 RRF 融合接口。[Qdrant Hybrid Queries](https://qdrant.tech/documentation/search/hybrid-queries/)
+
+#### Cross-Encoder Rerank
+
+第一阶段检索必须很快，因此 query 和文档通常分开计算。Cross-Encoder 把 `query + chunk` 一起输入模型，能够做更细的相关性判断，但无法经济地扫描全部文档。标准做法是第一阶段召回 Top 50/100，再由 Reranker 选出 Top 5/10。
+
+面试中的一句话：
+
+> BM25 保住精确词，Dense 补语义召回，RRF 合并异构排名，Cross-Encoder 用更高计算成本提高 Top-K 精度；是否值得采用必须看 Recall/nDCG 提升与 P95 延迟代价。
+
+### 5. 为什么需要 Contextual Retrieval
+
+普通 Chunk 从文档中切出来后可能失去主语、章节和术语定义。例如一个 Chunk 只写“该方法降低了 30%”，Embedding 不知道“该方法”是什么。Anthropic 的 Contextual Retrieval 会在索引前为每个 Chunk 补一小段“它在整篇文档中的位置和主题”，再对增强后的文本同时建立 Embedding 和 BM25 索引，最后可叠加 Rerank。[Anthropic Contextual Retrieval](https://www.anthropic.com/engineering/contextual-retrieval)
+
+PaperStorm v4.1 不会直接宣布它更好，而会比较：
+
+```text
+固定 Chunk
+结构化标题 Chunk
+结构化标题 Chunk + Contextual Description
+```
+
+重点观察 PIM 缩写消歧、跨章节指代和论文方法/实验结果关联问题。Contextual Chunk 需要额外 LLM 成本，也可能生成错误背景，所以必须缓存、保留原文并做消融。
+
+### 6. 成熟 RAG 的排查顺序
+
+Microsoft 将 Advanced RAG 分为 Ingestion、Inference 和 Evaluation。PaperStorm 以后按同样层次定位问题，而不是看到回答差就先改 Prompt：[Microsoft Advanced RAG](https://learn.microsoft.com/en-us/azure/developer/ai/advanced-retrieval-augmented-generation)
+
+1. **解析错误**：PDF 是否乱码，表格、标题和页码是否丢失。
+2. **Chunk 错误**：答案是否被切断，Chunk 是否太大导致主题混杂。
+3. **Query 错误**：缩写是否消歧，多轮追问是否改写成独立问题。
+4. **召回错误**：正确 Chunk 是否进入 Top-K；查看 Recall@K。
+5. **重排错误**：正确 Chunk 被 Reranker 降权；查看排名和 nDCG/MRR。
+6. **压缩错误**：证据召回正确但关键信息被摘要删除。
+7. **生成错误**：上下文正确但模型未引用、误读或越过证据回答。
+8. **策略错误**：证据不足时是否应该澄清、拒答或调用 STORM 深度调研。
+
+### 7. 面试高频问答
+
+#### 为什么不能只使用向量检索？
+
+向量检索擅长语义，但对型号、数字、缩写和精确术语不一定稳定。企业文档同时存在语义问题和精确关键词问题，因此先让 BM25 与 Dense 并行召回，再用 RRF 和 Reranker 处理候选。最终是否保留这套链路由领域 Benchmark 决定。
+
+#### Rerank 为什么不能直接替代向量库？
+
+Cross-Encoder 需要对每个 query-document 对联合推理，精度高但计算昂贵。向量库/BM25 用于从海量文档快速缩小候选，Reranker 只处理少量 Top-N，这是典型的精召两阶段架构。
+
+#### Memory 与 RAG 有什么区别？
+
+RAG 查询外部文档知识；Memory 保存 Agent 与特定用户、会话和任务有关的历史状态。二者都可能使用向量搜索，但数据生命周期、权限、写入策略和可信来源不同，不能放进同一个无 namespace 的索引。
+
+#### 上下文压缩后怎样避免忘事？
+
+原始消息不删除；先卸载旧工具大输出，再把中间历史压成带 Schema 和原消息范围的交接摘要；系统规则和长期记忆从独立存储重新注入；最近消息保持原文；通过约束保留率、多次压缩信息衰减和恢复测试验证质量。压缩失败时禁止静默丢历史。
+
+#### 为什么选择 LangGraph，而不是直接上 AutoGen？
+
+当前核心需求是可恢复状态、条件路由、Memory、RAG 和 STORM 工具编排，LangGraph 的 Checkpointer/Store 与这个问题更匹配。AutoGen Team 适合多个自主角色协商，但它不会自动提升检索质量；只有对照实验表明多 Agent 在复杂调研任务上显著提高质量时才引入。
+
+### 8. v4 阶段必须形成的个人能力
+
+- 能手写并解释 BM25、余弦相似度和 RRF 的简化实现，但生产代码复用成熟库。
+- 能读取 Cross-Encoder 输入输出和延迟指标，不把 Rerank 说成普通规则加权。
+- 能独立构造 RAG golden set，并做组件级失败归因。
+- 能画出 Thread State、长期 Memory、Session Archive 和 Document RAG 的数据边界。
+- 能解释 Claude/Hermes 的设计取舍，也能指出其局限，而不是说“照抄大厂方案”。
+- 每实现一个 v4 组件，都在本文件追加真实命令、实验表、坏例、结论和面试 STAR 回答。
+
+## 2026-08-01 实验记录：v4.0 RAG 评测基线
+
+### 做了什么
+
+- 设计 100 条可审计种子集：20 个 PIM/RAG 受控事实的 4 种问法，加 20 条无答案问题。
+- 每条 Case 保存 relevant chunk、参考答案、required terms、allowed citations、category 和 provenance。
+- 分开计算 Retrieval、Answer/Citation 和 Runtime 指标。
+- 将坏例归因为 retrieval、rerank、compression、generation 或 citation，而不是只输出一个总分。
+- 增加 CLI、FastAPI、Service 持久化和 Dashboard Bad Case Workbench。
+
+### 为什么不直接使用 RAGAS 总分
+
+框架可以复用，但指标契约必须先理解。v4.0 先实现确定性的 Recall@K、Precision@K、MRR、nDCG、Citation Precision/Recall 和 Abstention Accuracy，确保每个数字能人工核对。Faithfulness 需要逐声明证据判断或 LLM Judge；没有配置 Judge 时明确返回 `null`，避免把关键词命中率包装成忠实度。
+
+后续可以把 RAGAS/DeepEval 作为 Judge Adapter 接入，但必须保留当前确定性指标作为回归底座，并测试 Judge 稳定性、成本和模型偏差。
+
+### 首次真实结果
+
+| 指标 | v3.2 Hash/规则基线 |
+|---|---:|
+| Answer Cases | 80 |
+| Abstain Cases | 20 |
+| Pass Rate | 0.3900 |
+| Recall@5 | 0.3625 |
+| Precision@5 | 0.1827 |
+| MRR | 0.2804 |
+| nDCG@5 | 0.3006 |
+| Required Term Recall | 0.2500 |
+| Citation Precision | 0.2375 |
+| Citation Recall | 0.2375 |
+| Abstention Accuracy | 1.0000 |
+| Retrieval Miss | 51 |
+| Generation Miss | 10 |
+| P95 Latency | 0.921 ms |
+
+### 如何解读
+
+- `Recall@5=0.3625`：80 个可回答问题中，正确 Chunk 进入前五的比例很低，首要矛盾在召回层。
+- `MRR=0.2804`：即使召回正确 Chunk，它的位置通常也不够靠前。
+- `Citation Precision/Recall=0.2375`：当前确定性 Top1 回答经常引用错误 Chunk，不能只看到“返回了引用”就认为 grounded。
+- `Retrieval Miss=51`：v4.1 应优先改中文 BM25、真实 Dense Embedding 和 Query/Chunk 表达，而不是先换更强生成模型。
+- `Abstention Accuracy=1.0`：当前无答案题采用显式拒答策略，这只验证指标和 API 契约，不代表已经解决自动证据充分性判断。
+- `P95 < 1 ms`：因为只有 20 个短文档且使用本地 Hash/线性扫描，不能外推为生产 QPS。
+
+### 面试推荐回答：你如何评估 RAG
+
+```text
+我先把评测拆成检索和生成两层。检索层使用 Recall@K 判断正确证据是否被召回，MRR 判断第一个正确结果的位置，nDCG 评价整个 Top-K 排序；生成层独立评价答案关键词覆盖、引用准确率、引用召回率和无答案拒答。每个坏例按 retrieval、rerank、compression、generation、citation 归因。这样回答错误时能知道应该改 Embedding、Chunk、Reranker、压缩还是 Prompt，而不是盲目更换大模型。
+```
+
+### 面试推荐回答：MRR 和 nDCG 有什么区别
+
+```text
+MRR 只关心第一个相关结果出现在哪里，适合“找到一个正确证据即可”的任务；nDCG 会考虑多个相关结果在整个排名中的位置，并对靠前结果给予更高权重。论文问答可能需要多个证据，因此两者都看：MRR 反映首个可用证据，nDCG 反映 Top-K 的整体排序质量。
+```
+
+### 面试推荐回答：为什么先做 Benchmark 再上 BGE/Reranker
+
+```text
+没有固定数据和指标时，更换 Embedding 或 Reranker 后只能主观觉得回答变好了，无法判断提升来自召回、排序还是生成。v4.0 先冻结 Hash/规则基线和 100 条种子 Case；v4.1 在同一数据集上逐步运行 BM25、Dense、RRF、Cross-Encoder 消融，并同时比较 Recall、nDCG、P95 和成本，才能用数据决定组件是否进入主链路。
+```
+
+### 不能夸大的边界
+
+- 种子集是人工设计的受控事实与问法，还不是从真实用户日志抽样、由领域专家双人标注的 Golden Set。
+- 当前回答器是 Top1 Chunk 确定性 baseline，不是完整 LLM grounded generation 评测。
+- 当前没有启用 LLM Judge，因此没有报告 faithfulness 和 answer relevance 分数。
+- 当前指标用于建立相对对照，不能与使用不同语料、不同 Case 定义的外部 Benchmark 直接比较。

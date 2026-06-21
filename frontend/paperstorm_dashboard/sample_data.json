@@ -1,20 +1,20 @@
 {
   "project": {
     "name": "PaperStorm Agent",
-    "version": "v0.9",
-    "description": "Task-control RAG + Memory + Multi-Agent dashboard demo"
+    "version": "v4.0",
+    "description": "RAG evaluation + Task-control + Memory + Multi-Agent dashboard demo"
   },
   "tasks": [
     {
-      "task_id": "448d5e999f5d4b91b16157a0ef385b63",
+      "task_id": "782fec5991a04c2a8795b272a30c48bd",
       "topic": "pim 神经网络抑制",
       "retriever": "arxiv",
       "output_language": "zh",
       "run_mode": "fake",
       "status": "succeeded",
-      "output_dir": "demo://paperstorm_dashboard/tasks/448d5e999f5d4b91b16157a0ef385b63",
-      "created_at": "2026-07-28T07:48:38.742236+00:00",
-      "updated_at": "2026-07-28T07:48:38.750017+00:00",
+      "output_dir": "demo://paperstorm_dashboard/tasks/782fec5991a04c2a8795b272a30c48bd",
+      "created_at": "2026-08-01T06:39:45.022316+00:00",
+      "updated_at": "2026-08-01T06:39:45.061154+00:00",
       "queue_index": 1,
       "expected_keywords": [
         "passive intermodulation",
@@ -26,36 +26,49 @@
         "RAM"
       ],
       "options": {},
-      "started_at": "2026-07-28T07:48:38.742236+00:00",
-      "finished_at": "2026-07-28T07:48:38.750017+00:00"
+      "started_at": "2026-08-01T06:39:45.026953+00:00",
+      "finished_at": "2026-08-01T06:39:45.061154+00:00"
     }
   ],
   "article": {
-    "task_id": "448d5e999f5d4b91b16157a0ef385b63",
+    "task_id": "782fec5991a04c2a8795b272a30c48bd",
     "path": "demo://paperstorm_dashboard/storm_gen_article_polished.txt",
     "content": "# pim 神经网络抑制\n\nPIM 在本任务中指 passive intermodulation，是 RF 系统中由无源器件非线性导致的互调杂散问题。[1]\n\n神经网络方法可以学习非线性抵消器，用于 passive intermodulation suppression 和 cancellation。[2]\n"
   },
   "qa": {
     "question": "PIM 是什么？",
-    "answer": "PIM 在本任务中指 passive intermodulation，是 RF 系统中由无源器件非线性导致的互调杂散问题。[1][1]",
+    "answer": "# pim 神经网络抑制 PIM 在本任务中指 passive intermodulation，是 RF 系统中由无源器件非线性导致的互调杂散问题。[1] 神经网络方法可以学习非线性抵消器，用于 passive intermodulation suppression 和 cancellation。[2][1]",
     "citations": [
       {
         "id": 1,
-        "title": "Generated article paragraph 1",
-        "url": "demo://paperstorm_dashboard\\service\\results\\448d5e999f5d4b91b16157a0ef385b63\\storm_gen_article_polished.txt",
+        "title": "Generated PaperStorm Article",
+        "url": "demo://paperstorm_dashboard\\service\\results\\782fec5991a04c2a8795b272a30c48bd\\storm_gen_article_polished.txt",
         "source": "article",
-        "document_id": "article-1"
+        "source_type": "article",
+        "document_id": "generated_article-chunk-1",
+        "chunk_id": "generated_article-chunk-1",
+        "score": 0.375594
       }
     ],
     "grounded": true,
     "memory_context": {},
     "evidence": [
       {
-        "id": "article-1",
-        "title": "Generated article paragraph 1",
-        "content": "PIM 在本任务中指 passive intermodulation，是 RF 系统中由无源器件非线性导致的互调杂散问题。[1]",
-        "url": "demo://paperstorm_dashboard\\service\\results\\448d5e999f5d4b91b16157a0ef385b63\\storm_gen_article_polished.txt",
-        "source": "article"
+        "id": "generated_article-chunk-1",
+        "chunk_id": "generated_article-chunk-1",
+        "title": "Generated PaperStorm Article",
+        "content": "# pim 神经网络抑制 PIM 在本任务中指 passive intermodulation，是 RF 系统中由无源器件非线性导致的互调杂散问题。[1] 神经网络方法可以学习非线性抵消器，用于 passive intermodulation suppression 和 cancellation。[2]",
+        "url": "demo://paperstorm_dashboard\\service\\results\\782fec5991a04c2a8795b272a30c48bd\\storm_gen_article_polished.txt",
+        "source": "article",
+        "source_type": "article",
+        "score": 0.375594,
+        "metadata": {
+          "chunk_index": 1
+        },
+        "lexical_score": 0.5,
+        "vector_score": 0.308607,
+        "hybrid_score": 0.375594,
+        "rerank_score": 0.375594
       }
     ]
   },
@@ -92,29 +105,41 @@
     ]
   },
   "trace": {
-    "task_id": "448d5e999f5d4b91b16157a0ef385b63",
+    "task_id": "782fec5991a04c2a8795b272a30c48bd",
     "events": [
       {
         "event": "run_start",
-        "task_id": "448d5e999f5d4b91b16157a0ef385b63",
+        "task_id": "782fec5991a04c2a8795b272a30c48bd",
+        "timestamp": "2026-08-01T06:39:45.041060+00:00",
         "success": true
       },
       {
         "event": "tool_start",
-        "task_id": "448d5e999f5d4b91b16157a0ef385b63",
+        "task_id": "782fec5991a04c2a8795b272a30c48bd",
+        "timestamp": "2026-08-01T06:39:45.041060+00:00",
         "tool": "fake_research"
       },
       {
         "event": "tool_end",
-        "task_id": "448d5e999f5d4b91b16157a0ef385b63",
+        "task_id": "782fec5991a04c2a8795b272a30c48bd",
+        "timestamp": "2026-08-01T06:39:45.041060+00:00",
         "tool": "fake_research"
       },
       {
         "event": "run_end",
-        "task_id": "448d5e999f5d4b91b16157a0ef385b63",
+        "task_id": "782fec5991a04c2a8795b272a30c48bd",
+        "timestamp": "2026-08-01T06:39:45.041060+00:00",
         "success": true
       }
     ]
+  },
+  "process": {
+    "outline": "# pim 神经网络抑制\n## 定义\n## 神经网络抑制",
+    "conversation": "[\n  {\n    \"role\": \"researcher\",\n    \"message\": \"如何定义 RF 场景下的 PIM？\"\n  },\n  {\n    \"role\": \"expert\",\n    \"message\": \"这里 PIM 指 passive intermodulation，不是 processing-in-memory。\"\n  }\n]",
+    "reflection": "Critic: 检索结果需要过滤 processing-in-memory / DRAM 语义，保留 RF passive intermodulation 方向。",
+    "run_summary": "{\n  \"success\": true,\n  \"task_id\": \"782fec5991a04c2a8795b272a30c48bd\",\n  \"topic\": \"pim 神经网络抑制\",\n  \"artifacts\": [\n    \"storm_gen_article_polished.txt\",\n    \"raw_search_results.json\",\n    \"paperstorm_trace.jsonl\"\n  ]\n}",
+    "raw_search_results": "[\n  {\n    \"title\": \"Neural passive intermodulation cancellation\",\n    \"description\": \"RF passive intermodulation suppression with neural networks.\",\n    \"url\": \"https://example.com/pim\",\n    \"snippets\": [\n      \"Neural cancellers reduce passive intermodulation products.\"\n    ]\n  }\n]",
+    "plan": "[\n  {\n    \"title\": \"Neural passive intermodulation cancellation\",\n    \"description\": \"RF passive intermodulation suppression with neural networks.\",\n    \"url\": \"https://example.com/pim\",\n    \"snippets\": [\n      \"Neural cancellers reduce passive intermodulation products.\"\n    ]\n  }\n]"
   },
   "pipeline_worker": {
     "runner": "fake",
@@ -124,8 +149,8 @@
     "score": 85.0
   },
   "service_snapshot": {
-    "task_id": "448d5e999f5d4b91b16157a0ef385b63",
-    "output_dir": "demo://paperstorm_dashboard/tasks/448d5e999f5d4b91b16157a0ef385b63",
+    "task_id": "782fec5991a04c2a8795b272a30c48bd",
+    "output_dir": "demo://paperstorm_dashboard/tasks/782fec5991a04c2a8795b272a30c48bd",
     "status": "succeeded",
     "run_mode": "fake",
     "retriever": "arxiv"
@@ -223,7 +248,7 @@
       "agent": "PlannerAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.862950+00:00",
+      "timestamp": "2026-08-01T06:39:45.403471+00:00",
       "payload_summary": {
         "topic": "pim 神经网络抑制",
         "expected_keywords": {
@@ -237,7 +262,7 @@
       "agent": "PlannerAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.862950+00:00",
+      "timestamp": "2026-08-01T06:39:45.405587+00:00",
       "payload_summary": {
         "agent": "PlannerAgent",
         "topic": "pim 神经网络抑制",
@@ -252,7 +277,7 @@
       "agent": "RetrieverAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.862950+00:00",
+      "timestamp": "2026-08-01T06:39:45.407662+00:00",
       "payload_summary": {
         "session": {
           "type": "PaperStormRuntimeSession"
@@ -270,7 +295,7 @@
       "agent": "RetrieverAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.873142+00:00",
+      "timestamp": "2026-08-01T06:39:45.417012+00:00",
       "payload_summary": {
         "agent": "RetrieverAgent",
         "results": {
@@ -284,7 +309,7 @@
       "agent": "CriticAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.873142+00:00",
+      "timestamp": "2026-08-01T06:39:45.417012+00:00",
       "payload_summary": {
         "results": {
           "type": "list",
@@ -305,7 +330,7 @@
       "agent": "CriticAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.873142+00:00",
+      "timestamp": "2026-08-01T06:39:45.418778+00:00",
       "payload_summary": {
         "agent": "CriticAgent",
         "kept": {
@@ -323,7 +348,7 @@
       "agent": "MemoryAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.873142+00:00",
+      "timestamp": "2026-08-01T06:39:45.420336+00:00",
       "payload_summary": {
         "memory": {
           "type": "PaperStormMemoryStore"
@@ -344,7 +369,7 @@
       "agent": "MemoryAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.873142+00:00",
+      "timestamp": "2026-08-01T06:39:45.420336+00:00",
       "payload_summary": {
         "agent": "MemoryAgent",
         "episodic_count": 2,
@@ -356,7 +381,7 @@
       "agent": "EvaluatorAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.873142+00:00",
+      "timestamp": "2026-08-01T06:39:45.424950+00:00",
       "payload_summary": {
         "query_plan": {
           "type": "list",
@@ -381,7 +406,7 @@
       "agent": "EvaluatorAgent",
       "run_id": "demo-agents",
       "task_id": "demo-agents",
-      "timestamp": "2026-07-28T07:48:38.873142+00:00",
+      "timestamp": "2026-08-01T06:39:45.426606+00:00",
       "payload_summary": {
         "agent": "EvaluatorAgent",
         "scores": {
@@ -407,10 +432,49 @@
     "succeeded": 4,
     "failed": 2,
     "failure_rate": 0.3333,
-    "avg_latency_sec": 0.0103,
-    "p95_latency_sec": 0.0166,
+    "avg_latency_sec": 0.0306,
+    "p95_latency_sec": 0.053,
     "max_concurrent_tasks": 2,
     "max_observed_running": 2,
     "retry_count": 0
+  },
+  "rag_evaluation_v4": {
+    "dataset": {
+      "dataset_version": "4.0-seed-1",
+      "metadata": {
+        "provenance": "synthetic_seed",
+        "domain_review_required": true
+      }
+    },
+    "metrics": {
+      "total_cases": 100,
+      "pass_rate": 0.39,
+      "retrieval_recall_at_k": 0.3625,
+      "retrieval_precision_at_k": 0.1827,
+      "mrr": 0.2804,
+      "ndcg_at_k": 0.3006,
+      "citation_precision": 0.2375,
+      "citation_recall": 0.2375,
+      "abstention_accuracy": 1.0,
+      "p95_latency_ms": 0.921,
+      "failure_counts": {
+        "retrieval_miss": 51,
+        "generation_miss": 10
+      }
+    },
+    "bad_cases": [
+      {
+        "case_id": "pim-definition-q1",
+        "query": "什么是无源互调的定义？",
+        "failure_stage": "retrieval_miss",
+        "retrieval": {
+          "recall_at_k": 0.0,
+          "mrr": 0.0
+        },
+        "answer": {
+          "citation_precision": 0.0
+        }
+      }
+    ]
   }
 }

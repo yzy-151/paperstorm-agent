@@ -84,8 +84,8 @@ def build_demo_bundle(output_dir):
         data = {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v1.2",
-                "description": "Task-control RAG + Memory + Multi-Agent dashboard demo",
+                "version": "v4.0",
+                "description": "RAG evaluation + Task-control + Memory + Multi-Agent dashboard demo",
             },
             "tasks": [task_state],
             "article": article,
@@ -112,6 +112,37 @@ def build_demo_bundle(output_dir):
             "multi_agent": multi_agent,
             "agent_trace": _load_jsonl(agent_output_dir / "agent_trace.jsonl"),
             "stress_report": stress_report,
+            "rag_evaluation_v4": {
+                "dataset": {
+                    "dataset_version": "4.0-seed-1",
+                    "metadata": {
+                        "provenance": "synthetic_seed",
+                        "domain_review_required": True,
+                    },
+                },
+                "metrics": {
+                    "total_cases": 100,
+                    "pass_rate": 0.39,
+                    "retrieval_recall_at_k": 0.3625,
+                    "retrieval_precision_at_k": 0.1827,
+                    "mrr": 0.2804,
+                    "ndcg_at_k": 0.3006,
+                    "citation_precision": 0.2375,
+                    "citation_recall": 0.2375,
+                    "abstention_accuracy": 1.0,
+                    "p95_latency_ms": 0.921,
+                    "failure_counts": {"retrieval_miss": 51, "generation_miss": 10},
+                },
+                "bad_cases": [
+                    {
+                        "case_id": "pim-definition-q1",
+                        "query": "什么是无源互调的定义？",
+                        "failure_stage": "retrieval_miss",
+                        "retrieval": {"recall_at_k": 0.0, "mrr": 0.0},
+                        "answer": {"citation_precision": 0.0},
+                    }
+                ],
+            },
         }
         data = _sanitize_demo_paths(data, temp_root)
     data_path = output_dir / "sample_data.json"

@@ -15,7 +15,7 @@
       </div>
       <div class="header-meta">
         <span>release</span>
-        <strong id="project-version">v3.2</strong>
+        <strong id="project-version">v4.0</strong>
       </div>
     </header>
 
@@ -82,7 +82,7 @@
           </div>
           <div class="help-card">
             <strong>Benchmark</strong>
-            <p>稳定性压测区展示 total、failed、failure_rate、p95_latency、并发峰值等指标，用于说明 Agent runtime 的可靠性。</p>
+            <p>RAG Eval 运行 100 条可审计种子问题，分别显示 Recall、MRR、nDCG、引用、拒答和失败阶段；稳定性压测用于说明 Runtime 可靠性。</p>
           </div>
         </div>
       </section>
@@ -304,6 +304,34 @@
       <section class="panel" id="scorecard-panel">
         <h2>评估分数</h2>
         <div id="scorecard" class="metric-grid"></div>
+      </section>
+
+      <section class="panel wide" id="rag-eval-v4-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Evaluation Workbench</p>
+            <h2>RAG v4.0 评测与坏例归因</h2>
+          </div>
+          <span class="soft-badge">100 seed cases / retrieval / answer / citation</span>
+        </div>
+        <div class="button-row">
+          <button id="run-rag-eval-v4" type="button">运行 v4.0 基线</button>
+          <button id="load-rag-eval-v4" type="button">加载最近报告</button>
+        </div>
+        <p class="panel-copy">内置集合用于回归和演示，包含 20 个受控事实的四种问法以及 20 个无答案问题；它被明确标记为种子集，不能替代人工审核的真实论文 Golden Set。</p>
+        <div id="rag-eval-v4-metrics" class="metric-grid"></div>
+        <div class="qa-debug-grid">
+          <section class="debug-card">
+            <h3>Failure Counts</h3>
+            <pre id="rag-eval-v4-failures"></pre>
+          </section>
+          <section class="debug-card">
+            <h3>Dataset Metadata</h3>
+            <pre id="rag-eval-v4-dataset"></pre>
+          </section>
+        </div>
+        <h3>Bad Cases</h3>
+        <div id="rag-eval-v4-bad-cases" class="stack"></div>
       </section>
 
       <section class="panel wide" id="article-panel">

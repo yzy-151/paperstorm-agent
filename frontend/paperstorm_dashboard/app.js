@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v3.2";
+const DASHBOARD_VERSION = "v4.0";
 
 async function loadDashboard() {
   try {
@@ -28,6 +28,39 @@ function renderDashboard(data) {
   renderPipelineWorker(data.pipeline_worker || {}, data.service_snapshot || {});
   renderTaskError((data.tasks || [])[0] || {});
   renderStress(data.stress_report || {});
+  renderRAGEvaluationV4(data.rag_evaluation_v4 || {});
+}
+
+async function runRAGEvaluationV4() {
+  try {
+    setStatus("running RAG evaluation v4.0", "running");
+    setButtonBusy("run-rag-eval-v4", true, "评测中");
+    const report = await fetchJson("/evaluations/rag-v4", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({top_k: 5}),
+    });
+    renderRAGEvaluationV4(report);
+    setStatus(`RAG eval completed: ${report.metrics?.passed_cases || 0}/${report.metrics?.total_cases || 0}`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("run-rag-eval-v4", false);
+  }
+}
+
+async function loadRAGEvaluationV4() {
+  try {
+    setStatus("loading latest RAG evaluation", "loading");
+    setButtonBusy("load-rag-eval-v4", true, "加载中");
+    const report = await fetchJson("/evaluations/rag-v4/latest");
+    renderRAGEvaluationV4(report);
+    setStatus("latest RAG evaluation loaded", Object.keys(report).length ? "success" : "idle");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("load-rag-eval-v4", false);
+  }
 }
 
 async function fetchSampleData() {
@@ -465,6 +498,40 @@ function renderQA(qa) {
   `;
 }
 
+function renderRAGEvaluationV4(report) {
+  const metrics = report.metrics || {};
+  const metricNames = [
+    "total_cases",
+    "pass_rate",
+    "retrieval_recall_at_k",
+    "retrieval_precision_at_k",
+    "mrr",
+    "ndcg_at_k",
+    "citation_precision",
+    "citation_recall",
+    "abstention_accuracy",
+    "p95_latency_ms",
+  ];
+  document.querySelector("#rag-eval-v4-metrics").innerHTML = metricNames
+    .map(name => metric(name, metrics[name]))
+    .join("");
+  document.querySelector("#rag-eval-v4-failures").textContent =
+    JSON.stringify(metrics.failure_counts || {}, null, 2);
+  document.querySelector("#rag-eval-v4-dataset").textContent =
+    JSON.stringify(report.dataset || {}, null, 2);
+  const badCases = report.bad_cases || [];
+  document.querySelector("#rag-eval-v4-bad-cases").innerHTML = badCases.length
+    ? badCases.slice(0, 30).map(item => `
+      <div class="item rejected">
+        <strong>${escapeHtml(item.case_id || "")}</strong>
+        <span class="soft-badge">${escapeHtml(item.failure_stage || "unknown")}</span>
+        <p>${escapeHtml(item.query || "")}</p>
+        <div class="label">recall@k ${escapeHtml(item.retrieval?.recall_at_k ?? "")} · MRR ${escapeHtml(item.retrieval?.mrr ?? "")} · citations ${escapeHtml(item.answer?.citation_precision ?? "")}</div>
+      </div>
+    `).join("")
+    : `<div class="item">尚未运行评测，或当前报告没有坏例。</div>`;
+}
+
 function renderResearchQA(answer) {
   document.querySelector("#research-answer").innerHTML = `
     <strong>Agent</strong>
@@ -768,5 +835,7 @@ document.querySelector("#send-chat-message").addEventListener("click", sendChatM
 document.querySelector("#create-enterprise-kb").addEventListener("click", createEnterpriseKB);
 document.querySelector("#list-enterprise-kb").addEventListener("click", listEnterpriseKB);
 document.querySelector("#ask-enterprise-kb").addEventListener("click", askEnterpriseKB);
+document.querySelector("#run-rag-eval-v4").addEventListener("click", runRAGEvaluationV4);
+document.querySelector("#load-rag-eval-v4").addEventListener("click", loadRAGEvaluationV4);
 
 loadDashboard();

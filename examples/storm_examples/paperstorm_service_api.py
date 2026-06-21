@@ -21,7 +21,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     try:
         from fastapi import FastAPI
         from fastapi.responses import FileResponse, StreamingResponse
-        from pydantic import BaseModel
+        from pydantic import BaseModel, Field
         from starlette.middleware.cors import CORSMiddleware
         from starlette.staticfiles import StaticFiles
     except ImportError as exc:
@@ -31,7 +31,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="0.9")
+    app = FastAPI(title="PaperStorm Agent Service", version="4.0")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -109,6 +109,9 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     class EnterpriseKnowledgeBaseAskRequest(BaseModel):
         question: str
         top_k: int = 4
+
+    class RAGEvaluationV4Request(BaseModel):
+        top_k: int = Field(default=5, ge=1, le=20)
 
     @app.get("/")
     def get_dashboard_home():
@@ -224,6 +227,16 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
             question=request.question,
             top_k=request.top_k,
         )
+
+    @app.post("/evaluations/rag-v4")
+    def run_rag_evaluation_v4(request: RAGEvaluationV4Request):
+        return service.run_rag_evaluation_v4(
+            top_k=request.top_k,
+        )
+
+    @app.get("/evaluations/rag-v4/latest")
+    def get_rag_evaluation_v4():
+        return service.get_rag_evaluation_v4()
 
     @app.post("/research-agent/ask")
     def ask_research_agent(request: ResearchAgentAskRequest):

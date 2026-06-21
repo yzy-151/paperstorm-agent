@@ -25,7 +25,8 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
             self.assertIn("pipeline_worker", data)
             self.assertIn("service_snapshot", data)
             self.assertIn("stress_report", data)
-            self.assertEqual(data["project"]["version"], "v1.2")
+            self.assertEqual(data["project"]["version"], "v4.0")
+            self.assertIn("rag_evaluation_v4", data)
             self.assertIn("process", data)
             self.assertEqual(bundle["data_path"], str(data_path))
             self.assertEqual(bundle["js_path"], str(js_path))
@@ -103,7 +104,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("/events", script)
         self.assertIn("connectSSE", script)
 
-    def test_dashboard_exposes_debuggable_v32_runtime_ui(self):
+    def test_dashboard_exposes_debuggable_v40_runtime_ui(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
             encoding="utf-8"
@@ -115,7 +116,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("v3.2", index)
+        self.assertIn("v4.0", index)
         self.assertIn("操作说明", index)
         self.assertIn("Benchmark", index)
         self.assertIn("过程细节", index)

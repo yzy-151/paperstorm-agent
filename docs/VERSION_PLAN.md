@@ -1948,7 +1948,292 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_paperstorm_enter
 v3.2 能把项目讲成企业内部知识库 Agent 原型：我实现了本地文档建库、chunk/overlap、embedding provider 抽象、hybrid retrieval、context compression、问答 citation、API 和前端面板。默认实现保证离线可测，生产替换点包括 embedding 服务、向量数据库、cross-encoder rerank、权限过滤和分布式 trace。
 ```
 
-## 13. 每次版本更新模板
+## 13. 第三阶段路线：成熟 Context、Memory 与 RAG
+
+第三阶段不再以“新增一个类或一个名词”为版本目标，而采用以下共同规则：
+
+1. 先阅读成熟系统的公开设计和官方文档，记录可借鉴点与已知缺陷。
+2. 先建立当前实现的可复现基线，再替换一个组件做消融实验。
+3. 每个版本必须同时交付代码、测试、Benchmark、Trace、学习记录和面试问答。
+4. 成熟框架通过适配器接入，不复制整套 Agent Runtime，也不把框架概念冒充项目成果。
+5. 简历只写已经运行并量化验证的能力；计划中的 BGE、Qdrant、Cross-Encoder、LangGraph 不提前写成已完成。
+
+参考设计：
+
+- Claude Code：原始上下文、持久规则、自动记忆和压缩摘要分层；压缩前先清理旧工具输出，压缩后重新注入持久规则；子 Agent 使用独立上下文。
+- Hermes Agent：SQLite 会话持久化与 FTS5 历史搜索；网关安全压缩与 Agent 主压缩双层保护；头尾消息保护、结构化摘要、迭代重压缩和工具调用配对修复。
+- LangGraph：使用 Checkpointer 管理线程内状态，使用 Store 管理跨线程长期记忆，支持恢复、回放和人工介入。
+- Anthropic Contextual Retrieval：为 Chunk 补充其在整篇文档中的语境，再同时建立 Contextual Embedding 和 Contextual BM25，最后重排。
+- Microsoft Advanced RAG：把系统拆成 Ingestion、Inference、Evaluation 三阶段，分别优化解析、切分、查询、召回、后处理和答案验证。
+
+### v4.0：RAG 评测基线与坏例工作台
+
+#### 状态
+
+已完成，版本分支：`version/v4.0`。
+
+#### 目标
+
+先回答“差在哪里”，再更换检索技术。当前 PIM 跑题、中文召回差、引用不能支撑答案等问题必须沉淀为数据集，避免后续只凭主观感受调参。
+
+#### 本次完成
+
+1. 新增 `knowledge_storm/paperstorm_eval_v4.py`：
+   - Golden Case Schema 和数据集校验。
+   - Retrieval、Answer/Citation、Latency 分层指标。
+   - `retrieval_miss -> rerank_miss -> compression_loss -> generation_miss -> citation_error` 失败归因。
+   - JSON、Markdown 和 JSONL bad-case 报告。
+   - 按 category 输出 slice 指标，避免总体均值掩盖特定领域失败。
+2. 内置 100 条可审计种子集：
+   - 20 个受控 PIM/RAG 事实，每个事实设计 4 种中英文问法，共 80 条可回答问题。
+   - 20 条资料中没有答案的问题，用于评估拒答。
+   - 每条保存 relevant chunk、reference answer、required terms、allowed citations 和来源 metadata。
+   - 数据集明确标记 `synthetic_seed` 与 `domain_review_required=true`，不冒充真实线上 Golden Set。
+3. 新增 CLI：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_eval_v4.py `
+  --output-dir .\results\paperstorm_eval_v4 `
+  --top-k 5
+```
+
+4. 新增 Service/API：
+   - `PaperStormTaskService.run_rag_evaluation_v4()`。
+   - `PaperStormTaskService.get_rag_evaluation_v4()`。
+   - `POST /evaluations/rag-v4`。
+   - `GET /evaluations/rag-v4/latest`。
+   - HTTP API 只运行内置受控数据集，不接受任意本地 dataset path；自定义数据集只通过本地 CLI 读取。
+5. Dashboard 升级为 v4.0，新增指标、数据集说明、Failure Counts 和 Bad Cases 工作台。
+6. 新增 8 个 v4.0 专项测试，覆盖数据集、指标公式、失败归因、报告、Service、API 和 Dashboard。
+
+#### 首次基线结果
+
+```text
+total_cases:               100
+answer_cases:               80
+abstain_cases:              20
+pass_rate:                0.39
+retrieval_recall_at_k:  0.3625
+retrieval_precision_at_k: 0.1827
+MRR:                    0.2804
+nDCG@K:                 0.3006
+required_term_recall:     0.25
+citation_precision:     0.2375
+citation_recall:        0.2375
+abstention_accuracy:       1.0
+p95_latency_ms:           0.921
+retrieval_miss:              51
+generation_miss:             10
+```
+
+基线使用 `HashEmbedding + 词集合重叠 + 规则 Rerank + Top1 Chunk 确定性回答`。低 Recall 和大量 retrieval miss 证明当前中文检索、问法改写和语义召回不足；极低延迟只代表本地小数据线性扫描，不能解释成生产吞吐。
+
+#### 验收标准
+
+- Benchmark 可重复运行并输出 JSON、Markdown 和前端可读结果：已完成。
+- 召回、重排、压缩、生成和引用失败可分层归因：已完成。
+- v3.2 Hash/规则实现已经固化为后续消融实验对照组：已完成。
+- PDF 解析、多跳、表格和真实论文人工标注集：保留给 v4.1 数据扩展，不能用种子集代替。
+
+#### 面试学习目标
+
+能够解释为什么 RAG 不能只用“回答看起来不错”评估，以及 Recall@K、MRR、nDCG、faithfulness 和 citation precision 分别测量什么。
+
+#### 版本边界
+
+- 当前没有 LLM-as-a-Judge，因此 `faithfulness` 明确返回 `null/not_scored_without_judge`，不使用关键词覆盖冒充忠实度。
+- 100 条数据是可复现种子集，不是经过领域专家双人标注的生产 Golden Set。
+- 当前基线的无答案题由显式策略拒答，用于验证指标契约，不代表已经实现智能证据充分性判断。
+- v4.1 必须在同一数据集上对比 BM25、Dense、RRF 和 Cross-Encoder，并逐步加入用户审核的真实论文问题。
+
+### v4.1：真实 Hybrid Retrieval 与 Contextual Chunk
+
+#### 状态
+
+计划中。
+
+#### 目标
+
+替换 v3.2 的 Hash Embedding、词集合重叠和规则 Rerank，形成可量化的两阶段检索系统。
+
+#### 实施任务
+
+1. 文档解析与切分：
+   - 接入成熟 PDF 解析器，保留标题层级、页码、段落、表格和来源 metadata。
+   - 实现 heading-aware、parent-child 和 token-based chunk。
+   - 对比固定窗口、结构化切分和 Contextual Chunk 三组策略。
+2. 第一阶段召回：
+   - BM25 处理术语、型号、数字和精确关键词。
+   - BGE-M3 或同级真实 Embedding 处理语义近似和中英文表达差异。
+   - 使用 RRF 融合两个独立排名，避免直接比较不可校准的原始分数。
+3. 第二阶段重排：
+   - 对第一阶段 Top-N 使用 Cross-Encoder Reranker，对 `query + chunk` 联合打分。
+   - 保留无 Rerank 对照组，测量 Recall、nDCG、P95 和成本变化。
+4. 索引工程：
+   - 保存 embedding 模型名、维度、版本和归一化方式，加载时校验兼容性。
+   - 索引只在文档更新时增量构建，查询不得重复建库。
+   - 本地使用 FAISS/Qdrant 二选一，接口继续保持可替换。
+5. 生成真实 LLM grounded answer，并增加句子级 citation 校验，证据不足时拒答或触发深度调研。
+
+#### 必做消融实验
+
+```text
+BM25
+Dense
+BM25 + Dense + RRF
+BM25 + Dense + RRF + Cross-Encoder
+普通 Chunk vs Contextual Chunk
+```
+
+#### 面试学习目标
+
+能够用自己的实验回答：BM25 与向量检索各自擅长什么、RRF 为什么比直接加权分数稳、Rerank 为什么比第一阶段召回更准又更慢、Chunk 大小如何影响召回与答案完整性。
+
+### v4.2：可恢复 Context Engine 与分层压缩
+
+#### 状态
+
+计划中。
+
+#### 目标
+
+参考 Claude Code 和 Hermes，把当前字符截断升级为 Token 驱动、可恢复、可验证的上下文引擎。
+
+#### 实施任务
+
+1. 原始消息和工具事件采用 append-only 存储，压缩只生成派生视图，不删除原始记录。
+2. 新增 `ContextEngine` 接口：`estimate`、`should_compact`、`compact`、`assemble`、`restore`。
+3. 动态预算包含系统约束、最近消息、长期记忆、RAG evidence、工具 schema 和输出预留，不固定使用 30/70 比例。
+4. 两级触发：
+   - 主压缩阈值按真实 tokenizer/API usage 配置。
+   - 高水位安全阈值在下一次模型调用前强制处理，防止请求超限。
+5. 分层处理：
+   - 先把旧工具大输出替换为 artifact URI、摘要和 hash。
+   - 再对中间历史生成结构化交接摘要。
+   - 始终保留系统消息、首轮目标和最近完整消息。
+6. 摘要 Schema 至少包含目标、约束、已完成、进行中、关键决定、实体、文件/来源、错误、待办和原消息范围。
+7. 压缩失败必须回退主模型或保持原历史，禁止静默丢弃中间消息。
+8. 增加 user-visible context meter、压缩事件、压缩前后 token 和恢复入口。
+
+#### Benchmark
+
+- token 节省率。
+- 关键约束保留率。
+- 实体与未完成任务保留率。
+- 压缩前后回答一致性。
+- 多次重压缩后的信息衰减。
+- 工具调用配对正确率。
+
+#### 面试学习目标
+
+能够讲清楚“上下文窗口不等于长期记忆”、为什么先裁剪工具输出、为什么摘要必须可追溯，以及如何避免多次摘要造成信息漂移。
+
+### v4.3：可治理的长期 Memory Service
+
+#### 状态
+
+计划中。
+
+#### 目标
+
+把当前 JSON + Hash 召回升级为可审计、可冲突更新、可删除的跨会话记忆，同时与企业文档知识库严格分离。
+
+#### 数据分层
+
+1. Thread State：当前会话最近消息和任务状态。
+2. Semantic Memory：稳定用户事实、偏好和项目事实。
+3. Episodic Memory：过去任务、行动、结果和失败经验。
+4. Procedural Memory：Agent 规则、策略和可复用操作规范。
+5. Raw Session Archive：完整会话与工具事件，只用于恢复和按需历史搜索。
+6. Document Knowledge：企业文档 RAG，不能混入用户 Memory namespace。
+
+#### 实施任务
+
+1. 使用 Pydantic Schema 保存 memory type、subject、content、source_message_ids、confidence、importance、created/updated/valid/expired 时间和 ACL namespace。
+2. 写入分为候选提取、结构校验、去重、冲突检测和 upsert，不允许每轮聊天全部写成长期记忆。
+3. 热路径只保存明确偏好或下一轮立即需要的事实；其余候选异步整理，降低回答延迟。
+4. 召回采用 metadata/ACL 过滤、FTS/BM25、向量召回、时间/重要性加权和 RRF；支持 Agent 显式调用 `memory_search`。
+5. 参考 Hermes `session_search`，返回目标开头、命中附近窗口和最终结果，而不是把整段旧会话塞进 Prompt。
+6. 支持冲突事实失效而不是覆盖删除，保留变更历史；提供查看、编辑、删除、导出和关闭记忆功能。
+7. 在 Context compaction 前提取候选 memory，但由独立 Memory Policy 决定是否持久化。
+
+#### Benchmark
+
+- memory write precision、memory recall@K。
+- 过期事实误用率、跨用户泄漏率、重复率。
+- 有/无长期记忆的任务成功率与 token 差异。
+- 写入延迟、召回 P95 和后台整理吞吐。
+
+#### 面试学习目标
+
+能够解释 Semantic/Episodic/Procedural Memory 的区别、热路径与后台写入的取舍、记忆污染和时间冲突如何处理，以及为什么 Memory 不是简单向量库。
+
+### v4.4：LangGraph Conversation Runtime 与 STORM Tool 化
+
+#### 状态
+
+计划中。
+
+#### 目标
+
+不再从零编写第二套 Runtime。使用 LangGraph 管理可恢复状态图，保留 DSPy/STORM 作为深度调研子图或工具。
+
+#### 图节点
+
+```text
+classify/clarify
+  -> casual_chat
+  -> memory_recall
+  -> knowledge_retrieval
+  -> evidence_grade
+      -> answer_with_citations
+      -> deep_research_tool(STORM)
+      -> refuse_or_clarify
+  -> memory_candidate_write
+  -> final_trace
+```
+
+#### 实施任务
+
+- LangGraph Checkpointer 保存线程状态，Store 保存跨线程长期记忆。
+- Router 使用结构化输出；规则只用于安全约束和模型失败 fallback。
+- 每个节点定义输入输出 Schema、超时、重试、幂等键和 trace span。
+- STORM 继续负责多视角检索、大纲、文章生成和润色，不重写已有 DSPy pipeline。
+- 子调研任务使用隔离上下文，只向主图返回结构化结论、引用和 artifact URI。
+- AutoGen 只作为可选对照实验；只有 Benchmark 证明多 Agent Team 优于单图 Workflow 时才进入主链路。
+
+#### 面试学习目标
+
+能够解释为什么选择 LangGraph 而不是继续手写 Runtime，为什么不直接采用 AutoGen Team，以及如何把开源 Deep Research 系统包装成企业 Agent 的一个可恢复工具。
+
+### v4.5：生产治理与最终投递版
+
+#### 状态
+
+计划中。
+
+#### 目标
+
+补齐企业知识库 Agent 的权限、可靠性和数据指标，形成第三阶段最终演示版本。
+
+#### 实施任务
+
+- tenant/user/document/chunk 四级 namespace 与检索前 ACL 过滤。
+- 后台索引队列、增量更新、幂等、重试、熔断和失败任务恢复。
+- OpenTelemetry 风格 trace，串联 router、memory、retrieval、rerank、LLM 和 STORM tool。
+- 缓存 embedding、query rewrite、retrieval 和稳定答案，记录命中率及失效原因。
+- 压测并报告 P50/P95/P99、QPS、token、成本、错误率和降级路径。
+- 前端展示 Context、Memory、检索排名、Rerank 分数、引用、Trace 和 Benchmark 对比。
+
+#### 最终面试产物
+
+- 一张系统架构图。
+- 一张 RAG 消融实验表。
+- 一张 Memory/Context Benchmark 表。
+- 两个真实 bad case 的排查闭环。
+- 一段 5 分钟演示和一套 STAR 项目回答。
+
+## 14. 每次版本更新模板
 
 ```markdown
 ## vX.Y：版本名称
