@@ -12,3 +12,5 @@ litellm
 diskcache
 ddgs
 pypdf
+rank-bm25
+cryptography

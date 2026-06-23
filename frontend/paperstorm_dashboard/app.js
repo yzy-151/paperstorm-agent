@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v4.0";
+const DASHBOARD_VERSION = "v4.1";
 
 async function loadDashboard() {
   try {
@@ -29,6 +29,7 @@ function renderDashboard(data) {
   renderTaskError((data.tasks || [])[0] || {});
   renderStress(data.stress_report || {});
   renderRAGEvaluationV4(data.rag_evaluation_v4 || {});
+  renderRAGEvaluationV41(data.rag_evaluation_v41 || {});
 }
 
 async function runRAGEvaluationV4() {
@@ -60,6 +61,38 @@ async function loadRAGEvaluationV4() {
     setStatus(error.message, "error");
   } finally {
     setButtonBusy("load-rag-eval-v4", false);
+  }
+}
+
+async function runRAGEvaluationV41() {
+  try {
+    setStatus("running v4.1 retrieval ablation", "running");
+    setButtonBusy("run-rag-eval-v41", true, "八组实验运行中");
+    const report = await fetchJson("/evaluations/rag-v41", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({top_k: 5, backend: "deterministic"}),
+    });
+    renderRAGEvaluationV41(report);
+    setStatus(`v4.1 ablation completed: ${report.experiments?.length || 0} experiments`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("run-rag-eval-v41", false);
+  }
+}
+
+async function loadRAGEvaluationV41() {
+  try {
+    setStatus("loading latest v4.1 ablation", "loading");
+    setButtonBusy("load-rag-eval-v41", true, "加载中");
+    const report = await fetchJson("/evaluations/rag-v41/latest");
+    renderRAGEvaluationV41(report);
+    setStatus("latest v4.1 ablation loaded", Object.keys(report).length ? "success" : "idle");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("load-rag-eval-v41", false);
   }
 }
 
@@ -532,6 +565,28 @@ function renderRAGEvaluationV4(report) {
     : `<div class="item">尚未运行评测，或当前报告没有坏例。</div>`;
 }
 
+function renderRAGEvaluationV41(report) {
+  const experiments = report.experiments || [];
+  document.querySelector("#rag-eval-v41-table").innerHTML = experiments.length
+    ? experiments.map(item => `
+      <tr>
+        <td>${escapeHtml(item.experiment_id || "")}</td>
+        <td>${escapeHtml(item.metrics?.retrieval_recall_at_k ?? "")}</td>
+        <td>${escapeHtml(item.metrics?.mrr ?? "")}</td>
+        <td>${escapeHtml(item.metrics?.ndcg_at_k ?? "")}</td>
+        <td>${escapeHtml(item.metrics?.p95_latency_ms ?? "")}</td>
+      </tr>
+    `).join("")
+    : `<tr><td colspan="5">尚未运行 V4.1 消融实验。</td></tr>`;
+  document.querySelector("#rag-eval-v41-best").textContent = JSON.stringify({
+    best_by_recall: report.best_by_recall || null,
+    best_by_ndcg: report.best_by_ndcg || null,
+    dataset_version: report.dataset_version || null,
+  }, null, 2);
+  document.querySelector("#rag-eval-v41-notes").textContent =
+    JSON.stringify(report.notes || [], null, 2);
+}
+
 function renderResearchQA(answer) {
   document.querySelector("#research-answer").innerHTML = `
     <strong>Agent</strong>
@@ -837,5 +892,7 @@ document.querySelector("#list-enterprise-kb").addEventListener("click", listEnte
 document.querySelector("#ask-enterprise-kb").addEventListener("click", askEnterpriseKB);
 document.querySelector("#run-rag-eval-v4").addEventListener("click", runRAGEvaluationV4);
 document.querySelector("#load-rag-eval-v4").addEventListener("click", loadRAGEvaluationV4);
+document.querySelector("#run-rag-eval-v41").addEventListener("click", runRAGEvaluationV41);
+document.querySelector("#load-rag-eval-v41").addEventListener("click", loadRAGEvaluationV41);
 
 loadDashboard();

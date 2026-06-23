@@ -2050,7 +2050,7 @@ generation_miss:             10
 
 #### 状态
 
-计划中。
+已完成，版本分支：`version/v4.1`。
 
 #### 目标
 
@@ -2074,6 +2074,45 @@ generation_miss:             10
    - 索引只在文档更新时增量构建，查询不得重复建库。
    - 本地使用 FAISS/Qdrant 二选一，接口继续保持可替换。
 5. 生成真实 LLM grounded answer，并增加句子级 citation 校验，证据不足时拒答或触发深度调研。
+
+#### 已完成实现
+
+1. 新增 `paperstorm_retrieval_v41.py`：
+   - 使用 `rank-bm25` 的 BM25Okapi，不手写 BM25 公式。
+   - 中文 unigram/bigram 与英文术语、型号、数字混合分词。
+   - 真实 SentenceTransformers Dense Provider，默认采用 CPU 可运行的多语种 MiniLM。
+   - RRF、Cross-Encoder Top-N 重排及四种检索模式。
+   - 索引 manifest 保存模型名、维度、归一化方式和 Schema；加载不兼容时立即失败。
+2. 新增 `paperstorm_document_v41.py`：
+   - `pypdf` 页级解析，保留页码。
+   - ordinary、structured、contextual 三种 Chunk 契约。
+   - Chunk 保存 parent section、heading、token count 和稳定哈希 ID。
+3. 新增 `paperstorm_zotero.py`：
+   - 只读访问 Zotero SQLite 与 storage 附件。
+   - 题名去重、路径解析、PDF 分块和弱监督数据构造。
+   - 输出仅保留哈希文档 ID 和聚合指标，不进入 Git 的内容包括私人路径与论文全文。
+4. 新增八组消融 Runner、CLI、Service/API 和 Dashboard 对比表。
+5. 新增 12 个专项测试，覆盖分词、RRF、四种检索模式、Reranker、结构化 Chunk、索引兼容、Zotero 数据契约、消融、API 和 Dashboard。
+
+#### 实验结果
+
+种子集 100 Case：
+
+| 配置 | Recall@5 | MRR | nDCG@5 | P95 |
+| --- | ---: | ---: | ---: | ---: |
+| ordinary BM25 | 0.8750 | 0.8348 | 0.8447 | 90 ms |
+| ordinary Dense | 0.9750 | 0.9083 | 0.9253 | 128 ms |
+| ordinary RRF | 0.9875 | 0.8687 | 0.8986 | 69 ms |
+| contextual RRF + Cross-Encoder | 1.0000 | 0.9938 | 0.9954 | 476 ms |
+
+Zotero 论文弱标注集：5 篇论文前 5 页形成 68 个 Chunk、24 个 Case。ordinary BM25 Recall@5 为 `0.7500`，Dense 为 `0.7083`，RRF 为 `0.7083`，RRF+Cross-Encoder 为 `0.6250`。完整标题/章节/页码上下文使 Hybrid Recall@5 从 `0.7083` 提升到 `0.7500`、nDCG 从 `0.5588` 提升到 `0.6023`；Cross-Encoder 仍下降，CPU P95 在两种 Chunk 组约为 `3.26-11.12s`。该负结果说明弱监督题目偏向标题词命中，且单一原章节标签会把语义相关的相邻证据误判为错误。
+
+#### 未完成边界
+
+- 第 5 项“真实 LLM grounded generation 与句子级 citation Judge”没有在 v4.1 冒充完成，继续作为后续生成评测任务。
+- 当前 Contextual Chunk 是标题、章节和页码组成的确定性上下文，不是逐 Chunk 调用 LLM 生成的 contextual summary。
+- 真实论文集是弱监督管线验证集，不是专家双人标注 Golden Set；需人工审核后才可用于正式模型选型。
+- 当前索引持久化为可审计 JSON，尚未接入 Qdrant/FAISS 增量索引；该工程化工作留在 v4.5。
 
 #### 必做消融实验
 

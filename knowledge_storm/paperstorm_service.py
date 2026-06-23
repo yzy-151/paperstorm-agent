@@ -268,6 +268,48 @@ class PaperStormTaskService:
         path = self.root_dir / "evaluations" / "rag_v4_latest" / "rag_eval_v4_report.json"
         return _read_json(path, {})
 
+    def run_rag_evaluation_v41(self, top_k: int = 5, backend: str = "deterministic"):
+        from .paperstorm_ablation_v41 import run_ablation
+        from .paperstorm_eval_v4 import build_seed_dataset
+        from .paperstorm_rag import HashEmbeddingProvider
+        from .paperstorm_retrieval_v41 import (
+            SentenceTransformerProvider,
+            multilingual_tokenize,
+        )
+
+        if backend == "deterministic":
+            provider = HashEmbeddingProvider(dim=128)
+
+            def score_pairs(pairs):
+                scores = []
+                for query, document in pairs:
+                    query_terms = set(multilingual_tokenize(query))
+                    document_terms = set(multilingual_tokenize(document))
+                    scores.append(len(query_terms & document_terms) / max(1, len(query_terms)))
+                return scores
+
+        elif backend == "real":
+            provider = SentenceTransformerProvider()
+            score_pairs = None
+        else:
+            raise ValueError("backend must be 'deterministic' or 'real'")
+        return run_ablation(
+            build_seed_dataset(),
+            output_dir=self.root_dir / "evaluations" / "rag_v41_latest",
+            embedding_provider=provider,
+            reranker_score_fn=score_pairs,
+            top_k=top_k,
+        )
+
+    def get_rag_evaluation_v41(self):
+        path = (
+            self.root_dir
+            / "evaluations"
+            / "rag_v41_latest"
+            / "rag_eval_v41_ablation.json"
+        )
+        return _read_json(path, {})
+
     def get_trace(self, task_id: str):
         state = self._read_state(task_id)
         trace_path = Path(state["output_dir"]) / "paperstorm_trace.jsonl"
@@ -279,7 +321,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v4.0",
+                "version": "v4.1",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -290,6 +332,7 @@ class PaperStormTaskService:
             "process": self.get_process_artifacts(task_id),
             "pipeline_worker": _read_json(output_dir / "pipeline_worker.json", {}),
             "rag_evaluation_v4": self.get_rag_evaluation_v4(),
+            "rag_evaluation_v41": self.get_rag_evaluation_v41(),
             "service_snapshot": {
                 "task_id": task_id,
                 "output_dir": str(output_dir),

@@ -15,7 +15,7 @@
       </div>
       <div class="header-meta">
         <span>release</span>
-        <strong id="project-version">v4.0</strong>
+        <strong id="project-version">v4.1</strong>
       </div>
     </header>
 
@@ -332,6 +332,39 @@
         </div>
         <h3>Bad Cases</h3>
         <div id="rag-eval-v4-bad-cases" class="stack"></div>
+      </section>
+
+      <section class="panel wide" id="rag-eval-v41-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Retrieval Ablation</p>
+            <h2>RAG v4.1 Hybrid Retrieval 消融</h2>
+          </div>
+          <span class="soft-badge">BM25 / Dense / RRF / Cross-Encoder / Contextual Chunk</span>
+        </div>
+        <div class="button-row">
+          <button id="run-rag-eval-v41" type="button">运行八组 Smoke 实验</button>
+          <button id="load-rag-eval-v41" type="button">加载最近 V4.1 报告</button>
+        </div>
+        <p class="panel-copy">网页按钮使用确定性 Embedding 快速检查完整评测链路；真实多语种 Dense、Cross-Encoder 与 Zotero 论文实验请运行 V4.1 CLI，避免模型下载阻塞 Web 请求。</p>
+        <div class="table-scroll">
+          <table class="eval-table">
+            <thead>
+              <tr><th>实验</th><th>Recall@K</th><th>MRR</th><th>nDCG@K</th><th>P95 ms</th></tr>
+            </thead>
+            <tbody id="rag-eval-v41-table"></tbody>
+          </table>
+        </div>
+        <div class="qa-debug-grid">
+          <section class="debug-card">
+            <h3>最优配置</h3>
+            <pre id="rag-eval-v41-best"></pre>
+          </section>
+          <section class="debug-card">
+            <h3>实验边界</h3>
+            <pre id="rag-eval-v41-notes"></pre>
+          </section>
+        </div>
       </section>
 
       <section class="panel wide" id="article-panel">

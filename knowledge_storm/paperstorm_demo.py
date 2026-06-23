@@ -84,7 +84,7 @@ def build_demo_bundle(output_dir):
         data = {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v4.0",
+                "version": "v4.1",
                 "description": "RAG evaluation + Task-control + Memory + Multi-Agent dashboard demo",
             },
             "tasks": [task_state],

@@ -31,7 +31,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="4.0")
+    app = FastAPI(title="PaperStorm Agent Service", version="4.1")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -112,6 +112,10 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     class RAGEvaluationV4Request(BaseModel):
         top_k: int = Field(default=5, ge=1, le=20)
+
+    class RAGEvaluationV41Request(BaseModel):
+        top_k: int = Field(default=5, ge=1, le=20)
+        backend: str = "deterministic"
 
     @app.get("/")
     def get_dashboard_home():
@@ -237,6 +241,17 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.get("/evaluations/rag-v4/latest")
     def get_rag_evaluation_v4():
         return service.get_rag_evaluation_v4()
+
+    @app.post("/evaluations/rag-v41")
+    def run_rag_evaluation_v41(request: RAGEvaluationV41Request):
+        return service.run_rag_evaluation_v41(
+            top_k=request.top_k,
+            backend=request.backend,
+        )
+
+    @app.get("/evaluations/rag-v41/latest")
+    def get_rag_evaluation_v41():
+        return service.get_rag_evaluation_v41()
 
     @app.post("/research-agent/ask")
     def ask_research_agent(request: ResearchAgentAskRequest):

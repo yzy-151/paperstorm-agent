@@ -1126,3 +1126,54 @@ MRR 只关心第一个相关结果出现在哪里，适合“找到一个正确�
 - 当前回答器是 Top1 Chunk 确定性 baseline，不是完整 LLM grounded generation 评测。
 - 当前没有启用 LLM Judge，因此没有报告 faithfulness 和 answer relevance 分数。
 - 当前指标用于建立相对对照，不能与使用不同语料、不同 Case 定义的外部 Benchmark 直接比较。
+
+## 2026-08-01 实验记录：v4.1 真实 Hybrid Retrieval
+
+### 做了什么
+
+- 将检索拆为 BM25 精确召回、真实多语种 Dense 召回、RRF 排名融合、Cross-Encoder Top-N 重排四层。
+- 实现普通 Chunk 与带文档标题、章节、页码的 Contextual Chunk 对照。
+- 索引持久化模型名、Embedding 维度、归一化方式和 Schema，避免换模型后静默读取旧向量。
+- 只读接入 Zotero PDF，使用哈希文档 ID，私人路径、附件 key 和论文全文不提交 Git。
+- 在同一 100 条种子集上跑八组消融，又用 5 篇真实 PIM 论文前 5 页构造 68 Chunk、24 Case 弱标注集复测。
+
+### 为什么没有直接上 BGE-M3
+
+本机只有 CPU。BGE-M3 与 bge-reranker-v2-m3 更强但本地推理成本高，因此实验选择 `paraphrase-multilingual-MiniLM-L12-v2` 和多语种 mMARCO MiniLM Cross-Encoder，先验证系统设计与消融方法；Provider 接口保留模型替换能力。面试时应强调这是基于资源约束的工程决策，不应声称当前轻量模型等价于 BGE-M3。
+
+### 两组结果为什么相反
+
+种子集上，contextual Hybrid+Cross-Encoder Recall@5 达到 `1.0000`、nDCG@5 达到 `0.9954`，但 P95 为 `476ms`，明显慢于第一阶段召回。
+
+真实论文弱标注集上，BM25 Recall@5 `0.7500`；完整标题/章节/页码上下文使 Hybrid Recall@5 从 `0.7083` 提升到 `0.7500`、nDCG 从 `0.5588` 提升到 `0.6023`。Cross-Encoder 降到 `0.6250`，CPU P95 在不同分块组约为 `3.26-11.12s`。这不是简单说明 Reranker 更差，而是暴露了评测偏差：问题从标题和章节生成，天然偏爱词法命中；标签只认原章节，但 Reranker 可能把同论文中语义更完整的相邻段落排在前面。需要人工复核多相关 Chunk 后才能判断模型真实效果。
+
+### 面试推荐回答：为什么使用 RRF
+
+```text
+BM25 分数和 cosine similarity 的数值范围与分布不同，直接加权需要反复校准，并且换语料后容易失效。RRF 只根据候选在各自列表中的名次累加 1/(k+rank)，不要求原始分数同尺度。它能稳定融合精确术语召回和语义召回，但也可能牺牲单路第一名的位置，因此我同时看 Recall、MRR 和 nDCG，而不是只看一个指标。
+```
+
+### 面试推荐回答：Rerank 为什么更准又更慢
+
+```text
+第一阶段 Dense 分别编码 query 和文档，可以预计算文档向量；Cross-Encoder 把 query 与每个候选拼在一起联合编码，能建模更细的词间交互，但每次查询都要执行 N 次配对推理。我的 CPU 实验中，真实论文 Rerank P95 在不同分块组约为 3.26-11.12 秒，所以生产系统只对第一阶段 Top-N 使用，并需要控制 N、批处理、缓存和 GPU 推理。
+```
+
+### 面试推荐回答：Chunk 怎么选
+
+```text
+Chunk 太小会破坏定义、公式和实验结论的完整性，太大会引入噪声并降低定位精度。我保留页码、标题层级和 parent section，让小 Chunk 用于召回、父章节用于补全上下文；同时比较普通 Chunk 与 contextual header。实验显示结构上下文在受控种子集有效，但在标题驱动的弱标注论文集没有提升，所以 Chunk 策略必须在真实问题和人工相关性标签上验证，不能靠直觉决定。
+```
+
+### 这次可以写进简历的表述
+
+```text
+设计并实现论文 RAG 两阶段检索与评测链路，集成 BM25、多语种 Dense Retrieval、RRF 与 Cross-Encoder Rerank；构建 100 条可审计种子集及 Zotero 真实 PDF 弱监督集，在同数据集完成 8 组消融并按 Recall@5、MRR、nDCG、P95 与失败阶段归因。受控集 Recall@5 从 Hash 基线 0.3625 提升至 1.0000，同时识别真实论文弱标签偏差及 CPU Rerank P95 最高约 11.12s 的部署瓶颈。
+```
+
+### 还不能写的内容
+
+- 不能写“已完成生产级向量数据库”，当前仍是本地可审计索引。
+- 不能写“真实论文准确率 100%”，真实论文集合尚未人工审核。
+- 不能写“实现 Anthropic Contextual Retrieval”，当前实现的是确定性 metadata context，不是 LLM 逐块上下文生成。
+- 不能写“Reranker 一定提升效果”，真实弱标注集恰好证明了标签质量和域适配的重要性。

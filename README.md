@@ -337,6 +337,65 @@ generation_miss          10
 
 这些分数的价值是作为后续 `BM25 -> Dense -> RRF -> Cross-Encoder` 消融实验的起点，不代表生产效果。内置数据明确标记为 `synthetic_seed`；真实论文 Golden Set 仍需人工审核。没有配置 Judge 时，系统不会用关键词覆盖冒充 faithfulness 分数。
 
+## v4.1 真实 Hybrid Retrieval 与论文消融
+
+v4.1 将 v3.2 的词集合重叠、Hash Embedding 和规则重排替换为可插拔的两阶段检索实验链路：
+
+```text
+PDF page/heading metadata
+  -> ordinary / structured / contextual chunk
+  -> BM25 exact retrieval + multilingual Dense retrieval
+  -> Reciprocal Rank Fusion
+  -> Cross-Encoder rerank Top-N
+  -> Recall / MRR / nDCG / P95 / failure attribution
+```
+
+主要实现：
+
+- `rank-bm25` 的 BM25Okapi，分词器保留英文术语、型号、公式以及中文 unigram/bigram。
+- `SentenceTransformerProvider`，默认真实模型为 `paraphrase-multilingual-MiniLM-L12-v2`，索引记录模型名、维度和归一化方式。
+- RRF 只融合排名，不直接相加 BM25 与 cosine 两种不可校准分数。
+- `CrossEncoderReranker` 默认使用多语种 mMARCO MiniLM，只对第一阶段候选 Top-N 联合编码。
+- PDF Chunk 保留 `document_id`、`parent_id`、页码、标题层级、策略和 token 数。
+- Zotero 只读数据源：解析本地附件、按题名去重、使用哈希文档 ID，报告不保存私人路径或论文全文。
+- Dashboard 增加八组检索消融表；网页执行确定性 Smoke，真实模型实验使用 CLI。
+
+真实模型种子集实验（100 Case，CPU）：
+
+| 配置 | Recall@5 | MRR | nDCG@5 | P95 |
+| --- | ---: | ---: | ---: | ---: |
+| ordinary BM25 | 0.8750 | 0.8348 | 0.8447 | 90 ms |
+| ordinary Dense | 0.9750 | 0.9083 | 0.9253 | 128 ms |
+| ordinary BM25+Dense+RRF | 0.9875 | 0.8687 | 0.8986 | 69 ms |
+| contextual BM25+Dense+RRF+Cross-Encoder | **1.0000** | **0.9938** | **0.9954** | 476 ms |
+
+Zotero 真实论文弱标注实验包含 68 个 Chunk、24 个 Case。BM25 Recall@5 为 `0.7500`；Contextual Hybrid 将 ordinary Hybrid 的 Recall@5 从 `0.7083` 提升到 `0.7500`，nDCG 从 `0.5588` 提升到 `0.6023`。Cross-Encoder 没有提升且 CPU P95 在不同组达到约 `3.26-11.12s`。原因是问题由标题/章节自动构造，天然偏向精确匹配，而且弱标签只接受原章节；该集合用于验证真实 PDF 管线，不能代替领域专家审核的 Golden Set。
+
+运行真实种子集消融：
+
+```powershell
+$env:PAPERSTORM_MODEL_CACHE = "C:\Users\<用户名>\Desktop\codex\huggingface"
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_eval_v41.py `
+  --dataset seed `
+  --model-cache $env:PAPERSTORM_MODEL_CACHE `
+  --output-dir .\results\paperstorm_v41_seed_real
+```
+
+运行本地 Zotero 论文实验：
+
+```powershell
+$env:PAPERSTORM_ZOTERO_ROOT = "<你的 Zotero 数据目录>"
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_eval_v41.py `
+  --dataset zotero `
+  --zotero-root $env:PAPERSTORM_ZOTERO_ROOT `
+  --terms 无源互调 "passive intermodulation" `
+  --max-papers 5 --max-pages 5 --max-cases 24 `
+  --model-cache $env:PAPERSTORM_MODEL_CACHE `
+  --output-dir .\results\paperstorm_v41_zotero_real
+```
+
+首次运行会下载模型。真实论文集合采用弱监督标签并标记 `domain_review_required=true`；要得到可用于模型选型的结论，下一步应由领域人员复核问题、相关 Chunk 和多相关证据。
+
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
 ```text
@@ -920,6 +979,8 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
   tests.test_paperstorm_runtime `
   tests.test_paperstorm_memory_qa `
   tests.test_paperstorm_eval `
+  tests.test_paperstorm_eval_v4 `
+  tests.test_paperstorm_retrieval_v41 `
   tests.test_paperstorm_mcp_server `
   tests.test_paperstorm_logging `
   tests.test_paperstorm_retrievers `
@@ -963,8 +1024,8 @@ docs/VERSION_PLAN.md
 当前建议路线：
 
 - v3.2（已完成）：企业知识库 Agent 本地 baseline，打通文档建库、问答、引用、API 与 Dashboard。
-- v4.0（计划）：建立 RAG golden set、坏例工作台和检索/生成分层评测。
-- v4.1（计划）：真实 BM25 + Dense + RRF + Cross-Encoder，并评测 Contextual Chunk。
+- v4.0（已完成）：建立可审计种子集、坏例工作台和检索/生成分层评测。
+- v4.1（已完成）：真实 BM25 + Dense + RRF + Cross-Encoder、Contextual Chunk 和 Zotero 论文弱标注实验。
 - v4.2（计划）：参考 Claude/Hermes 重建可恢复 Context Engine 与分层压缩。
 - v4.3（计划）：实现可治理的跨会话长期 Memory Service。
 - v4.4（计划）：使用 LangGraph 编排聊天、知识库问答和 STORM 深度调研工具。
