@@ -396,6 +396,64 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
 
 首次运行会下载模型。真实论文集合采用弱监督标签并标记 `domain_review_required=true`；要得到可用于模型选型的结论，下一步应由领域人员复核问题、相关 Chunk 和多相关证据。
 
+## v4.2 可恢复 Context Engine
+
+v4.2 将聊天中的“最近 6 条消息 + 1200 字符截断”替换为 Token 驱动、append-only、可恢复的 Context Engine：
+
+```text
+raw message/tool event JSONL
+  -> estimate token usage
+  -> threshold / high-watermark decision
+  -> old tool output -> artifact URI + SHA256
+  -> structured handoff summary
+  -> dynamic context assembly
+  -> model/router input view
+  -> restore raw messages by compaction_id
+```
+
+核心能力：
+
+- `ContextEventStore` 追加保存原始消息、工具事件和压缩事件，压缩不修改源记录。
+- `ContextEngine` 提供 `estimate`、`should_compact`、`compact`、`assemble` 和 `restore`。
+- 输入预算动态容纳系统约束、结构化摘要、最近消息、Memory、RAG evidence 和 Tool Schema，并预留输出 token。
+- 超限前先将旧工具大输出替换为 `context://message/<id>#<hash>`，再压缩中间历史。
+- 交接摘要包含 goal、constraints、completed、in-progress、decisions、entities、sources、errors、todos 和 source message IDs。
+- 始终保留系统消息、首轮用户目标和最近完整消息；摘要失败时回退原始消息。
+- Chat API 支持查看 Context Meter、强制压缩和按 `compaction_id` 恢复。
+- Runtime Trace 记录压缩前后 token、artifact 数、validation 和 compaction ID。
+
+新增 API：
+
+```text
+GET  /chat/sessions/{chat_id}/context
+POST /chat/sessions/{chat_id}/context/compact
+POST /chat/sessions/{chat_id}/context/restore
+POST /evaluations/context-v42
+```
+
+Context Benchmark 首次结果：
+
+| 指标 | 结果 |
+| --- | ---: |
+| Before Tokens | 844 |
+| After Tokens | 286 |
+| Token Savings Rate | 0.6611 |
+| Constraint Retention | 1.0000 |
+| Entity Retention | 1.0000 |
+| Todo Retention | 1.0000 |
+| Repeated Compaction Retention | 1.0000 |
+| Tool Call Pairing | 1.0000 |
+| Exact Restore | 1.0000 |
+
+运行 Benchmark：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -c `
+  "from knowledge_storm.paperstorm_context_benchmark_v42 import run_context_benchmark; run_context_benchmark(r'results\paperstorm_context_v42')"
+```
+
+当前默认 token counter 是可注入的本地估算器，线上应替换为模型 tokenizer 或 API usage；默认摘要器是确定性结构化摘要，可注入 LLM。Benchmark 验证压缩、约束和恢复契约，不等价于 LLM 答案一致性评测。
+
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
 ```text
@@ -981,6 +1039,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
   tests.test_paperstorm_eval `
   tests.test_paperstorm_eval_v4 `
   tests.test_paperstorm_retrieval_v41 `
+  tests.test_paperstorm_context_v42 `
   tests.test_paperstorm_mcp_server `
   tests.test_paperstorm_logging `
   tests.test_paperstorm_retrievers `
@@ -1026,7 +1085,7 @@ docs/VERSION_PLAN.md
 - v3.2（已完成）：企业知识库 Agent 本地 baseline，打通文档建库、问答、引用、API 与 Dashboard。
 - v4.0（已完成）：建立可审计种子集、坏例工作台和检索/生成分层评测。
 - v4.1（已完成）：真实 BM25 + Dense + RRF + Cross-Encoder、Contextual Chunk 和 Zotero 论文弱标注实验。
-- v4.2（计划）：参考 Claude/Hermes 重建可恢复 Context Engine 与分层压缩。
+- v4.2（已完成）：可恢复 Context Engine、Token 动态预算、分层压缩、Context Meter 和恢复 Benchmark。
 - v4.3（计划）：实现可治理的跨会话长期 Memory Service。
 - v4.4（计划）：使用 LangGraph 编排聊天、知识库问答和 STORM 深度调研工具。
 - v4.5（计划）：补齐 ACL、增量索引、可靠性、可观测、压测和最终面试演示。

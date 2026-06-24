@@ -15,7 +15,7 @@
       </div>
       <div class="header-meta">
         <span>release</span>
-        <strong id="project-version">v4.1</strong>
+        <strong id="project-version">v4.2</strong>
       </div>
     </header>
 
@@ -204,7 +204,18 @@
               Chat Session ID
               <input id="chat-session-id" placeholder="新建后自动填入" />
             </label>
+            <label>
+              Context Token Limit
+              <input id="chat-context-token-limit" type="number" min="128" value="4096" />
+            </label>
             <button id="create-chat-session" type="button">新建聊天</button>
+            <button id="refresh-chat-context" type="button">刷新上下文状态</button>
+            <button id="compact-chat-context" type="button">强制压缩</button>
+            <label>
+              Compaction ID
+              <input id="chat-compaction-id" placeholder="压缩后自动填入" />
+            </label>
+            <button id="restore-chat-context" type="button">恢复原始视图</button>
             <div class="chat-hint">
               <strong>执行逻辑</strong>
               <p>直接提问即可。已有任务足够时复用知识库；证据不足或没有任务时自动触发调研，再带引用回答。</p>
@@ -242,6 +253,17 @@
             <section class="debug-card">
               <h3>Compressed Context</h3>
               <pre id="chat-compressed-context"></pre>
+            </section>
+            <section class="debug-card">
+              <h3>Context Meter</h3>
+              <div class="context-meter" id="context-meter">
+                <div class="context-meter-track"><span id="context-meter-fill"></span></div>
+                <pre id="chat-context-meter"></pre>
+              </div>
+            </section>
+            <section class="debug-card">
+              <h3>Compaction Events</h3>
+              <pre id="chat-context-events"></pre>
             </section>
             <section class="debug-card">
               <h3>Memory Context</h3>
@@ -365,6 +387,22 @@
             <pre id="rag-eval-v41-notes"></pre>
           </section>
         </div>
+      </section>
+
+      <section class="panel wide" id="context-v42-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Context Engine Evaluation</p>
+            <h2>Context v4.2 可恢复压缩 Benchmark</h2>
+          </div>
+          <span class="soft-badge">append-only / token budget / artifact / restore</span>
+        </div>
+        <div class="button-row">
+          <button id="run-context-v42-benchmark" type="button">运行 Context Benchmark</button>
+        </div>
+        <p class="panel-copy">评估 token 节省率、约束/实体/待办保留率、工具调用配对和原始消息精确恢复。摘要是派生视图，原始 JSONL 事件不会被覆盖。</p>
+        <div id="context-v42-metrics" class="metric-grid"></div>
+        <pre id="context-v42-summary"></pre>
       </section>
 
       <section class="panel wide" id="article-panel">

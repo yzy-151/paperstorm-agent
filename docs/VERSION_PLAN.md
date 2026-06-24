@@ -2132,7 +2132,7 @@ BM25 + Dense + RRF + Cross-Encoder
 
 #### 状态
 
-计划中。
+已完成，版本分支：`version/v4.2`。
 
 #### 目标
 
@@ -2162,6 +2162,47 @@ BM25 + Dense + RRF + Cross-Encoder
 - 压缩前后回答一致性。
 - 多次重压缩后的信息衰减。
 - 工具调用配对正确率。
+
+#### 已完成实现
+
+1. 新增 `paperstorm_context_v42.py`：
+   - `ContextEventStore` 使用 JSONL append-only 保存消息、工具和压缩事件。
+   - `ContextEngine` 实现 `estimate`、`should_compact`、`compact`、`assemble`、`restore` 和 `inspect`。
+   - 主阈值与 high watermark 分离，输入上限扣除 output reserve。
+   - 系统消息、首轮目标和最近消息为不可丢弃核心；其余历史形成派生 handoff summary。
+2. 分层压缩：
+   - 旧工具大输出先替换为带 SHA256 的 artifact URI，原文仍留在 append-only event store。
+   - 摘要 Schema 保存目标、约束、完成项、进行中、决定、实体、来源、错误、待办和 source message IDs。
+   - summarizer 异常时返回 `fallback_original`，不写入损坏摘要、不丢弃原消息。
+3. 动态组装：
+   - 按实际剩余预算依次容纳 core context、Memory、RAG evidence 和 Tool Schema，不使用固定 30/70 比例。
+   - Token counter 与 summarizer 均可注入，便于线上接模型 tokenizer/API usage 和 LLM summary。
+4. Chat、Service、API 与 Runtime：
+   - 每条聊天消息写入 `<chat_id>.context.jsonl`，Router 使用预算组装后的上下文视图。
+   - 增加 Context 状态、强制压缩和恢复 API。
+   - Runtime Hook 记录 before/after tokens、artifact count、compaction ID 和 validation。
+5. Dashboard：
+   - 增加 Token Limit、Context Meter、压缩事件、Compaction ID、强制压缩、恢复和 Benchmark 控件。
+6. 新增 8 个 V4.2 专项测试，并保持既有 Chat、Memory 和 Runtime 测试兼容。
+
+#### 首次 Benchmark
+
+| 指标 | 结果 |
+| --- | ---: |
+| Before / After Tokens | 844 / 286 |
+| Token Savings Rate | 0.6611 |
+| Constraint / Entity / Todo Retention | 1.0000 / 1.0000 / 1.0000 |
+| Repeated Compaction Retention | 1.0000 |
+| Tool Call Pairing Rate | 1.0000 |
+| Exact Restore | 1.0000 |
+
+#### 未完成边界
+
+- 默认 token counter 是本地可复现估算器，不是某个线上模型的精确 tokenizer；生产部署必须注入模型 tokenizer 或使用 API usage。
+- 默认 summarizer 是确定性结构化提取，可注入 LLM，但本版本没有用外部模型成本换取摘要质量。
+- 当前 Benchmark 评价关键字段保留和 exact restore，尚未配置 Judge 评估压缩前后 LLM 回答语义一致性。
+- 多次压缩保留率使用受控关键项验证，仍需真实长会话、人审 Case 和多轮信息衰减实验。
+- V4.2 只解决 Thread Context；跨会话长期事实的写入策略、冲突、删除和 ACL 属于 V4.3 Memory Service。
 
 #### 面试学习目标
 

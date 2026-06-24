@@ -1177,3 +1177,53 @@ Chunk 太小会破坏定义、公式和实验结论的完整性，太大会引�
 - 不能写“真实论文准确率 100%”，真实论文集合尚未人工审核。
 - 不能写“实现 Anthropic Contextual Retrieval”，当前实现的是确定性 metadata context，不是 LLM 逐块上下文生成。
 - 不能写“Reranker 一定提升效果”，真实弱标注集恰好证明了标签质量和域适配的重要性。
+
+## 2026-08-01 实验记录：v4.2 可恢复 Context Engine
+
+### 从什么问题出发
+
+旧聊天只保留最近 6 条消息，并按 1200 字符截断摘要。它没有真实 token 预算、原消息范围、工具输出治理、恢复入口和多次压缩衰减指标。长对话一旦摘要错误，无法证明哪些信息被丢失，也无法恢复。
+
+### 做了什么
+
+- 使用 append-only JSONL 保存原始消息、工具事件和压缩事件；压缩结果只是派生视图。
+- 实现 Token 估算、双阈值触发、输出预留和动态 section allocation。
+- 先将旧工具大输出变成带 hash 的 artifact URI，再压缩中间历史。
+- handoff summary 保存目标、约束、完成项、进行中、关键决定、实体、来源、错误、待办和原消息 ID。
+- 系统消息、首轮目标和最近完整消息始终保留；summarizer 失败回退原历史。
+- Chat Router 实际使用组装后的上下文；API 和 Dashboard 支持查看、压缩和恢复。
+- Runtime Hook 输出 before/after token、artifact count、validation 和 compaction ID。
+
+### 实验数据
+
+受控长上下文从 `844` token 压缩到 `286` token，节省率 `66.11%`。约束、实体、待办、多次压缩关键项、工具调用配对和 exact restore 均为 `1.0`。第二次在同一输出目录运行曾出现 restore 混入上一 Run 消息的问题，最终通过 benchmark run isolation 修复并增加重复运行测试。
+
+### 面试推荐回答：上下文窗口和长期记忆有什么区别
+
+```text
+上下文窗口是单次模型调用能看到的工作集，受 token 上限约束；长期记忆是跨调用或跨会话持久化的信息，需要写入策略、检索、冲突和删除治理。我的 V4.2 Context Engine 保留 append-only 原始会话，通过压缩生成可恢复的调用视图，但不会把每条聊天都写成长期事实。长期 Memory Policy 放在 V4.3 独立实现。
+```
+
+### 面试推荐回答：为什么先处理工具输出
+
+```text
+工具结果通常是上下文中最大、重复度最高的部分，例如搜索 JSON、网页正文和日志。先把旧工具输出替换成 artifact URI、摘要和 hash，可以在不丢失可恢复性的前提下快速释放 token，再对中间对话做结构化摘要。这样比直接总结整段历史更便宜，也减少大段噪声干扰摘要模型。
+```
+
+### 面试推荐回答：如何防止摘要信息漂移
+
+```text
+我不覆盖原消息，而是保存 source message IDs 和 compaction event；摘要使用固定 Schema，压缩后验证目标和约束，失败则回退原历史。系统消息、首轮目标和最近完整消息不进入可丢弃区。Benchmark 同时测多次压缩关键项保留率和 exact restore。生产环境还应加入模型 tokenizer、真实长会话 Golden Set 和 LLM Judge/人工复核，测语义一致性而不只测关键词。
+```
+
+### 简历可用表述
+
+```text
+设计可恢复的 Agent Context Engine，采用 append-only 会话事件、双阈值 Token 预算、工具输出 artifact 化和结构化 handoff summary；打通 Chat Router、Runtime Hook、FastAPI 与可视化 Context Meter，并支持按 compaction_id 精确恢复。受控 Benchmark 将上下文从 844 tokens 压缩至 286 tokens，节省 66.11%，约束/实体/待办保留、工具配对与恢复正确率均为 100%。
+```
+
+### 不能夸大的边界
+
+- 默认使用本地 token 估算器，不应写成“所有模型 token 计算完全精确”。
+- 受控关键项保留率不等价于真实回答质量或语义一致性。
+- 这是 Thread Context Engine，不是已经完成可治理长期 Memory Service。

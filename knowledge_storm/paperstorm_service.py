@@ -321,7 +321,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v4.1",
+                "version": "v4.2",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -427,6 +427,7 @@ class PaperStormTaskService:
         expected_keywords: Optional[List[str]] = None,
         forbidden_keywords: Optional[List[str]] = None,
         context_window_size: int = 6,
+        context_token_limit: int = 4096,
         **options,
     ):
         from .paperstorm_chat_agent import PaperStormChatAgent
@@ -440,6 +441,7 @@ class PaperStormTaskService:
             expected_keywords=expected_keywords,
             forbidden_keywords=forbidden_keywords,
             context_window_size=context_window_size,
+            context_token_limit=context_token_limit,
             **options,
         )
 
@@ -452,6 +454,28 @@ class PaperStormTaskService:
         from .paperstorm_chat_agent import PaperStormChatAgent
 
         return PaperStormChatAgent(self).send_message(chat_id, message)
+
+    def get_chat_context(self, chat_id: str):
+        from .paperstorm_chat_agent import PaperStormChatAgent
+
+        return PaperStormChatAgent(self).get_context(chat_id)
+
+    def compact_chat_context(self, chat_id: str, force: bool = True):
+        from .paperstorm_chat_agent import PaperStormChatAgent
+
+        return PaperStormChatAgent(self).compact_context(chat_id, force=force)
+
+    def restore_chat_context(self, chat_id: str, compaction_id: str):
+        from .paperstorm_chat_agent import PaperStormChatAgent
+
+        return PaperStormChatAgent(self).restore_context(chat_id, compaction_id)
+
+    def run_context_benchmark_v42(self):
+        from .paperstorm_context_benchmark_v42 import run_context_benchmark
+
+        return run_context_benchmark(
+            self.root_dir / "evaluations" / "context_v42_latest"
+        )
 
     def _run_fake_research(self, state: Dict):
         output_dir = Path(state["output_dir"])

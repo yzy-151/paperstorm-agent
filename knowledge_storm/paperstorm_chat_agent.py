@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .paperstorm_context_v42 import ContextEngine, ContextEngineConfig, ContextEventStore
 from .paperstorm_intent_router import PaperStormIntentRouter
-from .paperstorm_memory import PaperStormMemoryStore, compress_context
+from .paperstorm_memory import PaperStormMemoryStore
 
 
 class PaperStormChatAgent:
@@ -27,6 +28,7 @@ class PaperStormChatAgent:
         expected_keywords: Optional[List[str]] = None,
         forbidden_keywords: Optional[List[str]] = None,
         context_window_size: int = 6,
+        context_token_limit: int = 4096,
         **options,
     ) -> Dict:
         chat_id = uuid.uuid4().hex
@@ -40,9 +42,14 @@ class PaperStormChatAgent:
             "expected_keywords": expected_keywords or [],
             "forbidden_keywords": forbidden_keywords or [],
             "context_window_size": max(2, int(context_window_size or 6)),
+            "context_config": _context_config(context_token_limit, context_window_size),
             "task_id": options.pop("task_id", "") or "",
             "messages": [],
             "compressed_context": {},
+            "context_view": [],
+            "context_meter": {},
+            "context_events": [],
+            "active_compaction_id": "",
             "memory_context": {},
             "created_at": _now(),
             "updated_at": _now(),
@@ -60,23 +67,22 @@ class PaperStormChatAgent:
             raise ValueError("message is required")
 
         session = self._read_session(chat_id)
-        previous_summary = (session.get("compressed_context") or {}).get("summary", "")
+        engine = self._context_engine(session)
+        self._sync_event_store(session, engine.store)
         user_message = _message("user", message)
         session["messages"].append(user_message)
+        engine.store.append_message(user_message)
         context_window = self._context_window(session)
         memory = self._build_memory(session, message)
-        context_keywords = _context_keywords(session, message)
-        compressed = compress_context(
-            _with_previous_summary(context_window, previous_summary),
-            expected_keywords=context_keywords,
-            forbidden_keywords=session.get("forbidden_keywords") or [],
-            max_chars=1200,
+        routed_context = ContextEngine(config=engine.config).assemble(
+            session["messages"],
+            memory=_memory_messages(memory.get_context_bundle(query=message, max_items=5)),
         )
 
         router_decision = self.intent_router.route(
             message=message,
             session=session,
-            context_window=context_window,
+            context_window=routed_context["messages"],
             memory_context=memory.get_context_bundle(query=message, max_items=5),
         )
         answer = self._answer_message(session, message, router_decision)
@@ -95,13 +101,29 @@ class PaperStormChatAgent:
             },
         )
         session["messages"].append(assistant_message)
+        engine.store.append_message(assistant_message)
         context_window = self._context_window(session)
-        compressed = compress_context(
-            _with_previous_summary(context_window, previous_summary),
-            expected_keywords=context_keywords,
-            forbidden_keywords=session.get("forbidden_keywords") or [],
-            max_chars=1200,
+        constraints = _context_keywords(session, message) + list(
+            session.get("forbidden_keywords") or []
         )
+        compaction = engine.compact(
+            session["messages"],
+            expected_constraints=constraints,
+        )
+        if compaction["status"] == "not_needed":
+            preview_engine = ContextEngine(config=engine.config)
+            preview = preview_engine.compact(
+                session["messages"],
+                expected_constraints=constraints,
+                force=True,
+            )
+            compacted_view = list(session["messages"])
+            compressed = _compressed_payload(preview, status="live_preview")
+        else:
+            compacted_view = compaction["messages"]
+            compressed = _compressed_payload(compaction)
+            if compaction.get("compaction_id"):
+                session["active_compaction_id"] = compaction["compaction_id"]
         memory.append_working(
             "User asked: {0}\nAgent answered: {1}".format(
                 message,
@@ -114,7 +136,18 @@ class PaperStormChatAgent:
             },
         )
         memory_context = memory.get_context_bundle(query=message, max_items=5)
+        assembled_view = ContextEngine(config=engine.config).assemble(
+            compacted_view,
+            memory=_memory_messages(memory_context),
+        )
+        context_view = assembled_view["messages"]
         session["compressed_context"] = compressed
+        session["context_view"] = context_view
+        inspection = engine.inspect(session["messages"])
+        session["context_meter"] = _active_context_meter(
+            inspection["context_meter"], assembled_view["meter"]
+        )
+        session["context_events"] = inspection["events"]
         session["memory_context"] = memory_context
         session["updated_at"] = _now()
         self._write_session(session)
@@ -127,6 +160,9 @@ class PaperStormChatAgent:
             "messages": session["messages"],
             "context_window": context_window,
             "compressed_context": compressed,
+            "context_view": context_view,
+            "context_meter": session["context_meter"],
+            "context_events": session["context_events"],
             "memory_context": memory_context,
             "retrieval_triggered": answer.get("retrieval_triggered", False),
             "used_task_id": session.get("task_id", ""),
@@ -134,6 +170,61 @@ class PaperStormChatAgent:
             "tool_decision": _tool_decision(router_decision, answer),
             "research_answer": answer,
         }
+
+    def get_context(self, chat_id: str):
+        session = self._read_session(chat_id)
+        engine = self._context_engine(session)
+        self._sync_event_store(session, engine.store)
+        inspection = engine.inspect(session.get("messages") or [])
+        return dict(
+            inspection,
+            chat_id=chat_id,
+            context_meter=session.get("context_meter") or inspection["context_meter"],
+            active_compaction_id=session.get("active_compaction_id", ""),
+            context_view=session.get("context_view") or session.get("messages") or [],
+            compressed_context=session.get("compressed_context") or {},
+        )
+
+    def compact_context(self, chat_id: str, force: bool = True):
+        session = self._read_session(chat_id)
+        engine = self._context_engine(session)
+        self._sync_event_store(session, engine.store)
+        constraints = list(session.get("expected_keywords") or []) + list(
+            session.get("forbidden_keywords") or []
+        )
+        result = engine.compact(
+            session.get("messages") or [],
+            expected_constraints=constraints,
+            force=force,
+        )
+        assembled = ContextEngine(config=engine.config).assemble(result["messages"])
+        session["context_view"] = assembled["messages"]
+        session["compressed_context"] = _compressed_payload(result)
+        session["active_compaction_id"] = result.get("compaction_id") or ""
+        inspection = engine.inspect(session.get("messages") or [])
+        session["context_meter"] = _active_context_meter(
+            inspection["context_meter"], assembled["meter"]
+        )
+        session["context_events"] = inspection["events"]
+        session["updated_at"] = _now()
+        self._write_session(session)
+        return dict(result, chat_id=chat_id, context_meter=session["context_meter"])
+
+    def restore_context(self, chat_id: str, compaction_id: str):
+        session = self._read_session(chat_id)
+        engine = self._context_engine(session)
+        restored = engine.restore(compaction_id)
+        session["context_view"] = restored["messages"]
+        session["active_compaction_id"] = ""
+        session["compressed_context"] = {
+            "status": "restored",
+            "summary": "",
+            "restored_from": compaction_id,
+            "source_event_count": len(restored["messages"]),
+        }
+        session["updated_at"] = _now()
+        self._write_session(session)
+        return dict(restored, chat_id=chat_id, raw_messages_unchanged=True)
 
     def _context_window(self, session: Dict) -> List[Dict]:
         size = max(2, int(session.get("context_window_size") or 6))
@@ -228,6 +319,22 @@ class PaperStormChatAgent:
             encoding="utf-8",
         )
 
+    def _context_engine(self, session: Dict):
+        config = ContextEngineConfig(**(session.get("context_config") or _context_config(4096, 6)))
+        return ContextEngine(config=config, store=self._event_store(session["chat_id"]))
+
+    def _event_store(self, chat_id: str):
+        return ContextEventStore(self.chat_dir / "{0}.context.jsonl".format(chat_id))
+
+    @staticmethod
+    def _sync_event_store(session: Dict, store: ContextEventStore):
+        recorded = {
+            str(item.get("message", {}).get("id") or "") for item in store.message_events()
+        }
+        for message in session.get("messages") or []:
+            if str(message.get("id") or "") not in recorded:
+                store.append_message(message)
+
 
 def _message(role: str, content: str, metadata: Optional[Dict] = None):
     return {
@@ -237,17 +344,6 @@ def _message(role: str, content: str, metadata: Optional[Dict] = None):
         "metadata": metadata or {},
         "created_at": _now(),
     }
-
-
-def _with_previous_summary(messages: List[Dict], previous_summary: str):
-    if not previous_summary:
-        return messages
-    return [
-        {
-            "role": "system",
-            "content": "上一轮压缩上下文：{0}".format(previous_summary),
-        }
-    ] + list(messages)
 
 
 def _context_keywords(session: Dict, message: str):
@@ -262,6 +358,75 @@ def _context_keywords(session: Dict, message: str):
     return keywords
 
 
+def _context_config(total_tokens: int, recent_message_count: int):
+    total_tokens = max(128, int(total_tokens or 4096))
+    return {
+        "total_tokens": total_tokens,
+        "output_reserve_tokens": min(768, max(32, total_tokens // 5)),
+        "compact_threshold_ratio": 0.72,
+        "high_watermark_ratio": 0.9,
+        "recent_message_count": max(2, int(recent_message_count or 6)),
+        "tool_inline_token_limit": 180,
+    }
+
+
+def _compressed_payload(result: Dict, status: Optional[str] = None):
+    return {
+        "status": status or result.get("status", ""),
+        "compaction_id": result.get("compaction_id", ""),
+        "summary": result.get("summary_text") or "",
+        "handoff": result.get("summary") or {},
+        "artifact_refs": result.get("artifact_refs") or [],
+        "before_tokens": result.get("before_tokens", 0),
+        "after_tokens": result.get("after_tokens", 0),
+        "validation": result.get("validation") or {},
+        "source_event_count": len(result.get("source_event_ids") or []),
+    }
+
+
+def _memory_messages(bundle: Dict):
+    messages = []
+    for layer in ["semantic", "episodic", "working"]:
+        records = bundle.get(layer) or []
+        if records:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "{0} memory: {1}".format(
+                        layer,
+                        " | ".join(str(item.get("content") or "") for item in records),
+                    ),
+                }
+            )
+    if bundle.get("preferences"):
+        messages.append(
+            {
+                "role": "system",
+                "content": "User preferences: {0}".format(
+                    json.dumps(bundle["preferences"], ensure_ascii=False)
+                ),
+            }
+        )
+    return messages
+
+
+def _active_context_meter(raw_meter: Dict, active_meter: Dict):
+    input_limit = int(active_meter.get("input_limit_tokens") or 1)
+    active_tokens = int(active_meter.get("input_tokens") or 0)
+    active_ratio = round(active_tokens / max(1, input_limit), 4)
+    return dict(
+        active_meter,
+        usage_ratio=active_ratio,
+        high_watermark=active_ratio >= 0.9,
+        should_compact=active_ratio >= 0.72,
+        raw_should_compact=bool(raw_meter.get("should_compact")),
+        raw_input_tokens=raw_meter.get("input_tokens", 0),
+        raw_usage_ratio=raw_meter.get("usage_ratio", 0.0),
+        raw_high_watermark=raw_meter.get("high_watermark", False),
+        reason=raw_meter.get("reason", ""),
+    )
+
+
 def _casual_chat_answer(message: str, router_decision: Optional[Dict] = None):
     text = str(message or "").lower()
     if "模型" in text or "你是谁" in text or "身份" in text:
@@ -272,10 +437,10 @@ def _casual_chat_answer(message: str, router_decision: Optional[Dict] = None):
         )
     elif "上下文" in text or "压缩" in text or "记忆" in text:
         answer = (
-            "当前聊天会保留最近 6 条消息作为短期 context_window。超过窗口后，系统会把上一轮摘要、"
-            "最近消息、expected keywords 和 forbidden keywords 送入规则版 compress_context，"
-            "保留命中关键词或约束的句子，生成 compressed_context。记忆分 working、episodic、"
-            "semantic 和 preferences，当前以本地 JSON/文本 baseline 存储。"
+            "V4.2 使用 Token 驱动的可恢复 Context Engine。原始消息按 append-only JSONL 保存，"
+            "达到阈值后先把旧工具大输出替换为 artifact 引用，再生成包含目标、约束、决定、实体、"
+            "来源、错误和待办的结构化交接摘要；系统消息、首轮目标和最近完整消息始终保留。"
+            "Dashboard 可以查看 Context Meter、压缩事件，并按 compaction_id 恢复原始消息视图。"
         )
     elif "网页" in text or "界面" in text or "按钮" in text or "使用" in text or "端口" in text:
         answer = (

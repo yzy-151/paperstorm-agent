@@ -31,7 +31,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="4.1")
+    app = FastAPI(title="PaperStorm Agent Service", version="4.2")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -93,9 +93,16 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         expected_keywords: list[str] = []
         forbidden_keywords: list[str] = []
         context_window_size: int = 6
+        context_token_limit: int = Field(default=4096, ge=128, le=200000)
 
     class ChatMessageRequest(BaseModel):
         message: str
+
+    class CompactContextRequest(BaseModel):
+        force: bool = True
+
+    class RestoreContextRequest(BaseModel):
+        compaction_id: str
 
     class EnterpriseKnowledgeBaseCreateRequest(BaseModel):
         name: str = "Enterprise Knowledge Base"
@@ -271,6 +278,22 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
             chat_id,
             message=request.message,
         )
+
+    @app.get("/chat/sessions/{chat_id}/context")
+    def get_chat_context(chat_id: str):
+        return service.get_chat_context(chat_id)
+
+    @app.post("/chat/sessions/{chat_id}/context/compact")
+    def compact_chat_context(chat_id: str, request: CompactContextRequest):
+        return service.compact_chat_context(chat_id, force=request.force)
+
+    @app.post("/chat/sessions/{chat_id}/context/restore")
+    def restore_chat_context(chat_id: str, request: RestoreContextRequest):
+        return service.restore_chat_context(chat_id, request.compaction_id)
+
+    @app.post("/evaluations/context-v42")
+    def run_context_benchmark_v42():
+        return service.run_context_benchmark_v42()
 
     return app
 

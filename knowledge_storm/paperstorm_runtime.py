@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from .paperstorm_memory import PaperStormMemoryStore, compress_context
+from .paperstorm_context_v42 import ContextEngine
+from .paperstorm_memory import PaperStormMemoryStore
 
 
 @dataclass
@@ -110,6 +111,7 @@ class PaperStormRuntimeSession:
         memory: Optional[PaperStormMemoryStore] = None,
         hooks: Optional[HookManager] = None,
         registry: Optional[ToolRegistry] = None,
+        context_engine: Optional[ContextEngine] = None,
     ):
         self.run_id = run_id
         self.task_id = task_id or run_id
@@ -118,6 +120,7 @@ class PaperStormRuntimeSession:
         self.memory = memory or PaperStormMemoryStore()
         self.hooks = hooks or HookManager()
         self.registry = registry or ToolRegistry()
+        self.context_engine = context_engine or ContextEngine()
         self.tools = self.registry._tools
 
     def register_tool(self, tool):
@@ -138,6 +141,8 @@ class PaperStormRuntimeSession:
         )
         self.hooks.emit("before_tool_call", start_event)
         self.record_event(start_event)
+        if self.context_engine.store is not None:
+            self.context_engine.store.append_tool_event(start_event.to_trace_record())
         self.memory.append_working(
             "tool_call {0}: {1}".format(
                 name, json.dumps(_redact_arguments(arguments or {}), ensure_ascii=False)
@@ -159,6 +164,8 @@ class PaperStormRuntimeSession:
             )
             self.hooks.emit("on_tool_error", error_event)
             self.record_event(error_event)
+            if self.context_engine.store is not None:
+                self.context_engine.store.append_tool_event(error_event.to_trace_record())
             raise
         end_event = RuntimeEvent(
             event="tool_end",
@@ -172,6 +179,8 @@ class PaperStormRuntimeSession:
         )
         self.hooks.emit("after_tool_call", end_event)
         self.record_event(end_event)
+        if self.context_engine.store is not None:
+            self.context_engine.store.append_tool_event(end_event.to_trace_record())
         return result
 
     def compress_context(
@@ -182,11 +191,34 @@ class PaperStormRuntimeSession:
         max_chars: int = 1200,
     ):
         start = time.time()
-        result = compress_context(
-            messages,
-            expected_keywords=expected_keywords,
-            forbidden_keywords=forbidden_keywords,
-            max_chars=max_chars,
+        raw_result = self.context_engine.compact(
+            list(messages or []),
+            expected_constraints=list(expected_keywords or []),
+            force=True,
+        )
+        summary_text = raw_result.get("summary_text") or ""
+        expected_hits = [
+            item for item in (expected_keywords or []) if item.lower() in summary_text.lower()
+        ]
+        forbidden_hits = [
+            item for item in (forbidden_keywords or []) if item.lower() in summary_text.lower()
+        ]
+        result = dict(
+            raw_result,
+            handoff=raw_result.get("summary") or {},
+            summary=summary_text,
+            constraints={
+                "expected_keywords": expected_keywords or [],
+                "forbidden_keywords": forbidden_keywords or [],
+                "legacy_max_chars": max_chars,
+            },
+            validation={
+                "expected_keyword_hits": expected_hits,
+                "forbidden_keyword_hits": forbidden_hits,
+                "passed": len(expected_hits) == len(expected_keywords or [])
+                and not forbidden_hits
+                and raw_result.get("status") != "fallback_original",
+            },
         )
         event = RuntimeEvent(
             event="context_compress",
@@ -198,6 +230,10 @@ class PaperStormRuntimeSession:
             input_summary={"message_count": len(list(messages or []))},
             output_summary={
                 "summary_chars": len(result.get("summary", "")),
+                "before_tokens": result.get("before_tokens", 0),
+                "after_tokens": result.get("after_tokens", 0),
+                "artifact_count": len(result.get("artifact_refs") or []),
+                "compaction_id": result.get("compaction_id", ""),
                 "validation": result.get("validation", {}),
             },
         )

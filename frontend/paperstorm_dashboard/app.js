@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v4.1";
+const DASHBOARD_VERSION = "v4.2";
 
 async function loadDashboard() {
   try {
@@ -285,6 +285,7 @@ async function createChatSession() {
     expected_keywords: splitKeywords(document.querySelector("#task-expected-keyword").value),
     forbidden_keywords: splitKeywords(document.querySelector("#task-forbidden-keyword").value),
     context_window_size: 6,
+    context_token_limit: Number(document.querySelector("#chat-context-token-limit").value) || 4096,
   };
   try {
     setDashboardMode("chat");
@@ -340,6 +341,99 @@ async function sendChatMessage() {
     appendChatMessage({role: "assistant", content: error.message});
   } finally {
     setButtonBusy("send-chat-message", false);
+  }
+}
+
+async function loadChatContext() {
+  const chatId = document.querySelector("#chat-session-id").value.trim();
+  if (!chatId) {
+    setStatus("请先创建聊天", "error");
+    return;
+  }
+  try {
+    setButtonBusy("refresh-chat-context", true, "刷新中");
+    const context = await fetchJson(`/chat/sessions/${encodeURIComponent(chatId)}/context`);
+    renderContextState(context);
+    setStatus("context state loaded", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("refresh-chat-context", false);
+  }
+}
+
+async function compactChatContext() {
+  const chatId = document.querySelector("#chat-session-id").value.trim();
+  if (!chatId) {
+    setStatus("请先创建聊天", "error");
+    return;
+  }
+  try {
+    setButtonBusy("compact-chat-context", true, "压缩中");
+    const result = await fetchJson(`/chat/sessions/${encodeURIComponent(chatId)}/context/compact`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({force: true}),
+    });
+    document.querySelector("#chat-compaction-id").value = result.compaction_id || "";
+    renderContextState({
+      context_meter: result.context_meter,
+      compressed_context: {
+        status: result.status,
+        compaction_id: result.compaction_id,
+        summary: result.summary_text,
+        handoff: result.summary,
+        artifact_refs: result.artifact_refs,
+      },
+      context_view: result.messages,
+      events: [],
+    });
+    setStatus(`context ${result.status}`, result.status === "fallback_original" ? "error" : "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("compact-chat-context", false);
+  }
+}
+
+async function restoreChatContext() {
+  const chatId = document.querySelector("#chat-session-id").value.trim();
+  const compactionId = document.querySelector("#chat-compaction-id").value.trim();
+  if (!chatId || !compactionId) {
+    setStatus("需要 Chat ID 和 Compaction ID", "error");
+    return;
+  }
+  try {
+    setButtonBusy("restore-chat-context", true, "恢复中");
+    const result = await fetchJson(`/chat/sessions/${encodeURIComponent(chatId)}/context/restore`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({compaction_id: compactionId}),
+    });
+    document.querySelector("#chat-context-window").textContent = JSON.stringify(result.messages || [], null, 2);
+    document.querySelector("#chat-compressed-context").textContent = JSON.stringify({
+      status: "restored",
+      compaction_id: compactionId,
+      raw_messages_unchanged: result.raw_messages_unchanged,
+    }, null, 2);
+    setStatus(`restored ${result.messages?.length || 0} raw messages`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("restore-chat-context", false);
+  }
+}
+
+async function runContextBenchmarkV42() {
+  try {
+    setButtonBusy("run-context-v42-benchmark", true, "运行中");
+    const report = await fetchJson("/evaluations/context-v42", {method: "POST"});
+    renderContextBenchmarkV42(report);
+    setStatus("context benchmark completed", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("run-context-v42-benchmark", false);
   }
 }
 
@@ -650,6 +744,7 @@ function renderChatSession(session) {
     JSON.stringify(session.compressed_context || {}, null, 2);
   document.querySelector("#chat-memory-context").textContent =
     JSON.stringify(session.memory_context || {}, null, 2);
+  renderContextState(session);
   document.querySelector("#chat-router-decision").textContent =
     JSON.stringify(session.router_decision || {}, null, 2);
   document.querySelector("#chat-tool-decision").textContent =
@@ -667,6 +762,41 @@ function renderChatSession(session) {
   if (answer.citations) {
     renderResearchQA(answer);
   }
+}
+
+function renderContextState(state) {
+  const meter = state.context_meter || {};
+  const ratio = Math.max(0, Math.min(1, Number(meter.usage_ratio || 0)));
+  document.querySelector("#context-meter-fill").style.width = `${Math.round(ratio * 100)}%`;
+  document.querySelector("#context-meter-fill").dataset.tone = meter.high_watermark
+    ? "error"
+    : meter.should_compact
+      ? "warning"
+      : "normal";
+  document.querySelector("#chat-context-meter").textContent = JSON.stringify(meter, null, 2);
+  document.querySelector("#chat-context-events").textContent = JSON.stringify(
+    state.context_events || state.events || [], null, 2
+  );
+  if (state.context_view) {
+    document.querySelector("#chat-context-window").textContent = JSON.stringify(state.context_view, null, 2);
+  }
+  if (state.compressed_context) {
+    document.querySelector("#chat-compressed-context").textContent =
+      JSON.stringify(state.compressed_context, null, 2);
+    const compactionId = state.compressed_context.compaction_id || state.active_compaction_id;
+    if (compactionId) {
+      document.querySelector("#chat-compaction-id").value = compactionId;
+    }
+  }
+}
+
+function renderContextBenchmarkV42(report) {
+  const metrics = report.metrics || {};
+  document.querySelector("#context-v42-metrics").innerHTML = Object.entries(metrics)
+    .map(([name, value]) => metric(name, value))
+    .join("");
+  document.querySelector("#context-v42-summary").textContent =
+    JSON.stringify({summary: report.summary || {}, limitations: report.limitations || []}, null, 2);
 }
 
 function appendChatMessage(message) {
@@ -887,6 +1017,10 @@ document.querySelector("#show-research-mode").addEventListener("click", () => se
 document.querySelector("#show-chat-mode").addEventListener("click", () => setDashboardMode("chat"));
 document.querySelector("#create-chat-session").addEventListener("click", createChatSession);
 document.querySelector("#send-chat-message").addEventListener("click", sendChatMessage);
+document.querySelector("#refresh-chat-context").addEventListener("click", loadChatContext);
+document.querySelector("#compact-chat-context").addEventListener("click", compactChatContext);
+document.querySelector("#restore-chat-context").addEventListener("click", restoreChatContext);
+document.querySelector("#run-context-v42-benchmark").addEventListener("click", runContextBenchmarkV42);
 document.querySelector("#create-enterprise-kb").addEventListener("click", createEnterpriseKB);
 document.querySelector("#list-enterprise-kb").addEventListener("click", listEnterpriseKB);
 document.querySelector("#ask-enterprise-kb").addEventListener("click", askEnterpriseKB);

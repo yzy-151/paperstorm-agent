@@ -418,6 +418,29 @@ body[data-mode="research"] .chat-mode-panel {
   text-transform: uppercase;
 }
 
+.context-meter-track {
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.context-meter-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.context-meter-track span[data-tone="warning"] {
+  background: #eab308;
+}
+
+.context-meter-track span[data-tone="error"] {
+  background: #ef4444;
+}
+
 .button-row button,
 .task-row button {
   min-height: 38px;
