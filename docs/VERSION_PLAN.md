@@ -2212,7 +2212,7 @@ BM25 + Dense + RRF + Cross-Encoder
 
 #### 状态
 
-计划中。
+已完成，版本分支：`version/v4.3`。
 
 #### 目标
 
@@ -2247,6 +2247,23 @@ BM25 + Dense + RRF + Cross-Encoder
 #### 面试学习目标
 
 能够解释 Semantic/Episodic/Procedural Memory 的区别、热路径与后台写入的取舍、记忆污染和时间冲突如何处理，以及为什么 Memory 不是简单向量库。
+
+#### 实际落地
+
+- 新增 `paperstorm_memory_v43.py`，使用 Pydantic Schema 和 append-only JSONL event store 保存长期记忆与变更历史。
+- namespace 强制采用 `user/<id>`、`team/<id>`、`org/<id>`，召回前执行 namespace、开关、状态和有效期过滤。
+- `MemoryWritePolicy` 只提取显式偏好、稳定事实和操作规则；普通聊天跳过，低置信度候选进入后台 consolidation 队列。
+- 同 canonical key 的新事实不会直接覆盖旧值，而是追加 `memory_status_changed`，将旧事实标记为 `superseded` 并由新记录保存 `supersedes_id`。
+- Hybrid recall 使用中文字符/二元词与英文 token 的 BM25、本地 hash dense、RRF、importance 和 recency；响应暴露 lexical/dense/RRF/final 分数。
+- 支持显式写入、查询、编辑、软删除、导出、关闭记忆和 audit event 查看；企业文档 RAG 仍使用独立目录和 API。
+- Chat 使用同一 `user_id` 在不同 session 之间召回；Runtime 提供 `remember` / `recall_memory` 并写入统一 trace。
+- FastAPI 和 Dashboard 已加入长期记忆治理与 Memory Benchmark。
+
+#### Benchmark 结果
+
+本地受控 benchmark 中：memory write precision `1.0`、recall@K `1.0`、过期事实误用率 `0`、跨 namespace 泄漏率 `0`、重复率 `0`；单次实验 Recall P95 约 `2.43 ms`，后台整理约 `431.86 candidates/s`。
+
+这些是确定性小数据契约测试，不是生产结论。默认候选提取器和 hash embedding 用于证明治理链路；真实部署需要结构化 LLM extraction、向量数据库、身份鉴权、并发锁/事务和真实用户 Golden Set。
 
 ### v4.4：LangGraph Conversation Runtime 与 STORM Tool 化
 

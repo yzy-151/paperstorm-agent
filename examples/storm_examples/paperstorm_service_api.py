@@ -31,7 +31,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="4.2")
+    app = FastAPI(title="PaperStorm Agent Service", version="4.3")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -94,6 +94,8 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         forbidden_keywords: list[str] = []
         context_window_size: int = 6
         context_token_limit: int = Field(default=4096, ge=128, le=200000)
+        user_id: str = "local-user"
+        memory_enabled: bool = True
 
     class ChatMessageRequest(BaseModel):
         message: str
@@ -103,6 +105,36 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     class RestoreContextRequest(BaseModel):
         compaction_id: str
+
+    class MemoryCreateRequest(BaseModel):
+        namespace: str
+        memory_type: str
+        subject: str
+        content: str
+        canonical_key: str
+        source_message_ids: list[str] = []
+        confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+        importance: float = Field(default=0.7, ge=0.0, le=1.0)
+        valid_from: Optional[str] = None
+        valid_to: Optional[str] = None
+        expires_at: Optional[str] = None
+        metadata: dict = {}
+
+    class MemorySearchRequest(BaseModel):
+        namespace: str
+        query: str
+        top_k: int = Field(default=5, ge=1, le=50)
+
+    class MemoryEditRequest(BaseModel):
+        namespace: str
+        content: str
+        confidence: Optional[float] = None
+        importance: Optional[float] = None
+        expires_at: Optional[str] = None
+
+    class MemorySettingRequest(BaseModel):
+        namespace: str
+        enabled: bool
 
     class EnterpriseKnowledgeBaseCreateRequest(BaseModel):
         name: str = "Enterprise Knowledge Base"
@@ -294,6 +326,42 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.post("/evaluations/context-v42")
     def run_context_benchmark_v42():
         return service.run_context_benchmark_v42()
+
+    @app.post("/memories")
+    def create_memory(request: MemoryCreateRequest):
+        return service.create_memory(**_request_payload(request))
+
+    @app.get("/memories")
+    def list_memories(namespace: str, include_inactive: bool = False):
+        return service.list_memories(namespace, include_inactive=include_inactive)
+
+    @app.post("/memories/search")
+    def search_memories(request: MemorySearchRequest):
+        return service.search_memories(**_request_payload(request))
+
+    @app.patch("/memories/{memory_id}")
+    def edit_memory(memory_id: str, request: MemoryEditRequest):
+        payload = _request_payload(request)
+        namespace = payload.pop("namespace")
+        content = payload.pop("content")
+        payload = {key: value for key, value in payload.items() if value is not None}
+        return service.edit_memory(namespace, memory_id, content, **payload)
+
+    @app.delete("/memories/{memory_id}")
+    def delete_memory(memory_id: str, namespace: str, reason: str = "user_request"):
+        return service.delete_memory(namespace, memory_id, reason=reason)
+
+    @app.get("/memories/export")
+    def export_memories(namespace: str):
+        return service.export_memories(namespace)
+
+    @app.post("/memories/settings")
+    def update_memory_settings(request: MemorySettingRequest):
+        return service.set_memory_enabled(request.namespace, request.enabled)
+
+    @app.post("/evaluations/memory-v43")
+    def run_memory_benchmark_v43():
+        return service.run_memory_benchmark_v43()
 
     return app
 

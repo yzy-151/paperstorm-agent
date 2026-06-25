@@ -15,7 +15,7 @@
       </div>
       <div class="header-meta">
         <span>release</span>
-        <strong id="project-version">v4.2</strong>
+        <strong id="project-version">v4.3</strong>
       </div>
     </header>
 
@@ -208,6 +208,14 @@
               Context Token Limit
               <input id="chat-context-token-limit" type="number" min="128" value="4096" />
             </label>
+            <label>
+              User ID / Memory Namespace
+              <input id="chat-user-id" value="local-user" />
+            </label>
+            <label class="checkbox-line">
+              <input id="chat-memory-enabled" type="checkbox" checked />
+              启用跨会话长期记忆
+            </label>
             <button id="create-chat-session" type="button">新建聊天</button>
             <button id="refresh-chat-context" type="button">刷新上下文状态</button>
             <button id="compact-chat-context" type="button">强制压缩</button>
@@ -216,6 +224,17 @@
               <input id="chat-compaction-id" placeholder="压缩后自动填入" />
             </label>
             <button id="restore-chat-context" type="button">恢复原始视图</button>
+            <label>
+              Memory Search
+              <input id="chat-memory-query" value="PIM 偏好" />
+            </label>
+            <button id="search-chat-memory" type="button">查询长期记忆</button>
+            <button id="export-chat-memory" type="button">导出记忆与审计记录</button>
+            <label>
+              Memory ID
+              <input id="chat-memory-id" placeholder="删除指定记忆" />
+            </label>
+            <button id="delete-chat-memory" class="danger-button" type="button">软删除记忆</button>
             <div class="chat-hint">
               <strong>执行逻辑</strong>
               <p>直接提问即可。已有任务足够时复用知识库；证据不足或没有任务时自动触发调研，再带引用回答。</p>
@@ -268,6 +287,14 @@
             <section class="debug-card">
               <h3>Memory Context</h3>
               <pre id="chat-memory-context"></pre>
+            </section>
+            <section class="debug-card">
+              <h3>Long-Term Memory Recall</h3>
+              <pre id="chat-long-term-memory"></pre>
+            </section>
+            <section class="debug-card">
+              <h3>Memory Write Decision</h3>
+              <pre id="chat-memory-write"></pre>
             </section>
           </aside>
         </div>
@@ -403,6 +430,22 @@
         <p class="panel-copy">评估 token 节省率、约束/实体/待办保留率、工具调用配对和原始消息精确恢复。摘要是派生视图，原始 JSONL 事件不会被覆盖。</p>
         <div id="context-v42-metrics" class="metric-grid"></div>
         <pre id="context-v42-summary"></pre>
+      </section>
+
+      <section class="panel wide" id="memory-v43-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Long-Term Memory Evaluation</p>
+            <h2>Memory v4.3 治理与跨会话 Benchmark</h2>
+          </div>
+          <span class="soft-badge">policy / namespace ACL / conflict / hybrid recall / delete</span>
+        </div>
+        <div class="button-row">
+          <button id="run-memory-v43-benchmark" type="button">运行 Memory Benchmark</button>
+        </div>
+        <p class="panel-copy">评估写入精度、Recall@K、过期事实误用、跨用户泄漏、重复率和 P95 延迟。Thread Context、长期 Memory 与文档知识库保持独立。</p>
+        <div id="memory-v43-metrics" class="metric-grid"></div>
+        <pre id="memory-v43-summary"></pre>
       </section>
 
       <section class="panel wide" id="article-panel">

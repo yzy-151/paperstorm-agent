@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v4.2";
+const DASHBOARD_VERSION = "v4.3";
 
 async function loadDashboard() {
   try {
@@ -286,6 +286,8 @@ async function createChatSession() {
     forbidden_keywords: splitKeywords(document.querySelector("#task-forbidden-keyword").value),
     context_window_size: 6,
     context_token_limit: Number(document.querySelector("#chat-context-token-limit").value) || 4096,
+    user_id: document.querySelector("#chat-user-id").value.trim() || "local-user",
+    memory_enabled: document.querySelector("#chat-memory-enabled").checked,
   };
   try {
     setDashboardMode("chat");
@@ -434,6 +436,97 @@ async function runContextBenchmarkV42() {
     setStatus(error.message, "error");
   } finally {
     setButtonBusy("run-context-v42-benchmark", false);
+  }
+}
+
+function selectedMemoryNamespace() {
+  const raw = (document.querySelector("#chat-user-id").value.trim() || "local-user").toLowerCase();
+  const safe = raw.replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "") || "local-user";
+  return `user/${safe.slice(0, 128)}`;
+}
+
+async function searchChatMemory() {
+  const namespace = selectedMemoryNamespace();
+  const query = document.querySelector("#chat-memory-query").value.trim() || "偏好";
+  try {
+    setButtonBusy("search-chat-memory", true, "查询中");
+    const result = await fetchJson("/memories/search", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({namespace, query, top_k: 8}),
+    });
+    renderLongTermMemory(result);
+    setStatus(`memory recall ${result.results?.length || 0} hits`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("search-chat-memory", false);
+  }
+}
+
+async function updateMemorySetting() {
+  const namespace = selectedMemoryNamespace();
+  const enabled = document.querySelector("#chat-memory-enabled").checked;
+  try {
+    const result = await fetchJson("/memories/settings", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({namespace, enabled}),
+    });
+    document.querySelector("#chat-memory-write").textContent = JSON.stringify(result, null, 2);
+    setStatus(`memory ${enabled ? "enabled" : "disabled"}`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
+async function exportChatMemory() {
+  const namespace = selectedMemoryNamespace();
+  try {
+    setButtonBusy("export-chat-memory", true, "导出中");
+    const result = await fetchJson(`/memories/export?namespace=${encodeURIComponent(namespace)}`);
+    renderLongTermMemory(result);
+    setStatus(`exported ${result.memories?.length || 0} memory records`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("export-chat-memory", false);
+  }
+}
+
+async function deleteChatMemory() {
+  const namespace = selectedMemoryNamespace();
+  const memoryId = document.querySelector("#chat-memory-id").value.trim();
+  if (!memoryId) {
+    setStatus("请输入 Memory ID", "error");
+    return;
+  }
+  try {
+    setButtonBusy("delete-chat-memory", true, "删除中");
+    const result = await fetchJson(
+      `/memories/${encodeURIComponent(memoryId)}?namespace=${encodeURIComponent(namespace)}&reason=user_request`,
+      {method: "DELETE"},
+    );
+    document.querySelector("#chat-memory-write").textContent = JSON.stringify(result, null, 2);
+    setStatus(`memory ${memoryId} soft deleted`, "success");
+    await searchChatMemory();
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("delete-chat-memory", false);
+  }
+}
+
+async function runMemoryBenchmarkV43() {
+  try {
+    setButtonBusy("run-memory-v43-benchmark", true, "运行中");
+    const report = await fetchJson("/evaluations/memory-v43", {method: "POST"});
+    renderMemoryBenchmarkV43(report);
+    setStatus("memory benchmark completed", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("run-memory-v43-benchmark", false);
   }
 }
 
@@ -744,6 +837,9 @@ function renderChatSession(session) {
     JSON.stringify(session.compressed_context || {}, null, 2);
   document.querySelector("#chat-memory-context").textContent =
     JSON.stringify(session.memory_context || {}, null, 2);
+  renderLongTermMemory(session.long_term_memory || {});
+  document.querySelector("#chat-memory-write").textContent =
+    JSON.stringify(session.memory_write || {}, null, 2);
   renderContextState(session);
   document.querySelector("#chat-router-decision").textContent =
     JSON.stringify(session.router_decision || {}, null, 2);
@@ -753,6 +849,12 @@ function renderChatSession(session) {
     (session.router_decision || {}).rewritten_query || "";
   if (session.chat_id) {
     document.querySelector("#chat-session-id").value = session.chat_id;
+  }
+  if (session.user_id) {
+    document.querySelector("#chat-user-id").value = session.user_id;
+  }
+  if (typeof session.memory_enabled === "boolean") {
+    document.querySelector("#chat-memory-enabled").checked = session.memory_enabled;
   }
   const answer = session.research_answer || {};
   document.querySelector("#research-decision").textContent =
@@ -797,6 +899,26 @@ function renderContextBenchmarkV42(report) {
     .join("");
   document.querySelector("#context-v42-summary").textContent =
     JSON.stringify({summary: report.summary || {}, limitations: report.limitations || []}, null, 2);
+}
+
+function renderLongTermMemory(payload) {
+  document.querySelector("#chat-long-term-memory").textContent = JSON.stringify(payload || {}, null, 2);
+  const records = payload.results || payload.memories || [];
+  if (records.length && !document.querySelector("#chat-memory-id").value) {
+    document.querySelector("#chat-memory-id").value = records[0].id || "";
+  }
+}
+
+function renderMemoryBenchmarkV43(report) {
+  const metrics = report.metrics || {};
+  document.querySelector("#memory-v43-metrics").innerHTML = Object.entries(metrics)
+    .map(([name, value]) => metric(name, value))
+    .join("");
+  document.querySelector("#memory-v43-summary").textContent = JSON.stringify({
+    architecture: report.architecture || {},
+    counts: report.counts || {},
+    limitations: report.limitations || [],
+  }, null, 2);
 }
 
 function appendChatMessage(message) {
@@ -1021,6 +1143,11 @@ document.querySelector("#refresh-chat-context").addEventListener("click", loadCh
 document.querySelector("#compact-chat-context").addEventListener("click", compactChatContext);
 document.querySelector("#restore-chat-context").addEventListener("click", restoreChatContext);
 document.querySelector("#run-context-v42-benchmark").addEventListener("click", runContextBenchmarkV42);
+document.querySelector("#search-chat-memory").addEventListener("click", searchChatMemory);
+document.querySelector("#export-chat-memory").addEventListener("click", exportChatMemory);
+document.querySelector("#delete-chat-memory").addEventListener("click", deleteChatMemory);
+document.querySelector("#chat-memory-enabled").addEventListener("change", updateMemorySetting);
+document.querySelector("#run-memory-v43-benchmark").addEventListener("click", runMemoryBenchmarkV43);
 document.querySelector("#create-enterprise-kb").addEventListener("click", createEnterpriseKB);
 document.querySelector("#list-enterprise-kb").addEventListener("click", listEnterpriseKB);
 document.querySelector("#ask-enterprise-kb").addEventListener("click", askEnterpriseKB);

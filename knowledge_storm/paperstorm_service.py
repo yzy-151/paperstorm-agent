@@ -321,7 +321,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v4.2",
+                "version": "v4.3",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -428,6 +428,8 @@ class PaperStormTaskService:
         forbidden_keywords: Optional[List[str]] = None,
         context_window_size: int = 6,
         context_token_limit: int = 4096,
+        user_id: str = "local-user",
+        memory_enabled: bool = True,
         **options,
     ):
         from .paperstorm_chat_agent import PaperStormChatAgent
@@ -442,6 +444,8 @@ class PaperStormTaskService:
             forbidden_keywords=forbidden_keywords,
             context_window_size=context_window_size,
             context_token_limit=context_token_limit,
+            user_id=user_id,
+            memory_enabled=memory_enabled,
             **options,
         )
 
@@ -476,6 +480,46 @@ class PaperStormTaskService:
         return run_context_benchmark(
             self.root_dir / "evaluations" / "context_v42_latest"
         )
+
+    def create_memory(self, **payload):
+        return self._memory_service_v43().upsert(**payload)
+
+    def list_memories(self, namespace: str, include_inactive: bool = False):
+        return {
+            "namespace": namespace,
+            "memories": self._memory_service_v43().list_memories(
+                namespace, include_inactive=include_inactive
+            ),
+        }
+
+    def search_memories(self, namespace: str, query: str, top_k: int = 5):
+        return self._memory_service_v43().search(namespace, query, top_k=top_k)
+
+    def edit_memory(self, namespace: str, memory_id: str, content: str, **updates):
+        return self._memory_service_v43().edit(
+            namespace=namespace, memory_id=memory_id, content=content, **updates
+        )
+
+    def delete_memory(self, namespace: str, memory_id: str, reason: str = "user_request"):
+        return self._memory_service_v43().delete(namespace, memory_id, reason=reason)
+
+    def export_memories(self, namespace: str):
+        return self._memory_service_v43().export_namespace(namespace)
+
+    def set_memory_enabled(self, namespace: str, enabled: bool):
+        return self._memory_service_v43().set_enabled(namespace, enabled)
+
+    def run_memory_benchmark_v43(self):
+        from .paperstorm_memory_benchmark_v43 import run_memory_benchmark
+
+        return run_memory_benchmark(
+            self.root_dir / "evaluations" / "memory_v43_latest"
+        )
+
+    def _memory_service_v43(self):
+        from .paperstorm_memory_v43 import LongTermMemoryService
+
+        return LongTermMemoryService(self.root_dir / "memory_service_v43")
 
     def _run_fake_research(self, state: Dict):
         output_dir = Path(state["output_dir"])

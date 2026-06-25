@@ -7,6 +7,7 @@ from typing import Callable, Dict, List, Optional
 
 from .paperstorm_context_v42 import ContextEngine
 from .paperstorm_memory import PaperStormMemoryStore
+from .paperstorm_memory_v43 import LongTermMemoryService
 
 
 @dataclass
@@ -112,6 +113,8 @@ class PaperStormRuntimeSession:
         hooks: Optional[HookManager] = None,
         registry: Optional[ToolRegistry] = None,
         context_engine: Optional[ContextEngine] = None,
+        long_term_memory: Optional[LongTermMemoryService] = None,
+        memory_namespace: str = "user/local-user",
     ):
         self.run_id = run_id
         self.task_id = task_id or run_id
@@ -121,6 +124,8 @@ class PaperStormRuntimeSession:
         self.hooks = hooks or HookManager()
         self.registry = registry or ToolRegistry()
         self.context_engine = context_engine or ContextEngine()
+        self.long_term_memory = long_term_memory
+        self.memory_namespace = memory_namespace
         self.tools = self.registry._tools
 
     def register_tool(self, tool):
@@ -239,6 +244,48 @@ class PaperStormRuntimeSession:
         )
         self.hooks.emit("on_context_compress", event)
         self.record_event(event)
+        return result
+
+    def remember(self, message: str, source_message_id: str = ""):
+        if self.long_term_memory is None:
+            result = {"status": "disabled", "reason": "no long-term memory service"}
+        else:
+            result = self.long_term_memory.ingest_message(
+                namespace=self.memory_namespace,
+                message=message,
+                source_message_id=source_message_id,
+            )
+        self.record_event(
+            "memory_write",
+            stage="memory",
+            status=result.get("status", "unknown"),
+            namespace=self.memory_namespace,
+            canonical_key=(result.get("memory") or {}).get("canonical_key", ""),
+        )
+        return result
+
+    def recall_memory(self, query: str, top_k: int = 5):
+        if self.long_term_memory is None:
+            result = {
+                "status": "disabled",
+                "namespace": self.memory_namespace,
+                "query": query,
+                "results": [],
+            }
+        else:
+            result = self.long_term_memory.search(
+                namespace=self.memory_namespace,
+                query=query,
+                top_k=top_k,
+            )
+        self.record_event(
+            "memory_recall",
+            stage="memory",
+            status=result.get("status", "unknown"),
+            namespace=self.memory_namespace,
+            result_count=len(result.get("results") or []),
+            latency_ms=result.get("latency_ms", 0.0),
+        )
         return result
 
     def record_event(self, event, **payload):

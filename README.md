@@ -10,7 +10,7 @@ PaperStorm Agent 不是从零重写一个聊天机器人，而是在 Stanford ST
 
 - **RAG 调研链路**：arXiv / Local PDF 检索、query 清洗、PIM 领域消歧、引用证据和中文综述生成。
 - **Agent Runtime**：ToolRegistry、HookManager、RuntimeEvent、JSONL trace、错误脱敏和上下文压缩。
-- **Memory / QA**：working / episodic / semantic 三层记忆，基于调研产物的 grounded QA。
+- **Memory / QA**：线程内 working memory、可治理跨会话长期记忆，以及基于调研产物的 grounded QA。
 - **Multi-Agent**：Planner、Retriever、Critic、Memory、Evaluator 分工协作，保留/过滤检索结果并写入 agent trace。
 - **Eval / Benchmark**：scorecard 评估任务完成度、检索相关性、跑题风险、文章质量和 runtime 可观测性。
 - **Service / Dashboard**：本地 task service、FastAPI 适配器、静态 Dashboard、任务提交/运行/轮询和 release demo。
@@ -27,7 +27,7 @@ PaperStorm RAG
         |
         v
 PaperStorm Runtime
-  ToolRegistry -> HookManager -> RuntimeEvent -> Memory -> Context Compression
+  ToolRegistry -> HookManager -> RuntimeEvent -> Context Engine -> Memory Service
         |
         v
 Agent Layer
@@ -453,6 +453,71 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -c `
 ```
 
 当前默认 token counter 是可注入的本地估算器，线上应替换为模型 tokenizer 或 API usage；默认摘要器是确定性结构化摘要，可注入 LLM。Benchmark 验证压缩、约束和恢复契约，不等价于 LLM 答案一致性评测。
+
+## v4.3 可治理的跨会话 Memory Service
+
+v4.3 在 v4.2 Thread Context 之外新增独立长期记忆服务。它不会把所有聊天直接写进向量库，而是经过明确的写入策略和治理链路：
+
+```text
+user message
+  -> candidate extraction
+  -> Pydantic validation
+  -> confidence gate / pending queue
+  -> exact deduplication
+  -> canonical-key conflict detection
+  -> append-only upsert / supersede event
+
+query
+  -> namespace + enabled + status + time filter
+  -> lexical BM25 + hash dense recall
+  -> RRF fusion
+  -> importance + recency adjustment
+  -> top-k memory context
+```
+
+数据边界：
+
+- **Thread Context**：v4.2 管理当前会话的 token 工作集、压缩和恢复。
+- **Long-Term Memory**：v4.3 保存跨会话稳定事实、偏好、任务经验和操作规则。
+- **Document Knowledge**：企业文档与论文 RAG 独立建库，不写入用户 Memory namespace。
+- **Raw Archive**：原始聊天和工具事件用于恢复与审计，不自动等价为长期事实。
+
+核心能力：
+
+- Pydantic `MemoryRecordV43` 保存 memory type、subject、namespace、canonical key、来源消息、置信度、重要性、有效期和状态。
+- 普通聊天默认跳过；显式偏好、稳定事实和操作规则才进入热路径，低置信度候选进入后台整理队列。
+- 同一 canonical key 的冲突事实使旧记录变为 `superseded`，旧事件仍保留，不做静默覆盖。
+- namespace 仅允许 `user/<id>`、`team/<id>` 或 `org/<id>`，召回前强制过滤，避免跨用户混用。
+- 支持查看、搜索、编辑、软删除、导出、开关记忆和完整 audit events。
+- Chat 在回答前召回长期记忆，回答后执行 Memory Policy；Runtime 暴露 `remember` / `recall_memory` 并记录 trace。
+- Dashboard 展示召回分项分数、写入决策和 benchmark，可直接执行记忆治理操作。
+
+新增 API：
+
+```text
+POST   /memories
+GET    /memories
+POST   /memories/search
+PATCH  /memories/{memory_id}
+DELETE /memories/{memory_id}
+GET    /memories/export
+POST   /memories/settings
+POST   /evaluations/memory-v43
+```
+
+受控 benchmark 结果：
+
+| 指标 | 结果 |
+| --- | ---: |
+| Memory Write Precision | 1.0000 |
+| Memory Recall@K | 1.0000 |
+| Stale Fact Misuse Rate | 0.0000 |
+| Cross-Namespace Leakage | 0.0000 |
+| Duplicate Rate | 0.0000 |
+| Recall P95 | 约 2.43 ms |
+| Background Consolidation | 约 431.86 candidates/s |
+
+这些数据来自小规模确定性本地契约测试，证明隔离、冲突、去重和召回链路按设计工作；不代表真实用户流量或 LLM 语义抽取质量。默认 extractor 与 hash embedding 都是可替换 baseline，生产环境仍应接结构化 LLM extraction、真实向量后端、身份认证和人工标注 Memory Eval。
 
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
@@ -1086,7 +1151,7 @@ docs/VERSION_PLAN.md
 - v4.0（已完成）：建立可审计种子集、坏例工作台和检索/生成分层评测。
 - v4.1（已完成）：真实 BM25 + Dense + RRF + Cross-Encoder、Contextual Chunk 和 Zotero 论文弱标注实验。
 - v4.2（已完成）：可恢复 Context Engine、Token 动态预算、分层压缩、Context Meter 和恢复 Benchmark。
-- v4.3（计划）：实现可治理的跨会话长期 Memory Service。
+- v4.3（已完成）：可治理的跨会话 Memory Service、写入策略、冲突失效、Hybrid recall、治理 API 和 Memory Benchmark。
 - v4.4（计划）：使用 LangGraph 编排聊天、知识库问答和 STORM 深度调研工具。
 - v4.5（计划）：补齐 ACL、增量索引、可靠性、可观测、压测和最终面试演示。
 

@@ -554,6 +554,27 @@ body[data-mode="research"] .chat-mode-panel {
   cursor: pointer;
 }
 
+.chat-sidebar .checkbox-line {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+
+.chat-sidebar .checkbox-line input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.chat-sidebar .danger-button {
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.2);
+}
+
 .chat-hint {
   padding: 12px;
   border: 1px solid var(--line);

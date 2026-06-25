@@ -90,7 +90,7 @@ class PaperStormServiceTest(unittest.TestCase):
 
         bundle = service.get_dashboard_bundle(task["task_id"])
 
-        self.assertEqual(bundle["project"]["version"], "v4.2")
+        self.assertEqual(bundle["project"]["version"], "v4.3")
         self.assertEqual(bundle["tasks"][0]["task_id"], task["task_id"])
         self.assertIn("passive intermodulation", bundle["article"]["content"])
         self.assertTrue(bundle["trace"]["events"])

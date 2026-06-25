@@ -1227,3 +1227,64 @@ Chunk 太小会破坏定义、公式和实验结论的完整性，太大会引�
 - 默认使用本地 token 估算器，不应写成“所有模型 token 计算完全精确”。
 - 受控关键项保留率不等价于真实回答质量或语义一致性。
 - 这是 Thread Context Engine，不是已经完成可治理长期 Memory Service。
+
+## 2026-08-01 实验记录：v4.3 可治理长期 Memory Service
+
+### 从什么问题出发
+
+旧的 `PaperStormMemoryStore` 会在单次请求中临时构造 working / episodic / semantic 列表，选择逻辑主要是关键词交集。它可以解释 Memory 分层概念，但没有跨 session 的稳定 namespace，也没有写入精度、冲突历史、有效期、删除、ACL 隔离和独立 benchmark。若把每轮聊天直接写入长期向量库，会迅速产生重复、错误事实和用户隔离问题。
+
+### 做了什么
+
+- 将 V4.2 Thread Context、V4.3 Long-Term Memory、企业文档 RAG 和 Raw Session Archive 分成四种数据边界。
+- 使用 Pydantic Schema 保存 memory type、subject、content、canonical key、source message IDs、confidence、importance、valid/expire 时间、namespace 和 status。
+- 将写入拆成候选提取、结构校验、置信度门控、去重、冲突检测和 append-only upsert；普通聊天不持久化。
+- 高置信度显式偏好/稳定事实走热路径，低置信度候选进入后台 consolidation，避免把整理成本加入每次回答延迟。
+- 同 canonical key 的新值使旧记录 `superseded`，不物理删除历史；用户删除采用 tombstone/soft delete，并保留审计原因。
+- 召回先执行 namespace、记忆开关、active status 和有效期过滤，再运行 BM25 + hash dense + RRF，并叠加 importance/recency。
+- Chat 以 `user_id` 绑定 `user/<id>` namespace，在新 session 中召回旧 session 的稳定记忆；Runtime 记录 memory_write / memory_recall trace。
+- 提供写入、查询、编辑、删除、导出、开关 API 和 Dashboard 治理面板。
+
+### Benchmark 数据
+
+受控本地实验得到：memory write precision `1.0`、memory recall@K `1.0`、stale fact misuse rate `0`、cross-namespace leakage rate `0`、duplicate rate `0`。单次运行 Recall P95 约 `2.43 ms`，后台 consolidation 约 `431.86 candidates/s`。
+
+这些指标验证的是确定性案例中的软件契约，不代表真实 LLM extraction 或线上并发性能。真实验收还需要用户授权的数据集、事实时效标签、双人标注、语义 Judge 和负载测试。
+
+### 面试推荐回答：Memory 为什么不是简单向量库
+
+```text
+向量库只解决“相似内容怎么找”，长期记忆还必须解决“什么值得写、属于谁、当前是否有效、与旧事实是否冲突、用户如何查看和删除”。我的实现先用 Memory Policy 控制写入，再按 namespace 和时间过滤，之后才做 BM25/Dense/RRF 召回；冲突事实保留 superseded 历史，删除使用 tombstone。这样向量检索只是 Memory Service 的一个组件，而不是完整 Memory 系统。
+```
+
+### 面试推荐回答：为什么不能每轮聊天都写长期记忆
+
+```text
+每轮都写会把寒暄、临时任务、模型误解和重复表述永久化，既污染召回又增加 token 与存储成本。我的热路径只保存用户明确表达的偏好、稳定事实和操作规则；低置信度候选进入后台整理，普通消息只留在线程归档。评测时单独看 memory write precision，而不是只看 recall。
+```
+
+### 面试推荐回答：新事实和旧事实冲突怎么办
+
+```text
+我给可变化事实设计 canonical key，例如 response_language。新值到来时不原地覆盖旧 JSON，而是追加状态事件，把旧记录标为 superseded，新记录保存 supersedes_id。召回只使用 active 且未过期的事实，审计和导出仍能看到完整时间线。生产环境还应加入有效时间、来源可信度和并发事务。
+```
+
+### 面试推荐回答：上下文、长期记忆和 RAG 如何分工
+
+```text
+Thread Context 是当前模型调用的 token 工作集，V4.2 负责压缩和恢复；Long-Term Memory 是跨会话的用户偏好、稳定事实和任务经验，V4.3 负责写入治理与召回；Document RAG 是论文或企业文档证据，拥有独立索引和 citation。回答前可以同时召回 Memory 与 RAG，但它们必须分 namespace、分可信度并在 Prompt 中标清来源，不能混成一个向量库。
+```
+
+### 简历可用表述
+
+```text
+设计并实现可治理的跨会话 Agent Memory Service：基于 Pydantic Schema 与 append-only event store 完成候选提取、置信度门控、去重、冲突失效、有效期和软删除；采用 namespace ACL 过滤及 BM25/Dense/RRF 混合召回，打通 Chat、Runtime Trace、FastAPI 与 Dashboard。受控 Benchmark 中写入精度和 Recall@K 为 100%，过期事实误用、跨 namespace 泄漏和重复率为 0。
+```
+
+### 不能夸大的边界
+
+- 默认 extraction 是确定性 Memory Policy，不是已训练或评测完成的 LLM 记忆抽取模型。
+- Dense 路径使用本地 hash embedding，不是生产向量数据库或 ANN 索引。
+- namespace 是应用层 ACL contract，尚未接 OAuth/RBAC，不能表述为完成企业级身份安全。
+- JSONL event store 适合本地审计演示，尚未实现数据库事务、并发写锁、备份恢复和数据保留合规。
+- 当前 benchmark 是受控小数据，不代表真实用户事实变化、长周期记忆质量或线上 QPS。
