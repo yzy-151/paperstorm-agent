@@ -1,6 +1,6 @@
 # PaperStorm Agent 更新计划
 
-更新时间：2026-07-29
+更新时间：2026-08-01
 
 本文档是后续版本计划。每次项目更新都必须维护本文件，记录版本目标、完成情况、验收标准和下一步。
 
@@ -2269,7 +2269,7 @@ BM25 + Dense + RRF + Cross-Encoder
 
 #### 状态
 
-计划中。
+已完成，版本分支：`version/v4.4`。
 
 #### 目标
 
@@ -2290,14 +2290,35 @@ classify/clarify
   -> final_trace
 ```
 
-#### 实施任务
+#### 实际落地
 
-- LangGraph Checkpointer 保存线程状态，Store 保存跨线程长期记忆。
-- Router 使用结构化输出；规则只用于安全约束和模型失败 fallback。
-- 每个节点定义输入输出 Schema、超时、重试、幂等键和 trace span。
-- STORM 继续负责多视角检索、大纲、文章生成和润色，不重写已有 DSPy pipeline。
-- 子调研任务使用隔离上下文，只向主图返回结构化结论、引用和 artifact URI。
-- AutoGen 只作为可选对照实验；只有 Benchmark 证明多 Agent Team 优于单图 Workflow 时才进入主链路。
+- 引入 LangGraph `StateGraph` 和 SQLite Checkpointer，使用 `thread_id` 保存会话状态与 checkpoint history。
+- 使用 Pydantic `ConversationRequestV44` 定义调用边界；节点共享 TypedDict state，公共响应保持稳定 JSON 契约。
+- `thread_id + request_id` 经过 SHA-256 映射到持久化结果文件；运行时重建后同线程重复请求直接回放，不重复创建调研任务，也不会跨线程复用结果。
+- `knowledge_retrieval` 与 `deep_research` 配置 LangGraph `RetryPolicy`，只对连接失败和超时最多尝试 2 次；失败尝试从持久化 JSONL 合并回公共 graph trace。
+- 节点 trace 记录 span ID、开始/结束时间、耗时、状态与关键业务字段，并提供 graph state/history API。
+- STORM 包装为 `storm_deep_research` 隔离工具，输入只包含 question/topic/options，输出只包含答案、引用、证据、task ID 和 artifact URI。
+- V4.3 Long-Term Memory 保持独立 namespace Store；checkpoint 只保存线程工作状态，不把跨会话记忆复制进 SQLite。
+- Chat 默认切换到 `langgraph-v4.4`，Service、FastAPI 和 Dashboard 共用同一条图运行链路。
+- Dashboard 新增 Graph Run、Checkpoint History 和 Runtime Benchmark 面板。
+- AutoGen 未进入主链路；当前固定工作流的可恢复性和可测性优先于动态群聊式多 Agent。
+
+#### API 与依赖
+
+- `POST /conversation-graph/invoke`
+- `GET /conversation-graph/spec`
+- `GET /conversation-graph/threads/{thread_id}/state`
+- `GET /conversation-graph/threads/{thread_id}/history`
+- `POST /evaluations/runtime-v44`
+- `GET /evaluations/runtime-v44/latest`
+- `langgraph>=1.2,<2.0`
+- `langgraph-checkpoint-sqlite>=3.1,<4.0`
+
+#### Benchmark 结果
+
+受控本机实验得到：path accuracy、幂等、checkpoint 恢复、瞬时失败恢复、trace span 覆盖和 artifact contract 均为 `1.0`，cross-user leakage rate 为 `0`，P95 约 `104.95 ms`。
+
+这些数据使用固定路由和 fake 调研，只证明本地软件契约。SQLite 不适合多进程生产吞吐；同步节点的 timeout 目前是可观测预算，不是强制取消，V4.5 需补异步 client、数据库 checkpointer、事务型幂等和分布式 worker。
 
 #### 面试学习目标
 

@@ -321,7 +321,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v4.3",
+                "version": "v4.4",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -514,6 +514,38 @@ class PaperStormTaskService:
 
         return run_memory_benchmark(
             self.root_dir / "evaluations" / "memory_v43_latest"
+        )
+
+    def invoke_conversation_graph(self, **payload):
+        return self._langgraph_runtime_v44().invoke(**payload)
+
+    def get_conversation_graph_spec(self):
+        return self._langgraph_runtime_v44().get_graph_spec()
+
+    def get_conversation_thread_state(self, thread_id: str):
+        return self._langgraph_runtime_v44().get_thread_state(thread_id)
+
+    def get_conversation_thread_history(self, thread_id: str, limit: int = 50):
+        return self._langgraph_runtime_v44().get_thread_history(thread_id, limit=limit)
+
+    def run_langgraph_benchmark_v44(self):
+        from .paperstorm_langgraph_benchmark_v44 import run_langgraph_benchmark
+
+        return run_langgraph_benchmark(
+            self.root_dir / "evaluations" / "runtime_v44_latest"
+        )
+
+    def get_langgraph_benchmark_v44(self):
+        root = self.root_dir / "evaluations" / "runtime_v44_latest"
+        return _read_json(root / "langgraph_benchmark_v44.json", {})
+
+    def _langgraph_runtime_v44(self):
+        from .paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
+
+        return PaperStormLangGraphRuntime(
+            root_dir=self.root_dir / "langgraph_runtime_v44",
+            task_service=self,
+            memory_service=self._memory_service_v43(),
         )
 
     def _memory_service_v43(self):

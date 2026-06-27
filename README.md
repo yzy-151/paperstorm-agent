@@ -519,6 +519,62 @@ POST   /evaluations/memory-v43
 
 这些数据来自小规模确定性本地契约测试，证明隔离、冲突、去重和召回链路按设计工作；不代表真实用户流量或 LLM 语义抽取质量。默认 extractor 与 hash embedding 都是可替换 baseline，生产环境仍应接结构化 LLM extraction、真实向量后端、身份认证和人工标注 Memory Eval。
 
+## v4.4 LangGraph Conversation Runtime 与 STORM Tool 化
+
+v4.4 将聊天、Memory、知识检索和深度调研从手写条件链路迁移到真正的 LangGraph `StateGraph`。STORM/DSPy 原有多视角调研 pipeline 不重写，而是作为隔离的 `storm_deep_research` 工具被主图调用。
+
+```text
+START -> classify -> memory_recall
+  -> casual_chat ------------------------------+
+  -> memory_answer ----------------------------+
+  -> knowledge_retrieval -> evidence_grade     |
+       -> answer_with_citations ---------------+
+       -> deep_research(STORM) -> answer -------+-> memory_candidate_write
+       -> refuse_or_clarify -------------------+        -> final_trace -> END
+```
+
+运行时契约：
+
+- Pydantic 校验每次图调用；`thread_id` 标识会话，`thread_id + request_id` 组成持久化幂等键，避免不同会话复用结果。
+- LangGraph `SqliteSaver` 保存线程 checkpoint，服务重启后仍可读取 state 与 history。
+- V4.3 Memory Service 作为独立跨线程 Store，按 `user/<id>` 隔离，不复制进 checkpoint 数据库。
+- 检索和深度调研节点对 `ConnectionError` / `TimeoutError` 最多尝试 2 次；失败尝试和恢复结果都进入公共 trace，每个节点输出 span、耗时、状态和业务字段。
+- STORM 工具只接收结构化 topic/question/options，只返回答案、引用、证据、task ID 和 artifact URI，不把子任务完整会话灌回主图。
+- Chat、FastAPI 和 Dashboard 共用同一运行时；网页可查看 executed nodes、graph run、当前 state 和 checkpoint history。
+
+新增 API：
+
+```text
+POST /conversation-graph/invoke
+GET  /conversation-graph/spec
+GET  /conversation-graph/threads/{thread_id}/state
+GET  /conversation-graph/threads/{thread_id}/history
+POST /evaluations/runtime-v44
+GET  /evaluations/runtime-v44/latest
+```
+
+受控本机 benchmark：
+
+| 指标 | 结果 |
+| --- | ---: |
+| Path Accuracy | 1.0000 |
+| Idempotency Rate | 1.0000 |
+| Checkpoint Restore Rate | 1.0000 |
+| Retry Recovery Rate | 1.0000 |
+| Cross-User Leakage Rate | 0.0000 |
+| Trace Span Coverage | 1.0000 |
+| Artifact Contract Rate | 1.0000 |
+| Latency P95 | 约 104.95 ms |
+
+运行 benchmark：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -c `
+  "from knowledge_storm.paperstorm_langgraph_benchmark_v44 import run_langgraph_benchmark; run_langgraph_benchmark(r'results\paperstorm_runtime_v44')"
+```
+
+这些指标使用受控 fake 调研和固定路由案例，验证的是状态图软件契约，不代表真实 arXiv/LLM 延迟或生产 QPS。SQLite 适合本地单进程演示；多进程部署需要数据库 checkpointer、事务型幂等表、异步超时取消和分布式 worker。
+
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
 ```text
@@ -1101,6 +1157,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
   tests.test_paperstorm_multi_agent `
   tests.test_paperstorm_runtime `
   tests.test_paperstorm_memory_qa `
+  tests.test_paperstorm_langgraph_v44 `
   tests.test_paperstorm_eval `
   tests.test_paperstorm_eval_v4 `
   tests.test_paperstorm_retrieval_v41 `
@@ -1152,7 +1209,7 @@ docs/VERSION_PLAN.md
 - v4.1（已完成）：真实 BM25 + Dense + RRF + Cross-Encoder、Contextual Chunk 和 Zotero 论文弱标注实验。
 - v4.2（已完成）：可恢复 Context Engine、Token 动态预算、分层压缩、Context Meter 和恢复 Benchmark。
 - v4.3（已完成）：可治理的跨会话 Memory Service、写入策略、冲突失效、Hybrid recall、治理 API 和 Memory Benchmark。
-- v4.4（计划）：使用 LangGraph 编排聊天、知识库问答和 STORM 深度调研工具。
+- v4.4（已完成）：LangGraph 状态图、SQLite checkpoint、节点重试、请求幂等、STORM 隔离工具、图调试 API 与 Runtime Benchmark。
 - v4.5（计划）：补齐 ACL、增量索引、可靠性、可观测、压测和最终面试演示。
 
 第三阶段要求每个版本同时交付代码、测试、Benchmark、Trace 和面试学习记录；未完成的真实 Embedding、向量库、Reranker 和 LangGraph 能力不会提前写入简历。

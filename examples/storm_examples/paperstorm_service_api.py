@@ -31,7 +31,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="4.3")
+    app = FastAPI(title="PaperStorm Agent Service", version="4.4")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -99,6 +99,21 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     class ChatMessageRequest(BaseModel):
         message: str
+
+    class ConversationGraphInvokeRequest(BaseModel):
+        thread_id: str
+        request_id: str
+        user_id: str = "local-user"
+        message: str
+        topic: str = ""
+        task_id: str = ""
+        run_mode: str = "fake"
+        retriever: str = "arxiv"
+        output_language: str = "zh"
+        expected_keywords: list[str] = []
+        forbidden_keywords: list[str] = []
+        context_window: list[dict] = []
+        source_message_id: str = ""
 
     class CompactContextRequest(BaseModel):
         force: bool = True
@@ -323,6 +338,22 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     def restore_chat_context(chat_id: str, request: RestoreContextRequest):
         return service.restore_chat_context(chat_id, request.compaction_id)
 
+    @app.post("/conversation-graph/invoke")
+    def invoke_conversation_graph(request: ConversationGraphInvokeRequest):
+        return service.invoke_conversation_graph(**_request_payload(request))
+
+    @app.get("/conversation-graph/spec")
+    def get_conversation_graph_spec():
+        return service.get_conversation_graph_spec()
+
+    @app.get("/conversation-graph/threads/{thread_id}/state")
+    def get_conversation_thread_state(thread_id: str):
+        return service.get_conversation_thread_state(thread_id)
+
+    @app.get("/conversation-graph/threads/{thread_id}/history")
+    def get_conversation_thread_history(thread_id: str, limit: int = 50):
+        return service.get_conversation_thread_history(thread_id, limit=limit)
+
     @app.post("/evaluations/context-v42")
     def run_context_benchmark_v42():
         return service.run_context_benchmark_v42()
@@ -362,6 +393,14 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.post("/evaluations/memory-v43")
     def run_memory_benchmark_v43():
         return service.run_memory_benchmark_v43()
+
+    @app.post("/evaluations/runtime-v44")
+    def run_langgraph_benchmark_v44():
+        return service.run_langgraph_benchmark_v44()
+
+    @app.get("/evaluations/runtime-v44/latest")
+    def get_langgraph_benchmark_v44():
+        return service.get_langgraph_benchmark_v44()
 
     return app
 

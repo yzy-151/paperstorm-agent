@@ -15,7 +15,7 @@
       </div>
       <div class="header-meta">
         <span>release</span>
-        <strong id="project-version">v4.3</strong>
+        <strong id="project-version">v4.4</strong>
       </div>
     </header>
 
@@ -218,6 +218,7 @@
             </label>
             <button id="create-chat-session" type="button">新建聊天</button>
             <button id="refresh-chat-context" type="button">刷新上下文状态</button>
+            <button id="refresh-chat-graph" type="button">刷新图状态与 Checkpoint</button>
             <button id="compact-chat-context" type="button">强制压缩</button>
             <label>
               Compaction ID
@@ -295,6 +296,14 @@
             <section class="debug-card">
               <h3>Memory Write Decision</h3>
               <pre id="chat-memory-write"></pre>
+            </section>
+            <section class="debug-card">
+              <h3>LangGraph Run</h3>
+              <pre id="chat-graph-run"></pre>
+            </section>
+            <section class="debug-card">
+              <h3>Checkpoint History</h3>
+              <pre id="chat-checkpoint-history"></pre>
             </section>
           </aside>
         </div>
@@ -446,6 +455,23 @@
         <p class="panel-copy">评估写入精度、Recall@K、过期事实误用、跨用户泄漏、重复率和 P95 延迟。Thread Context、长期 Memory 与文档知识库保持独立。</p>
         <div id="memory-v43-metrics" class="metric-grid"></div>
         <pre id="memory-v43-summary"></pre>
+      </section>
+
+      <section class="panel wide" id="runtime-v44-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Agent Runtime Evaluation</p>
+            <h2>Runtime v4.4 LangGraph Benchmark</h2>
+          </div>
+          <span class="soft-badge">state graph / checkpoint / retry / idempotency / isolation</span>
+        </div>
+        <div class="button-row">
+          <button id="run-runtime-v44-benchmark" type="button">运行 Runtime Benchmark</button>
+          <button id="load-runtime-v44-benchmark" type="button">加载最近报告</button>
+        </div>
+        <p class="panel-copy">验证路由路径、SQLite checkpoint 恢复、瞬时失败重试、请求幂等、跨用户记忆隔离、trace span 覆盖和 STORM 工具产物契约。</p>
+        <div id="runtime-v44-metrics" class="metric-grid"></div>
+        <pre id="runtime-v44-summary"></pre>
       </section>
 
       <section class="panel wide" id="article-panel">

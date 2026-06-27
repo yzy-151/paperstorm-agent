@@ -1288,3 +1288,68 @@ Thread Context 是当前模型调用的 token 工作集，V4.2 负责压缩和�
 - namespace 是应用层 ACL contract，尚未接 OAuth/RBAC，不能表述为完成企业级身份安全。
 - JSONL event store 适合本地审计演示，尚未实现数据库事务、并发写锁、备份恢复和数据保留合规。
 - 当前 benchmark 是受控小数据，不代表真实用户事实变化、长周期记忆质量或线上 QPS。
+
+## 2026-08-01 实验记录：v4.4 LangGraph Conversation Runtime
+
+### 从什么问题出发
+
+V4.3 之前虽然已经具备 Router、Context、Memory、RAG、STORM 调研和 trace，但聊天主链路仍由 Python 条件分支串联。状态恢复、节点重试和幂等分散在不同模块，新增路径容易形成第二套运行时。V4.4 的目标不是重写 STORM，而是用成熟状态图承接会话编排，把深度调研降为边界清晰的工具。
+
+### 做了什么
+
+- 使用 LangGraph `StateGraph` 实现 classify、memory recall、casual/memory answer、knowledge retrieval、evidence grade、deep research、citation answer、memory write 和 final trace。
+- 使用 SQLite Checkpointer 按 `thread_id` 保存状态快照；服务重启后可查询当前 state 和 checkpoint history。
+- 继续使用 V4.3 Memory Service 保存跨线程稳定事实，避免把 checkpoint 与长期记忆混成一个数据库概念。
+- 为请求定义 Pydantic Schema，并以持久化 `thread_id + request_id` 结果表实现跨运行时幂等回放和跨线程隔离。
+- 为检索和深度调研节点配置受控瞬时错误重试；失败尝试与恢复结果均进入公共 trace，所有节点记录 span、耗时、状态与业务字段。
+- 将 DSPy/STORM 包装成隔离工具，只向主图返回结构化结论、引用、证据和 artifact URI。
+- 打通 Chat、FastAPI、Dashboard 和 Runtime Benchmark，网页可查看实际执行节点及 checkpoint。
+
+### Benchmark 数据
+
+受控本机案例中，path accuracy、idempotency、checkpoint restore、retry recovery、trace span coverage 和 artifact contract rate 均为 `1.0`，cross-user leakage rate 为 `0`，P95 约 `104.95 ms`。这是 fake 调研的软件契约测试，不是生产性能结论。
+
+### 面试推荐回答：为什么选择 LangGraph，而不是继续手写 Runtime
+
+```text
+我的另一个 nonlinear-nn-agent 项目已经从零实现过 Agent Loop、Tool Registry、Hook、Session 和 Retry，所以在 PaperStorm 中继续手写同类基础设施边际价值不高。这里选择 LangGraph，是为了复用状态图、checkpoint、条件边和节点级重试，把精力集中在论文 RAG、Memory 和 STORM 工具边界。迁移时没有推翻业务模块，而是把已有 Router、Memory Service 和 Deep Research 通过稳定 Schema 接到图节点上，并用 benchmark 验证路径、恢复和幂等。
+```
+
+### 面试推荐回答：Checkpointer 和长期 Memory Store 有什么区别
+
+```text
+Checkpointer 保存某个 thread 的执行状态，用于中断恢复、历史快照和状态调试；长期 Memory Store 保存跨 thread 的稳定用户事实、偏好和任务经验，需要 namespace、有效期、冲突和删除治理。我的实现用 SQLite 保存 LangGraph thread checkpoint，V4.3 Memory Service 仍按 user namespace 独立存储。两者可以在回答时汇合，但生命周期和权限边界不同。
+```
+
+### 面试推荐回答：为什么把 STORM 做成 Tool，而不是塞进主图状态
+
+```text
+STORM 的多视角检索、对话、大纲和文章生成会产生大量中间上下文。如果直接并入聊天 state，会放大 checkpoint、token 和耦合。V4.4 只把 question、topic 和受控 options 传给 STORM，返回答案、引用、证据、task_id 和 artifact URI；完整过程留在子任务产物和 trace 中。这样主会话可恢复，深度调研也能独立重试和审计。
+```
+
+### 面试推荐回答：为什么没有直接使用 AutoGen 多 Agent Team
+
+```text
+聊天到检索再到深度调研的主路径是可枚举工作流，固定状态图更容易保证恢复、幂等、权限和延迟。AutoGen 式动态 Agent Team 适合角色协商和开放任务，但也会增加消息轮次、成本和不确定性。我保留 STORM 内部已有多视角协作，只在外层使用 LangGraph；除非同一数据集的消融证明动态 Team 明显提升任务成功率，否则不把复杂度放进主链路。
+```
+
+### 简历可用表述
+
+```text
+基于 LangGraph 重构 Research Chat Agent 编排层，将意图路由、跨会话 Memory、知识检索、证据门控及 STORM Deep Research 封装为可恢复状态图；实现 SQLite checkpoint、节点级瞬时故障重试、跨进程请求幂等和 span trace，并打通 FastAPI/Dashboard。受控 Benchmark 中路径、恢复、重试、幂等与工具契约通过率均为 100%，跨用户记忆泄漏为 0。
+```
+
+### 不能夸大的边界
+
+- SQLite Checkpointer 是本地单进程演示方案，不是生产分布式状态存储。
+- 当前 `timeout_sec` 是节点预算 metadata；同步调用尚未实现强制取消。
+- `request_id` 结果文件能证明本地幂等，生产环境仍需数据库唯一约束和事务。
+- Router 仍包含确定性 fallback；真实结构化 LLM 路由的准确率需要独立 Golden Set。
+- Runtime benchmark 使用 fake 工具，不代表真实 arXiv、LLM 延迟、成本和 QPS。
+
+### 官方资料
+
+- [LangGraph Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
+- [LangGraph Memory](https://docs.langchain.com/oss/python/langgraph/add-memory)
+- [SQLite Checkpointer](https://reference.langchain.com/python/langgraph.checkpoint.sqlite/SqliteSaver)
+- [StateGraph Node Retry](https://reference.langchain.com/python/langgraph/graph/state/StateGraph/add_node)

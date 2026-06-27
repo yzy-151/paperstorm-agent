@@ -62,6 +62,8 @@ class PaperStormChatAgent:
             "memory_context": {},
             "long_term_memory": {},
             "memory_write": {"status": "not_evaluated"},
+            "conversation_runtime": "langgraph-v4.4",
+            "graph_run": {},
             "created_at": _now(),
             "updated_at": _now(),
             "options": options,
@@ -93,28 +95,14 @@ class PaperStormChatAgent:
             + _long_term_memory_messages(long_term_memory),
         )
 
-        router_decision = self.intent_router.route(
-            message=message,
+        graph_run = self._run_conversation_graph(
             session=session,
+            user_message=user_message,
             context_window=routed_context["messages"],
-            memory_context=dict(
-                combined_memory_context,
-                long_term=long_term_memory.get("results") or [],
-            ),
         )
-        if (long_term_memory.get("results") or []) and _is_memory_recall_question(message):
-            router_decision = {
-                "intent": "memory_recall",
-                "need_retrieval": False,
-                "tool": "memory_search",
-                "rewritten_query": message,
-                "confidence": 0.98,
-                "reason": "relevant cross-session memory is available",
-                "router": "memory_policy_v43",
-            }
-        answer = self._answer_message(
-            session, message, router_decision, long_term_memory=long_term_memory
-        )
+        router_decision = graph_run.get("router_decision") or {}
+        long_term_memory = graph_run.get("memory_recall") or long_term_memory
+        answer = _graph_answer_payload(graph_run)
         session["task_id"] = answer.get("used_task_id") or session.get("task_id", "")
         assistant_message = _message(
             "assistant",
@@ -165,7 +153,7 @@ class PaperStormChatAgent:
             },
         )
         memory_context = memory.get_context_bundle(query=message, max_items=5)
-        memory_write = self._write_long_term_memory(session, user_message)
+        memory_write = graph_run.get("memory_write") or {"status": "not_evaluated"}
         assembled_view = ContextEngine(config=engine.config).assemble(
             compacted_view,
             memory=_memory_messages(memory_context)
@@ -182,6 +170,8 @@ class PaperStormChatAgent:
         session["memory_context"] = memory_context
         session["long_term_memory"] = long_term_memory
         session["memory_write"] = memory_write
+        session["conversation_runtime"] = graph_run.get("runtime", "langgraph-v4.4")
+        session["graph_run"] = graph_run
         session["updated_at"] = _now()
         self._write_session(session)
 
@@ -199,6 +189,8 @@ class PaperStormChatAgent:
             "memory_context": memory_context,
             "long_term_memory": long_term_memory,
             "memory_write": memory_write,
+            "conversation_runtime": session["conversation_runtime"],
+            "graph_run": graph_run,
             "retrieval_triggered": answer.get("retrieval_triggered", False),
             "used_task_id": session.get("task_id", ""),
             "router_decision": router_decision,
@@ -313,6 +305,31 @@ class PaperStormChatAgent:
 
     def _long_term_memory(self):
         return LongTermMemoryService(Path(self.task_service.root_dir) / "memory_service_v43")
+
+    def _run_conversation_graph(self, session: Dict, user_message: Dict, context_window):
+        from .paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
+
+        runtime = PaperStormLangGraphRuntime(
+            root_dir=Path(self.task_service.root_dir) / "langgraph_runtime_v44",
+            task_service=self.task_service,
+            intent_router=self.intent_router,
+            memory_service=self._long_term_memory(),
+        )
+        return runtime.invoke(
+            thread_id=session["chat_id"],
+            request_id=user_message["id"],
+            user_id=session.get("user_id") or "local-user",
+            message=user_message.get("content", ""),
+            topic=session.get("topic") or "",
+            task_id=session.get("task_id") or "",
+            run_mode=session.get("run_mode") or "fake",
+            retriever=session.get("retriever") or "arxiv",
+            output_language=session.get("output_language") or "zh",
+            expected_keywords=session.get("expected_keywords") or [],
+            forbidden_keywords=session.get("forbidden_keywords") or [],
+            context_window=context_window or [],
+            source_message_id=user_message["id"],
+        )
 
     def _answer_message(
         self,
@@ -512,6 +529,43 @@ def _active_context_meter(raw_meter: Dict, active_meter: Dict):
         raw_high_watermark=raw_meter.get("high_watermark", False),
         reason=raw_meter.get("reason", ""),
     )
+
+
+def _graph_answer_payload(graph_run: Dict):
+    """Adapt the V4.4 graph result to the stable chat response contract."""
+    router_decision = graph_run.get("router_decision") or {}
+    evidence_grade = graph_run.get("evidence_grade") or {}
+    route = graph_run.get("route") or ""
+    action = {
+        "casual_chat": "chat_fallback",
+        "memory_answer": "memory_recall",
+        "deep_research": "retrieve_then_answer",
+        "existing_knowledge": "answer_existing",
+    }.get(route, route)
+    return {
+        "question": router_decision.get("rewritten_query", ""),
+        "answer": graph_run.get("answer", ""),
+        "citations": graph_run.get("citations") or [],
+        "evidence": graph_run.get("evidence") or [],
+        "grounded": bool(graph_run.get("grounded")),
+        "memory_context": {
+            "long_term": (graph_run.get("memory_recall") or {}).get("results") or []
+        },
+        "used_task_id": graph_run.get("used_task_id", ""),
+        "task_status": graph_run.get("status", ""),
+        "retrieval_triggered": bool(graph_run.get("retrieval_triggered")),
+        "decision": {
+            "action": action,
+            "reason": evidence_grade.get("reason")
+            or router_decision.get("reason", ""),
+        },
+        "evidence_sufficiency": evidence_grade,
+        "trace": graph_run.get("node_events") or [],
+        "qa_history": [],
+        "qa_history_count": 0,
+        "router_decision": router_decision,
+        "artifact_uri": graph_run.get("artifact_uri", ""),
+    }
 
 
 def _casual_chat_answer(

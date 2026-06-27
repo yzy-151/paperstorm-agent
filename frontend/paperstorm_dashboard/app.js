@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v4.3";
+const DASHBOARD_VERSION = "v4.4";
 
 async function loadDashboard() {
   try {
@@ -530,6 +530,55 @@ async function runMemoryBenchmarkV43() {
   }
 }
 
+async function refreshChatGraph() {
+  const chatId = document.querySelector("#chat-session-id").value.trim();
+  if (!chatId) {
+    setStatus("请先创建聊天", "error");
+    return;
+  }
+  try {
+    setButtonBusy("refresh-chat-graph", true, "刷新中");
+    const encoded = encodeURIComponent(chatId);
+    const [state, history] = await Promise.all([
+      fetchJson(`/conversation-graph/threads/${encoded}/state`),
+      fetchJson(`/conversation-graph/threads/${encoded}/history?limit=30`),
+    ]);
+    document.querySelector("#chat-graph-run").textContent = JSON.stringify(state, null, 2);
+    document.querySelector("#chat-checkpoint-history").textContent = JSON.stringify(history, null, 2);
+    setStatus(`checkpoint ${history.checkpoints?.length || 0}`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("refresh-chat-graph", false);
+  }
+}
+
+async function runRuntimeBenchmarkV44() {
+  try {
+    setButtonBusy("run-runtime-v44-benchmark", true, "运行中");
+    const report = await fetchJson("/evaluations/runtime-v44", {method: "POST"});
+    renderRuntimeBenchmarkV44(report);
+    setStatus("runtime v4.4 benchmark completed", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("run-runtime-v44-benchmark", false);
+  }
+}
+
+async function loadRuntimeBenchmarkV44() {
+  try {
+    setButtonBusy("load-runtime-v44-benchmark", true, "加载中");
+    const report = await fetchJson("/evaluations/runtime-v44/latest");
+    renderRuntimeBenchmarkV44(report);
+    setStatus("latest runtime v4.4 benchmark loaded", Object.keys(report).length ? "success" : "idle");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("load-runtime-v44-benchmark", false);
+  }
+}
+
 async function createEnterpriseKB() {
   const payload = {
     name: document.querySelector("#enterprise-kb-name").value.trim() || "Enterprise Knowledge Base",
@@ -840,6 +889,8 @@ function renderChatSession(session) {
   renderLongTermMemory(session.long_term_memory || {});
   document.querySelector("#chat-memory-write").textContent =
     JSON.stringify(session.memory_write || {}, null, 2);
+  document.querySelector("#chat-graph-run").textContent =
+    JSON.stringify(session.graph_run || {}, null, 2);
   renderContextState(session);
   document.querySelector("#chat-router-decision").textContent =
     JSON.stringify(session.router_decision || {}, null, 2);
@@ -917,6 +968,18 @@ function renderMemoryBenchmarkV43(report) {
   document.querySelector("#memory-v43-summary").textContent = JSON.stringify({
     architecture: report.architecture || {},
     counts: report.counts || {},
+    limitations: report.limitations || [],
+  }, null, 2);
+}
+
+function renderRuntimeBenchmarkV44(report) {
+  const metrics = report.metrics || {};
+  document.querySelector("#runtime-v44-metrics").innerHTML = Object.entries(metrics)
+    .map(([name, value]) => metric(name, value))
+    .join("");
+  document.querySelector("#runtime-v44-summary").textContent = JSON.stringify({
+    runtime: report.runtime || {},
+    paths: report.paths || {},
     limitations: report.limitations || [],
   }, null, 2);
 }
@@ -1140,6 +1203,7 @@ document.querySelector("#show-chat-mode").addEventListener("click", () => setDas
 document.querySelector("#create-chat-session").addEventListener("click", createChatSession);
 document.querySelector("#send-chat-message").addEventListener("click", sendChatMessage);
 document.querySelector("#refresh-chat-context").addEventListener("click", loadChatContext);
+document.querySelector("#refresh-chat-graph").addEventListener("click", refreshChatGraph);
 document.querySelector("#compact-chat-context").addEventListener("click", compactChatContext);
 document.querySelector("#restore-chat-context").addEventListener("click", restoreChatContext);
 document.querySelector("#run-context-v42-benchmark").addEventListener("click", runContextBenchmarkV42);
@@ -1148,6 +1212,8 @@ document.querySelector("#export-chat-memory").addEventListener("click", exportCh
 document.querySelector("#delete-chat-memory").addEventListener("click", deleteChatMemory);
 document.querySelector("#chat-memory-enabled").addEventListener("change", updateMemorySetting);
 document.querySelector("#run-memory-v43-benchmark").addEventListener("click", runMemoryBenchmarkV43);
+document.querySelector("#run-runtime-v44-benchmark").addEventListener("click", runRuntimeBenchmarkV44);
+document.querySelector("#load-runtime-v44-benchmark").addEventListener("click", loadRuntimeBenchmarkV44);
 document.querySelector("#create-enterprise-kb").addEventListener("click", createEnterpriseKB);
 document.querySelector("#list-enterprise-kb").addEventListener("click", listEnterpriseKB);
 document.querySelector("#ask-enterprise-kb").addEventListener("click", askEnterpriseKB);

@@ -1,6 +1,6 @@
 # PaperStorm Agent 操作规范
 
-更新时间：2026-07-27
+更新时间：2026-08-01
 
 这份文档给 Codex / Claude Code / DeepSeek 接手项目时阅读，Master 不需要日常细看。目标是保证后续每次改动都可追踪、可验证、可回滚，不污染工作区。
 
@@ -209,15 +209,13 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
   tests.test_paperstorm_mcp_server `
   tests.test_paperstorm_logging `
   tests.test_paperstorm_retrievers `
+  tests.test_paperstorm_context_v42 `
+  tests.test_paperstorm_memory_v43 `
+  tests.test_paperstorm_langgraph_v44 `
   tests.test_minimax_runtime_fixes -v
 ```
 
-最近目标结果：
-
-```text
-Ran 38 tests
-OK
-```
+测试数量随版本增长，以命令最新输出的 `Ran N tests / OK` 为准，不在规范中固定旧数量。
 
 语法检查：
 
@@ -225,7 +223,12 @@ OK
 D:\SOFTWARE\spyder\envs\storm\python.exe -m py_compile `
   knowledge_storm\paperstorm_eval.py `
   knowledge_storm\paperstorm_tools.py `
+  knowledge_storm\paperstorm_langgraph_v44.py `
+  knowledge_storm\paperstorm_langgraph_benchmark_v44.py `
+  knowledge_storm\paperstorm_chat_agent.py `
+  knowledge_storm\paperstorm_service.py `
   examples\storm_examples\evaluate_paperstorm_run.py `
+  examples\storm_examples\paperstorm_service_api.py `
   examples\storm_examples\paperstorm_mcp_server.py
 ```
 
@@ -245,8 +248,33 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m py_compile `
 - Tool Schema。
 - MCP-style stdio server。
 - Eval Harness v1。
+- LangGraph Conversation Runtime、SQLite checkpoint、节点重试和线程级幂等。
+- STORM 隔离 Deep Research Tool、图状态/历史 API 与 Runtime v4.4 Benchmark。
 
-## 10. GitHub 清理注意
+## 10. V4.4 运行时操作
+
+新增依赖：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m pip install `
+  "langgraph>=1.2,<2.0" `
+  "langgraph-checkpoint-sqlite>=3.1,<4.0"
+```
+
+启动网页服务仍使用统一入口：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\start_paperstorm_service.py `
+  --service-root .\results\paperstorm_demo_service `
+  --host 127.0.0.1 `
+  --port 8002
+```
+
+打开 `http://127.0.0.1:8002`，聊天回复中的 `conversation_runtime` 必须是 `langgraph-v4.4`。发布前至少验证：普通聊天、显式记忆写入、跨 session 召回、fake 深度调研、Graph State/Checkpoint 刷新和 Runtime Benchmark。
+
+SQLite Checkpointer 仅用于本地单进程演示。不要在多 worker 服务中把它描述成生产持久化方案；V4.5 再迁移数据库 checkpointer、事务幂等与异步超时取消。
+
+## 11. GitHub 清理注意
 
 远程已有较多分支。删除远程分支前必须先给 Master 列出：
 
@@ -267,7 +295,7 @@ GitHub 仓库已按 Master 确认改名为：
 paperstorm-agent
 ```
 
-## 11. 安全边界
+## 12. 安全边界
 
 - 不要写入真实 API key。
 - 不要把 `run_config.json` 中的敏感字段恢复成明文。
