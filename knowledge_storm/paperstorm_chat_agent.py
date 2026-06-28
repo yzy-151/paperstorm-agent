@@ -32,6 +32,7 @@ class PaperStormChatAgent:
         context_window_size: int = 6,
         context_token_limit: int = 4096,
         user_id: str = "local-user",
+        tenant_id: str = "local",
         memory_enabled: bool = True,
         **options,
     ) -> Dict:
@@ -50,6 +51,7 @@ class PaperStormChatAgent:
             "context_window_size": max(2, int(context_window_size or 6)),
             "context_config": _context_config(context_token_limit, context_window_size),
             "user_id": _safe_user_id(user_id),
+            "tenant_id": str(tenant_id or "local"),
             "memory_namespace": memory_namespace,
             "memory_enabled": bool(memory_enabled),
             "task_id": options.pop("task_id", "") or "",
@@ -62,7 +64,7 @@ class PaperStormChatAgent:
             "memory_context": {},
             "long_term_memory": {},
             "memory_write": {"status": "not_evaluated"},
-            "conversation_runtime": "langgraph-v4.4",
+            "conversation_runtime": "paperstorm-production-v4.5",
             "graph_run": {},
             "created_at": _now(),
             "updated_at": _now(),
@@ -170,7 +172,9 @@ class PaperStormChatAgent:
         session["memory_context"] = memory_context
         session["long_term_memory"] = long_term_memory
         session["memory_write"] = memory_write
-        session["conversation_runtime"] = graph_run.get("runtime", "langgraph-v4.4")
+        session["conversation_runtime"] = graph_run.get(
+            "runtime", "paperstorm-production-v4.5"
+        )
         session["graph_run"] = graph_run
         session["updated_at"] = _now()
         self._write_session(session)
@@ -307,15 +311,8 @@ class PaperStormChatAgent:
         return LongTermMemoryService(Path(self.task_service.root_dir) / "memory_service_v43")
 
     def _run_conversation_graph(self, session: Dict, user_message: Dict, context_window):
-        from .paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
-
-        runtime = PaperStormLangGraphRuntime(
-            root_dir=Path(self.task_service.root_dir) / "langgraph_runtime_v44",
-            task_service=self.task_service,
-            intent_router=self.intent_router,
-            memory_service=self._long_term_memory(),
-        )
-        return runtime.invoke(
+        return self.task_service.invoke_conversation_graph(
+            tenant_id=session.get("tenant_id") or "local",
             thread_id=session["chat_id"],
             request_id=user_message["id"],
             user_id=session.get("user_id") or "local-user",

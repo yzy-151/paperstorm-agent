@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PaperStorm Agent Dashboard</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -15,7 +16,7 @@
       </div>
       <div class="header-meta">
         <span>release</span>
-        <strong id="project-version">v4.4</strong>
+        <strong id="project-version">v4.5</strong>
       </div>
     </header>
 
@@ -211,6 +212,10 @@
             <label>
               User ID / Memory Namespace
               <input id="chat-user-id" value="local-user" />
+            </label>
+            <label>
+              Tenant ID
+              <input id="chat-tenant-id" value="local" />
             </label>
             <label class="checkbox-line">
               <input id="chat-memory-enabled" type="checkbox" checked />
@@ -472,6 +477,42 @@
         <p class="panel-copy">验证路由路径、SQLite checkpoint 恢复、瞬时失败重试、请求幂等、跨用户记忆隔离、trace span 覆盖和 STORM 工具产物契约。</p>
         <div id="runtime-v44-metrics" class="metric-grid"></div>
         <pre id="runtime-v44-summary"></pre>
+      </section>
+
+      <section class="panel wide" id="production-v45-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Production Governance Workbench</p>
+            <h2>Production v4.5 治理与 SLO Benchmark</h2>
+          </div>
+          <span class="soft-badge">ACL / WAL / idempotency / cache / jobs / circuit / spans</span>
+        </div>
+        <div class="button-row">
+          <button id="run-production-v45-benchmark" type="button">运行 Production Benchmark</button>
+          <button id="load-production-v45-benchmark" type="button">加载最近报告</button>
+          <button id="load-production-v45-status" type="button">刷新控制面状态</button>
+          <button id="load-production-v45-trace" type="button">加载当前 Trace</button>
+        </div>
+        <label>
+          Trace ID
+          <input id="production-v45-trace-id" placeholder="聊天后自动填入" />
+        </label>
+        <p class="panel-copy">展示本地 SQLite WAL 治理热路径的 P50/P95/P99、QPS、错误率、降级率、缓存命中、ACL 隔离、作业恢复和 span。真实 LLM/网络压测需在部署环境另行执行。</p>
+        <div id="production-v45-metrics" class="metric-grid"></div>
+        <div class="qa-debug-grid">
+          <section class="debug-card">
+            <h3>Control Plane</h3>
+            <pre id="production-v45-status"></pre>
+          </section>
+          <section class="debug-card">
+            <h3>SLO / Degradation</h3>
+            <pre id="production-v45-summary"></pre>
+          </section>
+          <section class="debug-card">
+            <h3>OpenTelemetry-style Spans</h3>
+            <pre id="production-v45-trace"></pre>
+          </section>
+        </div>
       </section>
 
       <section class="panel wide" id="article-panel">

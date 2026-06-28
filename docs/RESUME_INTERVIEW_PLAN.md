@@ -1353,3 +1353,61 @@ STORM 的多视角检索、对话、大纲和文章生成会产生大量中间�
 - [LangGraph Memory](https://docs.langchain.com/oss/python/langgraph/add-memory)
 - [SQLite Checkpointer](https://reference.langchain.com/python/langgraph.checkpoint.sqlite/SqliteSaver)
 - [StateGraph Node Retry](https://reference.langchain.com/python/langgraph/graph/state/StateGraph/add_node)
+
+## 2026-08-02 实验记录：v4.5 生产治理基线
+
+### 从什么问题出发
+
+V4.4 已有 LangGraph checkpoint、节点重试和本地幂等，但身份隔离、缓存、后台任务、熔断和 Trace 分散在业务模块；文件式幂等在并发竞争下也无法提供唯一执行保证。V4.5 的目标是给现有 Agent 增加可演示、可测试的生产控制面，而不是宣称本地 Demo 已等同企业基础设施。
+
+### 做了什么
+
+- 使用 SQLite WAL 建立统一 control plane，保存 resource policy、audit event、idempotency、cache、job、circuit breaker 和 span。
+- 对 tenant/user/thread/trace/knowledge base/document 执行访问前鉴权；chunk 继承文档 tenant/owner/allowed metadata，列表按控制面可访问资源过滤。
+- 通过数据库唯一键和 `BEGIN IMMEDIATE` 实现并发幂等抢占；8 个线程复用同一请求时业务只执行一次，其余等待并回放结果。
+- 以文档 SHA-256 做增量索引，持久任务支持幂等入队、失败重试和重启恢复；索引版本变化后按 KB tag 失效答案缓存。
+- provider 调用采用有限重试 + 持久熔断 + 显式 fallback；API 将 PermissionError、ValueError、KeyError 映射到 403/400/404。
+- 在 LangGraph 外增加 `paperstorm-production-v4.5` 包装层，将 graph node 事件汇入统一 span store，同时保持 `graph_runtime=langgraph-v4.4` 可追踪。
+- Dashboard 新增生产状态、Trace 和 SLO Benchmark 面板；HTTP 契约测试覆盖授权读取和越权拒绝。
+
+### Benchmark 数据
+
+500 请求本机治理热路径得到 P50 `24.70 ms`、P95 `28.03 ms`、P99 `36.28 ms`、`39.63 QPS`、错误率 `0`、ACL 泄漏率 `0`；幂等、任务恢复和 span 覆盖均为 `1.0`，cache hit rate `0.998`。Benchmark 主动注入一次 provider 故障，degradation rate 为 `0.002`。
+
+### 面试推荐回答：文件幂等为什么不够
+
+```text
+先检查文件是否存在、再写文件是 check-then-act，两次并发都可能在文件出现前通过检查并重复执行。我在 V4.5 使用数据库唯一键约束 scope + request_id，并在短事务中抢占 owner token；只有 owner 执行业务，其余请求等待 succeeded 结果。同一个 key 如果 payload hash 不同会直接拒绝，防止错误回放。生产环境可把同一协议迁到 PostgreSQL 或 Redis，但核心是原子 claim 和可恢复状态，不是换一个存储名字。
+```
+
+### 面试推荐回答：重试和熔断有什么区别
+
+```text
+重试处理短暂故障，只对可恢复异常做有限次数和退避；熔断处理持续故障，当失败达到阈值后停止继续压垮下游，直接走显式 fallback，冷却后再探测。我的控制面会持久化 circuit state，使进程内不同请求共享下游健康判断；Benchmark 主动注入故障验证 open circuit 和 lexical fallback。真实服务还应增加 jitter、半开并发限制和按错误类型统计。
+```
+
+### 面试推荐回答：缓存如何避免脏数据和越权
+
+```text
+缓存 key 必须包含 tenant、资源 ID、查询参数和 index version，不能只用 question，否则可能跨租户命中。知识库更新后我同时提升 index_version，并按 kb tag 主动失效旧答案；TTL 只是兜底。读取缓存之前仍然先做资源 ACL，缓存不能绕过鉴权。
+```
+
+### 面试推荐回答：你如何证明系统更接近生产，而不是只加日志
+
+```text
+我把非功能需求写成可失败的契约：并发幂等只执行一次、越权读取返回 403、跨租户列表为空、失败任务重试后成功、熔断开启时不再调用下游、索引更新使缓存失效、每次受控调用都有 span。Benchmark 同时报告 P50/P95/P99、QPS、错误率、降级率和泄漏率，并明确区分本地治理热路径与真实 LLM 端到端性能。
+```
+
+### 简历可用表述
+
+```text
+在 LangGraph Research Agent 外构建生产治理控制面：基于 SQLite WAL 实现 tenant/user/resource ACL 与审计、事务型请求幂等、TTL/tag 缓存、持久增量索引任务及重试/熔断降级；统一采集 Runtime/Graph spans 并打通 FastAPI 与 Dashboard。500 请求本地治理压测 P95 28.03 ms、39.63 QPS、错误率和 ACL 泄漏率为 0，并发幂等、任务恢复和 Trace 覆盖率为 100%。
+```
+
+### 不能夸大的边界
+
+- 身份由请求显式传入，尚未接 OAuth/OIDC、JWT 验签或企业目录。
+- SQLite WAL 与单进程 worker 是本地生产治理 baseline，不是分布式数据库和消息队列。
+- span schema 参考 OpenTelemetry，但当前没有接 OTel SDK、Collector、Prometheus 或告警系统。
+- Benchmark 只测本地控制面热路径，不包含真实 LLM、检索器、Embedding、Reranker 或网络吞吐。
+- token/cost 字段已进入 span 契约，但 fake 路径没有真实 provider usage，不能声称完成精确成本核算。

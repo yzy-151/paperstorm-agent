@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v4.4";
+const DASHBOARD_VERSION = "v4.5";
 
 async function loadDashboard() {
   try {
@@ -287,6 +287,7 @@ async function createChatSession() {
     context_window_size: 6,
     context_token_limit: Number(document.querySelector("#chat-context-token-limit").value) || 4096,
     user_id: document.querySelector("#chat-user-id").value.trim() || "local-user",
+    tenant_id: document.querySelector("#chat-tenant-id").value.trim() || "local",
     memory_enabled: document.querySelector("#chat-memory-enabled").checked,
   };
   try {
@@ -539,9 +540,11 @@ async function refreshChatGraph() {
   try {
     setButtonBusy("refresh-chat-graph", true, "刷新中");
     const encoded = encodeURIComponent(chatId);
+    const tenant = encodeURIComponent(document.querySelector("#chat-tenant-id").value.trim() || "local");
+    const user = encodeURIComponent(document.querySelector("#chat-user-id").value.trim() || "local-user");
     const [state, history] = await Promise.all([
-      fetchJson(`/conversation-graph/threads/${encoded}/state`),
-      fetchJson(`/conversation-graph/threads/${encoded}/history?limit=30`),
+      fetchJson(`/conversation-graph/threads/${encoded}/state?tenant_id=${tenant}&user_id=${user}`),
+      fetchJson(`/conversation-graph/threads/${encoded}/history?limit=30&tenant_id=${tenant}&user_id=${user}`),
     ]);
     document.querySelector("#chat-graph-run").textContent = JSON.stringify(state, null, 2);
     document.querySelector("#chat-checkpoint-history").textContent = JSON.stringify(history, null, 2);
@@ -576,6 +579,63 @@ async function loadRuntimeBenchmarkV44() {
     setStatus(error.message, "error");
   } finally {
     setButtonBusy("load-runtime-v44-benchmark", false);
+  }
+}
+
+async function runProductionBenchmarkV45() {
+  try {
+    setButtonBusy("run-production-v45-benchmark", true, "运行中");
+    const report = await fetchJson("/evaluations/production-v45", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({request_count: 100}),
+    });
+    renderProductionBenchmarkV45(report);
+    setStatus("production v4.5 benchmark completed", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("run-production-v45-benchmark", false);
+  }
+}
+
+async function loadProductionBenchmarkV45() {
+  try {
+    setButtonBusy("load-production-v45-benchmark", true, "加载中");
+    const report = await fetchJson("/evaluations/production-v45/latest");
+    renderProductionBenchmarkV45(report);
+    setStatus("latest production v4.5 benchmark loaded", Object.keys(report).length ? "success" : "idle");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("load-production-v45-benchmark", false);
+  }
+}
+
+async function loadProductionStatusV45() {
+  try {
+    const status = await fetchJson("/production/status");
+    document.querySelector("#production-v45-status").textContent = JSON.stringify(status, null, 2);
+    setStatus("production control plane loaded", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
+async function loadProductionTraceV45() {
+  const traceId = document.querySelector("#production-v45-trace-id").value.trim();
+  if (!traceId) {
+    setStatus("请先发送聊天消息或输入 Trace ID", "error");
+    return;
+  }
+  const tenant = encodeURIComponent(document.querySelector("#chat-tenant-id").value.trim() || "local");
+  const user = encodeURIComponent(document.querySelector("#chat-user-id").value.trim() || "local-user");
+  try {
+    const trace = await fetchJson(`/production/traces/${encodeURIComponent(traceId)}?tenant_id=${tenant}&user_id=${user}`);
+    document.querySelector("#production-v45-trace").textContent = JSON.stringify(trace, null, 2);
+    setStatus(`trace spans ${trace.spans?.length || 0}`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
   }
 }
 
@@ -891,6 +951,10 @@ function renderChatSession(session) {
     JSON.stringify(session.memory_write || {}, null, 2);
   document.querySelector("#chat-graph-run").textContent =
     JSON.stringify(session.graph_run || {}, null, 2);
+  const graphRun = session.graph_run || {};
+  if (graphRun.trace_id) {
+    document.querySelector("#production-v45-trace-id").value = graphRun.trace_id;
+  }
   renderContextState(session);
   document.querySelector("#chat-router-decision").textContent =
     JSON.stringify(session.router_decision || {}, null, 2);
@@ -903,6 +967,9 @@ function renderChatSession(session) {
   }
   if (session.user_id) {
     document.querySelector("#chat-user-id").value = session.user_id;
+  }
+  if (session.tenant_id) {
+    document.querySelector("#chat-tenant-id").value = session.tenant_id;
   }
   if (typeof session.memory_enabled === "boolean") {
     document.querySelector("#chat-memory-enabled").checked = session.memory_enabled;
@@ -980,6 +1047,21 @@ function renderRuntimeBenchmarkV44(report) {
   document.querySelector("#runtime-v44-summary").textContent = JSON.stringify({
     runtime: report.runtime || {},
     paths: report.paths || {},
+    limitations: report.limitations || [],
+  }, null, 2);
+}
+
+function renderProductionBenchmarkV45(report) {
+  const metrics = report.metrics || {};
+  document.querySelector("#production-v45-metrics").innerHTML = Object.entries(metrics)
+    .map(([name, value]) => metric(name, value))
+    .join("");
+  document.querySelector("#production-v45-status").textContent = JSON.stringify(
+    report.control_plane || {}, null, 2
+  );
+  document.querySelector("#production-v45-summary").textContent = JSON.stringify({
+    slo: report.slo || {},
+    degradation: report.degradation || {},
     limitations: report.limitations || [],
   }, null, 2);
 }
@@ -1214,6 +1296,10 @@ document.querySelector("#chat-memory-enabled").addEventListener("change", update
 document.querySelector("#run-memory-v43-benchmark").addEventListener("click", runMemoryBenchmarkV43);
 document.querySelector("#run-runtime-v44-benchmark").addEventListener("click", runRuntimeBenchmarkV44);
 document.querySelector("#load-runtime-v44-benchmark").addEventListener("click", loadRuntimeBenchmarkV44);
+document.querySelector("#run-production-v45-benchmark").addEventListener("click", runProductionBenchmarkV45);
+document.querySelector("#load-production-v45-benchmark").addEventListener("click", loadProductionBenchmarkV45);
+document.querySelector("#load-production-v45-status").addEventListener("click", loadProductionStatusV45);
+document.querySelector("#load-production-v45-trace").addEventListener("click", loadProductionTraceV45);
 document.querySelector("#create-enterprise-kb").addEventListener("click", createEnterpriseKB);
 document.querySelector("#list-enterprise-kb").addEventListener("click", listEnterpriseKB);
 document.querySelector("#ask-enterprise-kb").addEventListener("click", askEnterpriseKB);

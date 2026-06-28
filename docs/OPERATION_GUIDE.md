@@ -270,11 +270,69 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\start_paperstor
   --port 8002
 ```
 
-打开 `http://127.0.0.1:8002`，聊天回复中的 `conversation_runtime` 必须是 `langgraph-v4.4`。发布前至少验证：普通聊天、显式记忆写入、跨 session 召回、fake 深度调研、Graph State/Checkpoint 刷新和 Runtime Benchmark。
+打开 `http://127.0.0.1:8002`，V4.5 聊天回复中的 `conversation_runtime` 应为 `paperstorm-production-v4.5`，同时 `graph_runtime` 仍为 `langgraph-v4.4`。发布前至少验证：普通聊天、显式记忆写入、跨 session 召回、fake 深度调研、Graph State/Checkpoint 刷新和 Runtime Benchmark。
 
-SQLite Checkpointer 仅用于本地单进程演示。不要在多 worker 服务中把它描述成生产持久化方案；V4.5 再迁移数据库 checkpointer、事务幂等与异步超时取消。
+SQLite Checkpointer 仅用于本地单进程演示。V4.5 已在外层补充 SQLite WAL 事务幂等和持久任务，但没有把 LangGraph checkpoint 迁到生产数据库，也没有完成同步调用的强制异步取消；不要把它描述成多 worker 生产持久化方案。
 
-## 11. GitHub 清理注意
+## 11. V4.5 生产治理操作
+
+启动统一服务：
+
+```powershell
+cd D:\FILEEEEEEEEEEE\projects\storm
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\start_paperstorm_service.py `
+  --service-root .\results\paperstorm_demo_service `
+  --host 127.0.0.1 `
+  --port 8002
+```
+
+打开 `http://127.0.0.1:8002`。Dashboard 的 Production v4.5 面板提供：
+
+- `运行 Production Benchmark`：执行本地治理热路径压测。
+- `加载最近报告`：读取最近一次 JSON 报告，不重复运行。
+- `刷新控制面状态`：查看资源、审计、幂等、缓存、任务和 span 数量。
+- `加载当前 Trace`：使用聊天区 tenant/user 和当前 trace ID 读取受 ACL 保护的 spans。
+
+用 PowerShell 直接验证 API：
+
+```powershell
+$body = @{
+  tenant_id = "demo"
+  thread_id = "thread-v45"
+  request_id = "request-001"
+  user_id = "alice"
+  message = "你好"
+  run_mode = "fake"
+} | ConvertTo-Json
+
+$run = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8002/conversation-graph/invoke `
+  -ContentType "application/json" `
+  -Body $body
+
+Invoke-RestMethod -Uri (
+  "http://127.0.0.1:8002/production/traces/{0}?tenant_id=demo&user_id=alice" -f $run.trace_id
+)
+```
+
+增量知识库更新先入队，再由 worker tick 消费。`idempotency_key` 相同且 payload 相同会复用任务；同 key 不同 payload 会拒绝：
+
+```text
+POST /enterprise-kbs/{kb_id}/index-jobs
+POST /production/worker/tick
+```
+
+500 请求 Benchmark：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -c `
+  "from knowledge_storm.paperstorm_production_benchmark_v45 import run_production_benchmark; run_production_benchmark(r'results\paperstorm_production_v45', request_count=500)"
+```
+
+注意：该 Benchmark 测的是单进程 SQLite WAL 治理热路径，故障降级是主动注入；不包含真实 LLM、arXiv、Embedding 或 Reranker 网络开销。
+
+## 12. GitHub 清理注意
 
 远程已有较多分支。删除远程分支前必须先给 Master 列出：
 
@@ -295,7 +353,7 @@ GitHub 仓库已按 Master 确认改名为：
 paperstorm-agent
 ```
 
-## 12. 安全边界
+## 13. 安全边界
 
 - 不要写入真实 API key。
 - 不要把 `run_config.json` 中的敏感字段恢复成明文。

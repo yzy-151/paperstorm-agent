@@ -223,13 +223,20 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
                     "run_mode": "fake",
                 },
             )
-            state = client.get("/conversation-graph/threads/api-thread/state")
-            history = client.get("/conversation-graph/threads/api-thread/history")
+            state = client.get(
+                "/conversation-graph/threads/api-thread/state",
+                params={"tenant_id": "local", "user_id": "alice"},
+            )
+            history = client.get(
+                "/conversation-graph/threads/api-thread/history",
+                params={"tenant_id": "local", "user_id": "alice"},
+            )
             benchmark = client.post("/evaluations/runtime-v44")
             latest = client.get("/evaluations/runtime-v44/latest")
 
         self.assertEqual(invoked.status_code, 200)
-        self.assertEqual(invoked.json()["runtime"], "langgraph-v4.4")
+        self.assertEqual(invoked.json()["runtime"], "paperstorm-production-v4.5")
+        self.assertEqual(invoked.json()["graph_runtime"], "langgraph-v4.4")
         self.assertEqual(state.json()["values"]["request_id"], "api-request")
         self.assertTrue(history.json()["checkpoints"])
         self.assertEqual(benchmark.status_code, 200)
@@ -243,7 +250,10 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             session = service.create_chat_session(user_id="alice", run_mode="fake")
             reply = service.send_chat_message(session["chat_id"], "你好")
 
-            self.assertEqual(reply["conversation_runtime"], "langgraph-v4.4")
+            self.assertEqual(
+                reply["conversation_runtime"], "paperstorm-production-v4.5"
+            )
+            self.assertEqual(reply["graph_run"]["graph_runtime"], "langgraph-v4.4")
             self.assertEqual(reply["graph_run"]["status"], "succeeded")
             self.assertIn("classify", reply["graph_run"]["executed_nodes"])
 

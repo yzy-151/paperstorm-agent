@@ -1,3 +1,4 @@
+import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
@@ -21,10 +22,17 @@ class EnterpriseKnowledgeBaseService:
     replaced by Qdrant/FAISS/Milvus without changing the public service API.
     """
 
-    def __init__(self, root_dir):
+    def __init__(self, root_dir, control_plane=None):
         self.root_dir = Path(root_dir)
         self.kb_dir = self.root_dir / "knowledge_bases"
         self.kb_dir.mkdir(parents=True, exist_ok=True)
+        if control_plane is None:
+            from .paperstorm_production_v45 import ProductionControlPlaneV45
+
+            control_plane = ProductionControlPlaneV45(
+                self.root_dir / "production_control_v45.sqlite"
+            )
+        self.control = control_plane
 
     def create_knowledge_base(
         self,
@@ -35,6 +43,9 @@ class EnterpriseKnowledgeBaseService:
         chunk_size: int = 500,
         chunk_overlap: int = 100,
         embedding_provider: str = "hash",
+        tenant_id: str = "local",
+        owner_user_id: str = "local-user",
+        allowed_user_ids: Optional[List[str]] = None,
     ) -> Dict:
         documents = []
         for index, source_path in enumerate(source_paths or [], start=1):
@@ -49,7 +60,12 @@ class EnterpriseKnowledgeBaseService:
                     "text": text,
                     "url": str(path),
                     "source_type": path.suffix.lower().lstrip(".") or "document",
-                    "metadata": {"path": str(path)},
+                    "metadata": {
+                        "path": str(path),
+                        "tenant_id": tenant_id,
+                        "owner_user_id": owner_user_id,
+                        "allowed_user_ids": allowed_user_ids or [],
+                    },
                 }
             )
         if not documents:
@@ -79,24 +95,88 @@ class EnterpriseKnowledgeBaseService:
             "chunk_overlap": chunk_overlap,
             "embedding_provider": index.config.get("embedding_provider", ""),
             "index_path": str(index_path),
+            "tenant_id": tenant_id,
+            "owner_user_id": owner_user_id,
+            "allowed_user_ids": allowed_user_ids or [],
+            "index_version": 1,
+            "documents": [
+                {
+                    "document_id": item["document_id"],
+                    "path": item["metadata"]["path"],
+                    "sha256": _file_digest(Path(item["metadata"]["path"])),
+                }
+                for item in documents
+            ],
         }
         self._write_manifest(kb_id, manifest)
+        self.control.register_resource(
+            tenant_id=tenant_id,
+            resource_type="knowledge_base",
+            resource_id=kb_id,
+            owner_user_id=owner_user_id,
+            allowed_user_ids=allowed_user_ids,
+            metadata={"name": manifest["name"]},
+            version=1,
+        )
+        self._register_document_resources(manifest)
         return manifest
 
-    def get_knowledge_base(self, kb_id: str):
+    def get_knowledge_base(
+        self,
+        kb_id: str,
+        tenant_id: str = "local",
+        user_id: str = "local-user",
+    ):
+        self.control.authorize(
+            tenant_id, user_id, "knowledge_base", kb_id, "read"
+        )
         return self._read_manifest(kb_id)
 
-    def list_knowledge_bases(self):
+    def list_knowledge_bases(
+        self, tenant_id: str = "local", user_id: str = "local-user"
+    ):
+        accessible_ids = {
+            resource["resource_id"]
+            for resource in self.control.list_accessible_resources(
+                tenant_id, user_id, "knowledge_base"
+            )
+        }
         items = []
         for path in sorted(self.kb_dir.glob("*/manifest.json")):
-            items.append(json.loads(path.read_text(encoding="utf-8")))
+            if path.parent.name in accessible_ids:
+                items.append(json.loads(path.read_text(encoding="utf-8")))
         return items
 
-    def ask(self, kb_id: str, question: str, top_k: int = 4) -> Dict:
+    def ask(
+        self,
+        kb_id: str,
+        question: str,
+        top_k: int = 4,
+        tenant_id: str = "local",
+        user_id: str = "local-user",
+    ) -> Dict:
         question = str(question or "").strip()
         if not question:
             raise ValueError("question is required")
+        self.control.authorize(
+            tenant_id, user_id, "knowledge_base", kb_id, "read"
+        )
         manifest = self._read_manifest(kb_id)
+        cache_namespace = "{0}/knowledge_base/{1}/answers".format(tenant_id, kb_id)
+        cache_key = hashlib.sha256(
+            json.dumps(
+                {
+                    "question": question,
+                    "top_k": int(top_k),
+                    "index_version": manifest.get("index_version", 1),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        cached = self.control.get_cache(cache_namespace, cache_key)
+        if cached["hit"]:
+            return dict(cached["value"], cache_hit=True)
         index = PaperStormRAGIndex.load(self.kb_dir / kb_id / "rag_index.json")
         retriever = ContextCompressionRetriever(index, max_context_chars=2200)
         retrieval_query = _expand_query(question)
@@ -121,6 +201,7 @@ class EnterpriseKnowledgeBaseService:
             "evidence": evidence,
             "retrieval": retrieved,
             "manifest": manifest,
+            "cache_hit": False,
             "trace": [
                 {
                     "event": "enterprise_kb_ask",
@@ -139,7 +220,108 @@ class EnterpriseKnowledgeBaseService:
             json.dumps(result, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        self.control.set_cache(
+            cache_namespace,
+            cache_key,
+            result,
+            ttl_seconds=300,
+            tags=["kb:{0}".format(kb_id)],
+        )
         return result
+
+    def update_knowledge_base(
+        self,
+        kb_id: str,
+        source_paths: Iterable[str],
+        tenant_id: str = "local",
+        user_id: str = "local-user",
+    ):
+        self.control.authorize(
+            tenant_id, user_id, "knowledge_base", kb_id, "write"
+        )
+        manifest = self._read_manifest(kb_id)
+        index = PaperStormRAGIndex.load(self.kb_dir / kb_id / "rag_index.json")
+        records = {item["path"]: dict(item) for item in manifest.get("documents") or []}
+        changed = []
+        for source_path in source_paths or []:
+            path = Path(source_path)
+            digest = _file_digest(path)
+            previous = records.get(str(path))
+            if previous and previous.get("sha256") == digest:
+                continue
+            document_id = previous.get("document_id") if previous else "doc-{0}".format(len(records) + 1)
+            text = _read_document_text(path)
+            if not text.strip():
+                continue
+            index.chunks = [
+                chunk for chunk in index.chunks
+                if chunk.get("document_id") != document_id
+            ]
+            incremental = PaperStormRAGIndex.from_documents(
+                [
+                    {
+                        "document_id": document_id,
+                        "title": path.name,
+                        "text": text,
+                        "url": str(path),
+                        "source_type": path.suffix.lower().lstrip(".") or "document",
+                        "metadata": {
+                            "path": str(path),
+                            "tenant_id": tenant_id,
+                            "owner_user_id": manifest.get("owner_user_id", user_id),
+                            "allowed_user_ids": manifest.get("allowed_user_ids") or [],
+                        },
+                    }
+                ],
+                chunk_size=int(manifest.get("chunk_size") or 500),
+                chunk_overlap=int(manifest.get("chunk_overlap") or 100),
+                embedding_provider=index.embedding_provider,
+            )
+            index.chunks.extend(incremental.chunks)
+            records[str(path)] = {
+                "document_id": document_id,
+                "path": str(path),
+                "sha256": digest,
+            }
+            changed.append(str(path))
+        if changed:
+            index.save(self.kb_dir / kb_id / "rag_index.json")
+            manifest["documents"] = list(records.values())
+            manifest["source_paths"] = [item["path"] for item in records.values()]
+            manifest["document_count"] = len(records)
+            manifest["chunk_count"] = len(index.chunks)
+            manifest["index_version"] = int(manifest.get("index_version") or 1) + 1
+            manifest["updated_at"] = _now()
+            self._write_manifest(kb_id, manifest)
+            self.control.register_resource(
+                tenant_id=manifest.get("tenant_id") or tenant_id,
+                resource_type="knowledge_base",
+                resource_id=kb_id,
+                owner_user_id=manifest.get("owner_user_id") or user_id,
+                allowed_user_ids=manifest.get("allowed_user_ids") or [],
+                metadata={"name": manifest.get("name", "")},
+                version=manifest["index_version"],
+            )
+            self._register_document_resources(manifest)
+            self.control.invalidate_cache(tag="kb:{0}".format(kb_id))
+        return dict(manifest, changed_source_paths=changed)
+
+    def _register_document_resources(self, manifest: Dict):
+        for document in manifest.get("documents") or []:
+            self.control.register_resource(
+                tenant_id=manifest.get("tenant_id") or "local",
+                resource_type="document",
+                resource_id="{0}:{1}".format(
+                    manifest["kb_id"], document["document_id"]
+                ),
+                owner_user_id=manifest.get("owner_user_id") or "local-user",
+                allowed_user_ids=manifest.get("allowed_user_ids") or [],
+                metadata={
+                    "kb_id": manifest["kb_id"],
+                    "path": document.get("path", ""),
+                },
+                version=int(manifest.get("index_version") or 1),
+            )
 
     def _read_manifest(self, kb_id: str):
         path = self.kb_dir / kb_id / "manifest.json"
@@ -193,3 +375,7 @@ def _expand_query(question: str):
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _file_digest(path: Path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()

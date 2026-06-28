@@ -2328,20 +2328,52 @@ classify/clarify
 
 #### 状态
 
-计划中。
+已完成，版本分支：`version/v4.5`。
 
 #### 目标
 
 补齐企业知识库 Agent 的权限、可靠性和数据指标，形成第三阶段最终演示版本。
 
-#### 实施任务
+#### 实际落地
 
-- tenant/user/document/chunk 四级 namespace 与检索前 ACL 过滤。
-- 后台索引队列、增量更新、幂等、重试、熔断和失败任务恢复。
-- OpenTelemetry 风格 trace，串联 router、memory、retrieval、rerank、LLM 和 STORM tool。
-- 缓存 embedding、query rewrite、retrieval 和稳定答案，记录命中率及失效原因。
-- 压测并报告 P50/P95/P99、QPS、token、成本、错误率和降级路径。
-- 前端展示 Context、Memory、检索排名、Rerank 分数、引用、Trace 和 Benchmark 对比。
+- 新增 SQLite WAL 生产控制面，统一保存 resource policy、审计事件、事务型幂等、TTL cache、持久任务、熔断器和 span。
+- 会话调用先执行 tenant/user/thread ACL，再以 `tenant/thread + request_id` 的唯一约束抢占幂等请求；8 线程竞争只执行一次，重复载荷回放，不同载荷拒绝复用 key。
+- V4.4 LangGraph 继续作为业务图，外层由 `paperstorm-production-v4.5` 包装；重复请求复用原 trace，不创建孤立 trace 资源。
+- 企业知识库形成 tenant -> knowledge base -> document -> chunk metadata 四级边界；读取 manifest、索引和回答前先鉴权，列表按可访问资源过滤。
+- 文档使用 SHA-256 识别新增或变化，后台持久任务执行增量索引；任务支持幂等入队、失败重试和进程重启后恢复。
+- 稳定问答使用 TTL cache，key 包含 tenant、KB、query、top_k 和 index version；索引变化按 KB tag 失效，并暴露 hit/miss/expired/invalidation 指标。
+- provider 调用支持有限重试、持久熔断状态和显式 fallback；FastAPI 将权限、参数和资源异常分别映射为 403/400/404。
+- Trace 统一记录 runtime、LangGraph node、memory/retrieval/tool 等 component、operation、耗时、状态、token/cost 预留字段，并受 trace ACL 保护。
+- Dashboard 升级到 v4.5，可运行/加载 Production Benchmark、查看控制面计数及按身份读取当前 Trace。
+
+#### API
+
+- `POST /enterprise-kbs/{kb_id}/index-jobs`
+- `POST /production/worker/tick`
+- `GET /production/status`
+- `GET /production/traces/{trace_id}`
+- `POST /evaluations/production-v45`
+- `GET /evaluations/production-v45/latest`
+
+#### Benchmark 结果
+
+500 请求本机治理热路径实验：P50 `24.6963 ms`、P95 `28.0264 ms`、P99 `36.2768 ms`、QPS `39.6339`、错误率 `0`、ACL 泄漏率 `0`、幂等率/任务恢复率/Trace 覆盖率均为 `1.0`，cache hit rate `0.998`。实验主动注入一次 provider 故障，因此 degradation rate 为 `0.002`。
+
+该结果不包含真实 LLM、arXiv、Embedding 或 Cross-Encoder 延迟，也不是分布式吞吐结论。SQLite WAL 适合本地单进程演示；真实生产仍需 OAuth/OIDC、RBAC/ABAC policy service、PostgreSQL/Redis、分布式 worker、异步取消、OpenTelemetry Collector 和真实流量压测。
+
+#### 验收命令
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest `
+  tests.test_paperstorm_production_v45 -v
+
+D:\SOFTWARE\spyder\envs\storm\python.exe -c `
+  "from knowledge_storm.paperstorm_production_benchmark_v45 import run_production_benchmark; run_production_benchmark(r'results\paperstorm_production_v45', request_count=500)"
+```
+
+#### 面试学习目标
+
+能够解释为什么 ACL 必须先于业务数据访问、文件幂等为何经不起并发、事务唯一约束如何防重复执行、缓存怎样按索引版本失效、重试与熔断如何分工，以及为何本地 Benchmark 不能直接代表线上 LLM QPS。
 
 #### 最终面试产物
 

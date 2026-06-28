@@ -20,7 +20,7 @@ DEFAULT_DASHBOARD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "pape
 def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOARD_DIR):
     try:
         from fastapi import FastAPI
-        from fastapi.responses import FileResponse, StreamingResponse
+        from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
         from pydantic import BaseModel, Field
         from starlette.middleware.cors import CORSMiddleware
         from starlette.staticfiles import StaticFiles
@@ -31,13 +31,25 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="4.4")
+    app = FastAPI(title="PaperStorm Agent Service", version="4.5")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(PermissionError)
+    async def permission_error_handler(_request, error):
+        return JSONResponse(status_code=403, content={"detail": str(error)})
+
+    @app.exception_handler(KeyError)
+    async def not_found_error_handler(_request, error):
+        return JSONResponse(status_code=404, content={"detail": str(error)})
+
+    @app.exception_handler(ValueError)
+    async def validation_error_handler(_request, error):
+        return JSONResponse(status_code=400, content={"detail": str(error)})
     if dashboard_dir.exists():
         app.mount(
             "/dashboard",
@@ -95,12 +107,14 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         context_window_size: int = 6
         context_token_limit: int = Field(default=4096, ge=128, le=200000)
         user_id: str = "local-user"
+        tenant_id: str = "local"
         memory_enabled: bool = True
 
     class ChatMessageRequest(BaseModel):
         message: str
 
     class ConversationGraphInvokeRequest(BaseModel):
+        tenant_id: str = "local"
         thread_id: str
         request_id: str
         user_id: str = "local-user"
@@ -159,10 +173,24 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         chunk_size: int = 500
         chunk_overlap: int = 100
         embedding_provider: str = "hash"
+        tenant_id: str = "local"
+        owner_user_id: str = "local-user"
+        allowed_user_ids: list[str] = []
 
     class EnterpriseKnowledgeBaseAskRequest(BaseModel):
         question: str
         top_k: int = 4
+        tenant_id: str = "local"
+        user_id: str = "local-user"
+
+    class EnterpriseKnowledgeBaseUpdateRequest(BaseModel):
+        source_paths: list[str]
+        tenant_id: str = "local"
+        user_id: str = "local-user"
+        idempotency_key: str
+
+    class ProductionBenchmarkRequest(BaseModel):
+        request_count: int = Field(default=100, ge=10, le=10000)
 
     class RAGEvaluationV4Request(BaseModel):
         top_k: int = Field(default=5, ge=1, le=20)
@@ -275,16 +303,32 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         return service.create_enterprise_knowledge_base(**_request_payload(request))
 
     @app.get("/enterprise-kbs")
-    def list_enterprise_kbs():
-        return {"knowledge_bases": service.list_enterprise_knowledge_bases()}
+    def list_enterprise_kbs(
+        tenant_id: str = "local", user_id: str = "local-user"
+    ):
+        return {
+            "knowledge_bases": service.list_enterprise_knowledge_bases(
+                tenant_id=tenant_id, user_id=user_id
+            )
+        }
 
     @app.post("/enterprise-kbs/{kb_id}/ask")
     def ask_enterprise_kb(kb_id: str, request: EnterpriseKnowledgeBaseAskRequest):
         return service.ask_enterprise_knowledge_base(
-            kb_id=kb_id,
-            question=request.question,
-            top_k=request.top_k,
+            kb_id=kb_id, **_request_payload(request)
         )
+
+    @app.post("/enterprise-kbs/{kb_id}/index-jobs")
+    def enqueue_enterprise_kb_update(
+        kb_id: str, request: EnterpriseKnowledgeBaseUpdateRequest
+    ):
+        return service.enqueue_enterprise_kb_update(
+            kb_id=kb_id, **_request_payload(request)
+        )
+
+    @app.post("/production/worker/tick")
+    def run_production_worker_tick():
+        return service.run_production_worker_tick()
 
     @app.post("/evaluations/rag-v4")
     def run_rag_evaluation_v4(request: RAGEvaluationV4Request):
@@ -347,12 +391,21 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         return service.get_conversation_graph_spec()
 
     @app.get("/conversation-graph/threads/{thread_id}/state")
-    def get_conversation_thread_state(thread_id: str):
-        return service.get_conversation_thread_state(thread_id)
+    def get_conversation_thread_state(
+        thread_id: str, tenant_id: str = "local", user_id: str = "local-user"
+    ):
+        return service.get_conversation_thread_state(thread_id, tenant_id, user_id)
 
     @app.get("/conversation-graph/threads/{thread_id}/history")
-    def get_conversation_thread_history(thread_id: str, limit: int = 50):
-        return service.get_conversation_thread_history(thread_id, limit=limit)
+    def get_conversation_thread_history(
+        thread_id: str,
+        limit: int = 50,
+        tenant_id: str = "local",
+        user_id: str = "local-user",
+    ):
+        return service.get_conversation_thread_history(
+            thread_id, limit=limit, tenant_id=tenant_id, user_id=user_id
+        )
 
     @app.post("/evaluations/context-v42")
     def run_context_benchmark_v42():
@@ -401,6 +454,24 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.get("/evaluations/runtime-v44/latest")
     def get_langgraph_benchmark_v44():
         return service.get_langgraph_benchmark_v44()
+
+    @app.get("/production/status")
+    def get_production_status():
+        return service.get_production_status()
+
+    @app.get("/production/traces/{trace_id}")
+    def get_production_trace(
+        trace_id: str, tenant_id: str, user_id: str
+    ):
+        return service.get_production_trace(trace_id, tenant_id, user_id)
+
+    @app.post("/evaluations/production-v45")
+    def run_production_benchmark_v45(request: ProductionBenchmarkRequest):
+        return service.run_production_benchmark_v45(request.request_count)
+
+    @app.get("/evaluations/production-v45/latest")
+    def get_production_benchmark_v45():
+        return service.get_production_benchmark_v45()
 
     return app
 

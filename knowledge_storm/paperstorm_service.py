@@ -321,7 +321,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v4.4",
+                "version": "v4.5",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -360,6 +360,9 @@ class PaperStormTaskService:
         chunk_size: int = 500,
         chunk_overlap: int = 100,
         embedding_provider: str = "hash",
+        tenant_id: str = "local",
+        owner_user_id: str = "local-user",
+        allowed_user_ids: Optional[List[str]] = None,
     ):
         from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
 
@@ -371,20 +374,85 @@ class PaperStormTaskService:
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             embedding_provider=embedding_provider,
+            tenant_id=tenant_id,
+            owner_user_id=owner_user_id,
+            allowed_user_ids=allowed_user_ids,
         )
 
-    def list_enterprise_knowledge_bases(self):
+    def get_enterprise_knowledge_base(
+        self,
+        kb_id: str,
+        tenant_id: str = "local",
+        user_id: str = "local-user",
+    ):
         from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
 
-        return EnterpriseKnowledgeBaseService(self.root_dir).list_knowledge_bases()
+        return EnterpriseKnowledgeBaseService(self.root_dir).get_knowledge_base(
+            kb_id, tenant_id=tenant_id, user_id=user_id
+        )
 
-    def ask_enterprise_knowledge_base(self, kb_id: str, question: str, top_k: int = 4):
+    def list_enterprise_knowledge_bases(
+        self, tenant_id: str = "local", user_id: str = "local-user"
+    ):
+        from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
+
+        return EnterpriseKnowledgeBaseService(self.root_dir).list_knowledge_bases(
+            tenant_id=tenant_id, user_id=user_id
+        )
+
+    def ask_enterprise_knowledge_base(
+        self,
+        kb_id: str,
+        question: str,
+        top_k: int = 4,
+        tenant_id: str = "local",
+        user_id: str = "local-user",
+    ):
         from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
 
         return EnterpriseKnowledgeBaseService(self.root_dir).ask(
             kb_id=kb_id,
             question=question,
             top_k=top_k,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+
+    def enqueue_enterprise_kb_update(
+        self,
+        kb_id: str,
+        source_paths: List[str],
+        tenant_id: str,
+        user_id: str,
+        idempotency_key: str,
+    ):
+        control = self._production_control_v45()
+        control.authorize(tenant_id, user_id, "knowledge_base", kb_id, "write")
+        return control.enqueue_job(
+            tenant_id=tenant_id,
+            job_type="incremental_index",
+            payload={
+                "kb_id": kb_id,
+                "source_paths": source_paths,
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+            },
+            idempotency_key=idempotency_key,
+            max_attempts=3,
+        )
+
+    def run_production_worker_tick(self):
+        from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
+
+        enterprise = EnterpriseKnowledgeBaseService(
+            self.root_dir, control_plane=self._production_control_v45()
+        )
+        return self._production_control_v45().run_worker_tick(
+            {
+                "incremental_index": lambda payload: enterprise.update_knowledge_base(
+                    **payload
+                )
+            }
         )
 
     def ask_research_agent(
@@ -429,6 +497,7 @@ class PaperStormTaskService:
         context_window_size: int = 6,
         context_token_limit: int = 4096,
         user_id: str = "local-user",
+        tenant_id: str = "local",
         memory_enabled: bool = True,
         **options,
     ):
@@ -445,6 +514,7 @@ class PaperStormTaskService:
             context_window_size=context_window_size,
             context_token_limit=context_token_limit,
             user_id=user_id,
+            tenant_id=tenant_id,
             memory_enabled=memory_enabled,
             **options,
         )
@@ -517,16 +587,61 @@ class PaperStormTaskService:
         )
 
     def invoke_conversation_graph(self, **payload):
-        return self._langgraph_runtime_v44().invoke(**payload)
+        return self._production_runtime_v45().invoke(**payload)
 
     def get_conversation_graph_spec(self):
-        return self._langgraph_runtime_v44().get_graph_spec()
+        return self._production_runtime_v45().get_graph_spec()
 
-    def get_conversation_thread_state(self, thread_id: str):
-        return self._langgraph_runtime_v44().get_thread_state(thread_id)
+    def get_conversation_thread_state(
+        self, thread_id: str, tenant_id: str = "local", user_id: str = "local-user"
+    ):
+        self._production_control_v45().authorize(
+            tenant_id, user_id, "conversation_thread", thread_id, "read_state"
+        )
+        return self._production_runtime_v45().get_thread_state(thread_id)
 
-    def get_conversation_thread_history(self, thread_id: str, limit: int = 50):
-        return self._langgraph_runtime_v44().get_thread_history(thread_id, limit=limit)
+    def get_conversation_thread_history(
+        self,
+        thread_id: str,
+        limit: int = 50,
+        tenant_id: str = "local",
+        user_id: str = "local-user",
+    ):
+        self._production_control_v45().authorize(
+            tenant_id, user_id, "conversation_thread", thread_id, "read_history"
+        )
+        return self._production_runtime_v45().get_thread_history(thread_id, limit=limit)
+
+    def get_production_trace(
+        self, trace_id: str, tenant_id: str, user_id: str
+    ):
+        self._production_control_v45().authorize(
+            tenant_id, user_id, "trace", trace_id, "read"
+        )
+        return {
+            "trace_id": trace_id,
+            "spans": self._production_control_v45().list_spans(trace_id),
+        }
+
+    def get_production_status(self):
+        return self._production_control_v45().status()
+
+    def run_production_benchmark_v45(self, request_count: int = 100):
+        from .paperstorm_production_benchmark_v45 import run_production_benchmark
+
+        return run_production_benchmark(
+            self.root_dir / "evaluations" / "production_v45_latest",
+            request_count=request_count,
+        )
+
+    def get_production_benchmark_v45(self):
+        return _read_json(
+            self.root_dir
+            / "evaluations"
+            / "production_v45_latest"
+            / "production_benchmark_v45.json",
+            {},
+        )
 
     def run_langgraph_benchmark_v44(self):
         from .paperstorm_langgraph_benchmark_v44 import run_langgraph_benchmark
@@ -546,6 +661,22 @@ class PaperStormTaskService:
             root_dir=self.root_dir / "langgraph_runtime_v44",
             task_service=self,
             memory_service=self._memory_service_v43(),
+        )
+
+    def _production_runtime_v45(self):
+        from .paperstorm_production_v45 import PaperStormProductionRuntimeV45
+
+        return PaperStormProductionRuntimeV45(
+            root_dir=self.root_dir / "production_runtime_v45",
+            task_service=self,
+            control_plane=self._production_control_v45(),
+        )
+
+    def _production_control_v45(self):
+        from .paperstorm_production_v45 import ProductionControlPlaneV45
+
+        return ProductionControlPlaneV45(
+            self.root_dir / "production_control_v45.sqlite"
         )
 
     def _memory_service_v43(self):

@@ -575,6 +575,60 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -c `
 
 这些指标使用受控 fake 调研和固定路由案例，验证的是状态图软件契约，不代表真实 arXiv/LLM 延迟或生产 QPS。SQLite 适合本地单进程演示；多进程部署需要数据库 checkpointer、事务型幂等表、异步超时取消和分布式 worker。
 
+## v4.5 生产治理基线
+
+v4.5 不重写 V4.4 LangGraph 业务图，而是在外层加入统一生产控制面。聊天响应的外层运行时为 `paperstorm-production-v4.5`，底层仍明确报告 `graph_runtime=langgraph-v4.4`。
+
+```text
+FastAPI / Dashboard
+        |
+        v
+Production Control Plane v4.5
+  |- tenant/user/resource ACL + audit
+  |- transactional idempotency
+  |- TTL cache + tag invalidation
+  |- durable jobs + retry + circuit breaker
+  `- trace/span store + SLO metrics
+        |
+        +--> LangGraph Conversation Runtime v4.4
+        |      `--> Memory / RAG / STORM Deep Research Tool
+        `--> Enterprise KB incremental index worker
+```
+
+关键能力：
+
+- 对 conversation thread、trace、knowledge base 和 document 建立 tenant/user 资源策略；业务 manifest、索引和 trace 在读取前先鉴权，知识库列表按身份过滤。
+- 以 SQLite 唯一约束实现事务型幂等。并发请求只有一个 owner 执行业务，其余等待并回放结果；同 key 不同 payload 被拒绝。
+- 企业文档按 SHA-256 识别变化，通过持久任务增量更新索引；支持幂等入队、失败重试和恢复。
+- 问答缓存同时绑定 tenant、KB、query、top_k 与 index version；索引更新按 tag 主动失效并统计命中、未命中和过期。
+- provider 故障采用有限重试、持久熔断状态和显式降级；FastAPI 将权限/参数/资源异常映射为 `403/400/404`。
+- Trace 统一记录 runtime 与 LangGraph node spans；Dashboard 可以查看控制面状态、当前 trace 和 Production Benchmark。
+
+新增 API：
+
+```text
+POST /enterprise-kbs/{kb_id}/index-jobs
+POST /production/worker/tick
+GET  /production/status
+GET  /production/traces/{trace_id}?tenant_id=...&user_id=...
+POST /evaluations/production-v45
+GET  /evaluations/production-v45/latest
+```
+
+500 请求本机治理热路径实验：
+
+| 指标 | 结果 |
+| --- | ---: |
+| P50 / P95 / P99 | 24.70 / 28.03 / 36.28 ms |
+| QPS | 39.63 |
+| Error Rate | 0.000 |
+| ACL Leakage Rate | 0.000 |
+| Idempotency / Job Recovery / Trace Coverage | 1.000 / 1.000 / 1.000 |
+| Cache Hit Rate | 0.998 |
+| Injected Degradation Rate | 0.002 |
+
+以上数据只验证单进程 SQLite WAL 治理热路径。它不包含真实 LLM、arXiv、Embedding、Reranker 延迟，也不代表分布式线上 QPS；当前未接 OAuth/OIDC、外部 policy service、PostgreSQL/Redis、分布式 worker 或 OpenTelemetry Collector。
+
 本仓库原始项目来自 Stanford STORM。官方 README 已保留在：
 
 ```text
@@ -1210,7 +1264,7 @@ docs/VERSION_PLAN.md
 - v4.2（已完成）：可恢复 Context Engine、Token 动态预算、分层压缩、Context Meter 和恢复 Benchmark。
 - v4.3（已完成）：可治理的跨会话 Memory Service、写入策略、冲突失效、Hybrid recall、治理 API 和 Memory Benchmark。
 - v4.4（已完成）：LangGraph 状态图、SQLite checkpoint、节点重试、请求幂等、STORM 隔离工具、图调试 API 与 Runtime Benchmark。
-- v4.5（计划）：补齐 ACL、增量索引、可靠性、可观测、压测和最终面试演示。
+- v4.5（已完成）：生产控制面、资源 ACL/审计、事务幂等、增量索引任务、缓存失效、重试/熔断、统一 Trace 和 SLO Benchmark。
 
 第三阶段要求每个版本同时交付代码、测试、Benchmark、Trace 和面试学习记录；未完成的真实 Embedding、向量库、Reranker 和 LangGraph 能力不会提前写入简历。
 
@@ -1254,14 +1308,16 @@ docs/RESUME_INTERVIEW_PLAN.md
 - v1.0 release demo 一键生成本地演示产物和前端样例数据。
 - v1.1 demo runbook 固化本地 service、Dashboard 和任务生命周期演示步骤。
 - v1.2 final packaging 完成 GitHub 首页、能力地图、最终演示命令和求职材料收口。
+- v4.5 本地生产治理基线：资源 ACL/审计、事务幂等、TTL cache、增量索引任务、重试/熔断、统一 Trace 与 SLO Benchmark。
 
 尚未完成：
 
 - 生产级 API 网关。
-- 多用户和权限系统。
 - 分布式高并发任务队列。
 - 企业级监控告警。
 - 生产级前端构建、鉴权、自动轮询调度和部署。
 - 真实 LLM/API 环境下的大规模压测。
+- OAuth/OIDC、细粒度 RBAC/ABAC policy service 与密钥托管。
+- PostgreSQL/Redis/分布式 worker、强制异步取消和 OpenTelemetry Collector。
 
 这些内容会按版本计划逐步补齐。
