@@ -148,6 +148,32 @@ h2 {
   font-size: 18px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+#show-developer-mode {
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(18, 29, 42, 0.88);
+  color: var(--muted);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+#show-developer-mode:hover,
+#show-developer-mode.active {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
 .toolbar {
   position: sticky;
   top: 0;
@@ -329,12 +355,82 @@ select:focus {
 body[data-mode="chat"] .research-mode-panel,
 body[data-mode="chat"] #research-qa-panel,
 body[data-mode="chat"] #article-panel,
-body[data-mode="chat"] #qa-panel {
+body[data-mode="chat"] #qa-panel,
+body[data-mode="chat"] #task-panel,
+body[data-mode="chat"] #task-error-panel,
+body[data-mode="chat"] #scorecard-panel,
+body[data-mode="chat"] #usage-panel {
   display: none;
 }
 
 body[data-mode="research"] .chat-mode-panel {
   display: none;
+}
+
+/* Product surfaces are hidden while the developer console is open. */
+body[data-mode="developer"] .product-mode-panel {
+  display: none;
+}
+
+/* Developer surfaces are hidden for regular users and shown in the console. */
+body:not([data-mode="developer"]) .developer-mode-panel,
+body:not([data-mode="developer"]) .developer-surface {
+  display: none;
+}
+
+body[data-mode="developer"] .developer-mode-panel {
+  display: grid;
+}
+
+body[data-mode="developer"] .developer-surface {
+  display: grid;
+}
+
+body[data-mode="developer"] {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(110, 168, 255, 0.12), transparent 32%),
+    linear-gradient(180deg, #0a121d 0%, #080c12 55%, #070a0f 100%);
+}
+
+body[data-mode="developer"] .dashboard-grid {
+  width: min(1680px, 100%);
+}
+
+.panel-copy {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.chat-session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(10, 17, 26, 0.72);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chat-session-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-session-bar button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--accent-dark);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #31cbb3, #169b88);
+  color: #03100e;
+  font-weight: 850;
+  cursor: pointer;
 }
 
 .help-grid {
@@ -531,6 +627,10 @@ body[data-mode="research"] .chat-mode-panel {
   align-items: stretch;
 }
 
+body:not([data-mode="developer"]) .chat-shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .chat-sidebar,
 .chat-main,
 .chat-debug {
@@ -591,7 +691,7 @@ body[data-mode="research"] .chat-mode-panel {
 
 .chat-main {
   display: grid;
-  grid-template-rows: minmax(360px, 1fr) auto;
+  grid-template-rows: auto minmax(360px, 1fr) auto;
   gap: 12px;
 }
 

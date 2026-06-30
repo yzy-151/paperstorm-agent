@@ -44,6 +44,8 @@ class PaperStormIntentRouter:
         session = session or {}
         context_window = context_window or []
 
+        guard_decision = route_high_confidence_rules(message, session, context_window)
+
         if self.llm_router:
             prompt = build_router_prompt(
                 message=message,
@@ -55,14 +57,19 @@ class PaperStormIntentRouter:
             try:
                 decision = parse_llm_router_json(self.llm_router(prompt))
                 decision = normalize_decision(decision, message, session, context_window)
-                if decision["confidence"] >= self.confidence_threshold:
+                if (
+                    decision["confidence"] >= self.confidence_threshold
+                    and _llm_decision_safe(decision, guard_decision)
+                ):
                     decision["router"] = "llm"
                     return decision
             except Exception as exc:  # pragma: no cover - defensive trace path.
-                fallback = route_by_rules(message, session, context_window)
+                fallback = guard_decision or route_by_rules(message, session, context_window)
                 fallback["router_error"] = str(exc)
                 return fallback
 
+        if guard_decision:
+            return guard_decision
         return route_by_rules(message, session, context_window)
 
 
@@ -114,7 +121,7 @@ def normalize_decision(
 ) -> Dict:
     intent = str(decision.get("intent") or "").strip()
     if intent not in {"casual_chat", "system_help", "research_qa", "run_research", "clarify"}:
-        intent = "research_qa"
+        intent = "clarify"
     tool = str(decision.get("tool") or "").strip()
     if tool not in {"chat_fallback", "kb_qa", "research_qa", "paper_research", "clarify"}:
         tool = _tool_for_intent(intent)
@@ -139,6 +146,26 @@ def normalize_decision(
 
 
 def route_by_rules(message: str, session: Dict, context_window: List[Dict]) -> Dict:
+    guarded = route_high_confidence_rules(message, session, context_window)
+    if guarded:
+        return guarded
+    return _decision(
+        "casual_chat",
+        "chat_fallback",
+        False,
+        message,
+        0.62,
+        "no explicit retrieval intent; default safely to conversation",
+    )
+
+
+def route_high_confidence_rules(
+    message: str, session: Dict, context_window: List[Dict]
+) -> Optional[Dict]:
+    if not message:
+        return _decision(
+            "clarify", "clarify", False, "", 1.0, "empty message needs clarification"
+        )
     if is_system_help(message):
         return _decision(
             "system_help",
@@ -157,8 +184,8 @@ def route_by_rules(message: str, session: Dict, context_window: List[Dict]) -> D
             0.82,
             "casual message does not need retrieval",
         )
-    rewritten = rewrite_query(message, session, context_window)
     if is_direct_research_request(message):
+        rewritten = rewrite_query(message, session, context_window)
         return _decision(
             "run_research",
             "paper_research",
@@ -167,14 +194,45 @@ def route_by_rules(message: str, session: Dict, context_window: List[Dict]) -> D
             0.86,
             "message asks for papers, literature, survey, citations, or technical evidence",
         )
-    return _decision(
-        "research_qa",
-        "research_qa",
-        True,
-        rewritten,
-        0.76,
-        "technical question should be grounded by PaperStorm evidence",
-    )
+    if is_research_knowledge_question(message):
+        return _decision(
+            "research_qa",
+            "research_qa",
+            True,
+            rewrite_query(message, session, context_window),
+            0.82,
+            "message asks a domain knowledge question that benefits from evidence",
+        )
+    if looks_like_followup(message) and _has_prior_user_context(context_window):
+        if session.get("task_id") or session.get("topic"):
+            return _decision(
+                "research_qa",
+                "research_qa",
+                True,
+                rewrite_query(message, session, context_window),
+                0.84,
+                "follow-up question reuses the active research context",
+            )
+    if looks_like_followup(message) and not _has_prior_user_context(context_window):
+        return _decision(
+            "clarify",
+            "clarify",
+            False,
+            message,
+            0.88,
+            "short follow-up has no usable conversational antecedent",
+        )
+    return None
+
+
+def _llm_decision_safe(decision: Dict, guard_decision: Optional[Dict]) -> bool:
+    """Refuse LLM decisions that force retrieval on clearly casual/system turns."""
+    if not guard_decision:
+        return True
+    if not decision.get("need_retrieval"):
+        return True
+    guard_tool = str((guard_decision or {}).get("tool") or "")
+    return guard_tool not in {"chat_fallback", "clarify"}
 
 
 def rewrite_query(message: str, session: Dict, context_window: List[Dict]) -> str:
@@ -235,8 +293,24 @@ def is_system_help(message: str) -> bool:
 
 def is_casual_chat(message: str) -> bool:
     text = str(message or "").strip().lower()
-    greetings = ["你好", "您好", "hello", "hi", "早上好", "晚上好"]
-    return any(hit in text for hit in greetings) and not is_direct_research_request(text)
+    social_phrases = [
+        "你好",
+        "您好",
+        "hello",
+        "hi",
+        "早上好",
+        "晚上好",
+        "莫西莫西",
+        "もしもし",
+        "谢谢",
+        "感谢",
+        "再见",
+        "你在干嘛",
+        "你在做什么",
+        "今天天气不错",
+        "聊聊天",
+    ]
+    return any(hit in text for hit in social_phrases) and not is_direct_research_request(text)
 
 
 def is_direct_research_request(message: str) -> bool:
@@ -251,12 +325,33 @@ def is_direct_research_request(message: str) -> bool:
         "paper",
         "citation",
         "引用",
-        "rag",
+        "最新研究",
+        "深入研究",
+        "查一下",
+        "搜索一下",
+    ]
+    return any(hit in text for hit in hits)
+
+
+def is_research_knowledge_question(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    domain_hits = [
+        "pim",
         "无源互调",
         "passive intermodulation",
         "神经网络抑制",
+        "rag",
+        "retrieval augmented generation",
     ]
-    return any(hit in text for hit in hits)
+    question_hits = ["什么", "为何", "为什么", "如何", "怎么", "区别", "原理", "吗", "？", "?"]
+    return any(hit in text for hit in domain_hits) and any(hit in text for hit in question_hits)
+
+
+def _has_prior_user_context(context_window: List[Dict]) -> bool:
+    return any(
+        item.get("role") == "user" and str(item.get("content") or "").strip()
+        for item in context_window or []
+    )
 
 
 def _research_domain_markers():
@@ -270,7 +365,7 @@ def _tool_for_intent(intent: str) -> str:
         "research_qa": "research_qa",
         "run_research": "paper_research",
         "clarify": "clarify",
-    }.get(intent, "research_qa")
+    }.get(intent, "clarify")
 
 
 def _decision(intent, tool, need_retrieval, rewritten_query, confidence, reason):

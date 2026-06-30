@@ -189,6 +189,24 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("setDashboardMode", script)
         self.assertIn("chat-shell", styles)
 
+    def test_dashboard_defaults_to_chat_and_separates_developer_console(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        styles = (root / "frontend" / "paperstorm_dashboard" / "styles.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="show-developer-mode"', index)
+        self.assertIn("开发者控制台", index)
+        self.assertIn("developer-mode-panel", index)
+        self.assertIn('setDashboardMode("chat")', script)
+        self.assertIn('body[data-mode="developer"]', styles)
+
     def test_dashboard_exposes_enterprise_kb_v32_workflow(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(

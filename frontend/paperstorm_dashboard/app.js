@@ -1,9 +1,10 @@
 let sseSource = null;
 const DASHBOARD_VERSION = "v4.5";
+let activeProductMode = "chat";
 
 async function loadDashboard() {
   try {
-    setDashboardMode("research");
+    setDashboardMode(initialModeFromUrl());
     initializeServiceUrl();
     const data = window.PAPERSTORM_SAMPLE_DATA || await fetchSampleData();
     renderDashboard(data);
@@ -125,11 +126,38 @@ async function loadServiceTask() {
 }
 
 function setDashboardMode(mode) {
+  if (mode === "developer") {
+    document.body.dataset.mode = "developer";
+    document.querySelector("#show-research-mode").classList.toggle("active", false);
+    document.querySelector("#show-chat-mode").classList.toggle("active", false);
+    document.querySelector("#show-developer-mode").classList.add("active");
+    document.querySelector("#show-developer-mode").textContent = "返回产品界面";
+    setStatus("developer console", "idle");
+    return;
+  }
+  activeProductMode = mode;
   const isChat = mode === "chat";
   document.body.dataset.mode = isChat ? "chat" : "research";
   document.querySelector("#show-research-mode").classList.toggle("active", !isChat);
   document.querySelector("#show-chat-mode").classList.toggle("active", isChat);
+  const developerButton = document.querySelector("#show-developer-mode");
+  developerButton.classList.remove("active");
+  developerButton.textContent = "开发者控制台";
   setStatus(isChat ? "chat mode ready" : "research workflow ready", "idle");
+}
+
+function initialModeFromUrl() {
+  const mode = new URLSearchParams(window.location.search).get("mode");
+  return mode === "developer" || mode === "research" || mode === "chat" ? mode : "chat";
+}
+
+function toggleDeveloperMode() {
+  if (document.body.dataset.mode === "developer") {
+    setDashboardMode(activeProductMode);
+    return;
+  }
+  activeProductMode = document.body.dataset.mode === "chat" ? "chat" : "research";
+  setDashboardMode("developer");
 }
 
 async function loadSampleData() {
@@ -964,6 +992,7 @@ function renderChatSession(session) {
     (session.router_decision || {}).rewritten_query || "";
   if (session.chat_id) {
     document.querySelector("#chat-session-id").value = session.chat_id;
+    document.querySelector("#chat-session-id-label").textContent = session.chat_id;
   }
   if (session.user_id) {
     document.querySelector("#chat-user-id").value = session.user_id;
@@ -1282,7 +1311,9 @@ document.querySelector("#ask-research-agent").addEventListener("click", askResea
 document.querySelector("#service-url").addEventListener("change", () => connectSSE(getSelectedTaskId()));
 document.querySelector("#show-research-mode").addEventListener("click", () => setDashboardMode("research"));
 document.querySelector("#show-chat-mode").addEventListener("click", () => setDashboardMode("chat"));
+document.querySelector("#show-developer-mode").addEventListener("click", toggleDeveloperMode);
 document.querySelector("#create-chat-session").addEventListener("click", createChatSession);
+document.querySelector("#new-chat-button").addEventListener("click", createChatSession);
 document.querySelector("#send-chat-message").addEventListener("click", sendChatMessage);
 document.querySelector("#refresh-chat-context").addEventListener("click", loadChatContext);
 document.querySelector("#refresh-chat-graph").addEventListener("click", refreshChatGraph);

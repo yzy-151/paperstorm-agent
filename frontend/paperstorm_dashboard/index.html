@@ -14,13 +14,20 @@
         <h1>论文调研 Agent 执行链路</h1>
         <p class="header-subtitle">面向论文检索、RAG 生成、运行追踪与多 Agent 协作的本地演示控制台</p>
       </div>
-      <div class="header-meta">
-        <span>release</span>
-        <strong id="project-version">v4.5</strong>
+      <div class="header-actions">
+        <span id="data-source-status">
+          <span class="status-dot idle" id="runtime-status-dot" aria-hidden="true"></span>
+          <span id="runtime-status-text">sample data</span>
+        </span>
+        <div class="header-meta">
+          <span>release</span>
+          <strong id="project-version">v4.5</strong>
+        </div>
+        <button id="show-developer-mode" type="button">开发者控制台</button>
       </div>
     </header>
 
-    <section class="toolbar" aria-label="service data loader">
+    <section class="toolbar developer-mode-panel" aria-label="service data loader">
       <label>
         服务地址
         <input id="service-url" placeholder="默认使用当前页面地址" />
@@ -31,10 +38,6 @@
       </label>
       <button id="load-service-task" type="button">加载真实任务</button>
       <button id="load-sample-data" type="button">加载样例数据</button>
-      <span id="data-source-status">
-        <span class="status-dot idle" id="runtime-status-dot" aria-hidden="true"></span>
-        <span id="runtime-status-text">sample data</span>
-      </span>
     </section>
 
     <main class="dashboard-grid">
@@ -52,7 +55,7 @@
         </div>
       </section>
 
-      <section class="panel wide" id="usage-panel">
+      <section class="panel wide product-mode-panel" id="usage-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">How to Operate</p>
@@ -88,7 +91,7 @@
         </div>
       </section>
 
-      <section class="panel wide research-mode-panel" id="create-task-panel">
+      <section class="panel wide research-mode-panel product-mode-panel" id="create-task-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Control Plane</p>
@@ -147,6 +150,7 @@
           </div>
           <span class="soft-badge">upload path -> index -> RAG chat -> citations</span>
         </div>
+        <p class="panel-copy">创建知识库后输入问题，Agent 会在你的文档里检索并以引用形式回答；点击“刷新知识库”可以查看已建库列表。Manifest、检索明细等属于开发者控制台。</p>
         <div class="chat-layout">
           <div class="chat-controls">
             <label>
@@ -175,7 +179,7 @@
             <div class="chat-message assistant" id="enterprise-kb-answer">等待知识库问答。</div>
           </div>
         </div>
-        <div class="qa-debug-grid">
+        <div class="qa-debug-grid developer-surface">
           <section class="debug-card">
             <h3>KB Manifest</h3>
             <pre id="enterprise-kb-manifest"></pre>
@@ -184,11 +188,8 @@
             <h3>KB Retrieval</h3>
             <pre id="enterprise-kb-retrieval"></pre>
           </section>
-          <section class="debug-card">
-            <h3>KB Citations</h3>
-            <div id="enterprise-kb-citations" class="stack"></div>
-          </section>
         </div>
+        <div id="enterprise-kb-citations" class="stack"></div>
       </section>
 
       <section class="panel wide chat-mode-panel" id="chat-mode-panel">
@@ -199,8 +200,9 @@
           </div>
           <span class="soft-badge">chat -> memory -> evidence -> auto research</span>
         </div>
+        <p class="panel-copy">直接输入即可：普通闲聊不会触发检索；技术问题会优先复用已有调研任务，证据不足时自动启动深度调研；说“请记住：...”可保存跨会话记忆。会话控制、上下文压缩、记忆管理、图状态与各类面板属于开发者控制台。</p>
         <div class="chat-shell">
-          <aside class="chat-sidebar">
+          <aside class="chat-sidebar developer-surface">
             <label>
               Chat Session ID
               <input id="chat-session-id" placeholder="新建后自动填入" />
@@ -247,6 +249,10 @@
             </div>
           </aside>
           <section class="chat-main">
+            <div class="chat-session-bar">
+              <span>会话：<span id="chat-session-id-label">尚未创建</span></span>
+              <button id="new-chat-button" type="button">新建聊天</button>
+            </div>
             <div id="chat-message-list" class="chat-message-list">
               <div class="chat-message assistant">
                 <strong>PaperStorm</strong>
@@ -258,7 +264,7 @@
               <button id="send-chat-message" type="button">发送</button>
             </div>
           </section>
-          <aside class="chat-debug">
+          <aside class="chat-debug developer-surface">
             <section class="debug-card">
               <h3>Router Decision</h3>
               <pre id="chat-router-decision"></pre>
@@ -322,6 +328,7 @@
           </div>
           <span class="soft-badge">ask -> check evidence -> retrieve/answer</span>
         </div>
+        <p class="panel-copy">围绕当前调研任务提问；没有 task_id 时会自动创建 fake 调研任务后回答。引用会直接展示，路由决策与证据评分属于开发者控制台。</p>
         <div class="chat-layout">
           <div class="chat-controls">
             <label>
@@ -338,7 +345,8 @@
             <div class="chat-message assistant" id="research-answer">等待提问。</div>
           </div>
         </div>
-        <div class="qa-debug-grid">
+        <div id="research-citations" class="stack"></div>
+        <div class="qa-debug-grid developer-surface">
           <section class="debug-card">
             <h3>Decision</h3>
             <pre id="research-decision"></pre>
@@ -347,29 +355,25 @@
             <h3>Evidence Sufficiency</h3>
             <pre id="research-sufficiency"></pre>
           </section>
-          <section class="debug-card">
-            <h3>Citations</h3>
-            <div id="research-citations" class="stack"></div>
-          </section>
         </div>
       </section>
 
-      <section class="panel" id="task-panel">
+      <section class="panel product-mode-panel" id="task-panel">
         <h2>任务状态</h2>
         <div id="task-list" class="stack"></div>
       </section>
 
-      <section class="panel" id="task-error-panel">
+      <section class="panel product-mode-panel" id="task-error-panel">
         <h2>失败信息</h2>
         <div id="task-error" class="stack"></div>
       </section>
 
-      <section class="panel" id="scorecard-panel">
+      <section class="panel product-mode-panel" id="scorecard-panel">
         <h2>评估分数</h2>
         <div id="scorecard" class="metric-grid"></div>
       </section>
 
-      <section class="panel wide" id="rag-eval-v4-panel">
+      <section class="panel wide developer-mode-panel" id="rag-eval-v4-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Evaluation Workbench</p>
@@ -397,7 +401,7 @@
         <div id="rag-eval-v4-bad-cases" class="stack"></div>
       </section>
 
-      <section class="panel wide" id="rag-eval-v41-panel">
+      <section class="panel wide developer-mode-panel" id="rag-eval-v41-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Retrieval Ablation</p>
@@ -430,7 +434,7 @@
         </div>
       </section>
 
-      <section class="panel wide" id="context-v42-panel">
+      <section class="panel wide developer-mode-panel" id="context-v42-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Context Engine Evaluation</p>
@@ -446,7 +450,7 @@
         <pre id="context-v42-summary"></pre>
       </section>
 
-      <section class="panel wide" id="memory-v43-panel">
+      <section class="panel wide developer-mode-panel" id="memory-v43-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Long-Term Memory Evaluation</p>
@@ -462,7 +466,7 @@
         <pre id="memory-v43-summary"></pre>
       </section>
 
-      <section class="panel wide" id="runtime-v44-panel">
+      <section class="panel wide developer-mode-panel" id="runtime-v44-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Agent Runtime Evaluation</p>
@@ -479,7 +483,7 @@
         <pre id="runtime-v44-summary"></pre>
       </section>
 
-      <section class="panel wide" id="production-v45-panel">
+      <section class="panel wide developer-mode-panel" id="production-v45-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Production Governance Workbench</p>
@@ -515,32 +519,32 @@
         </div>
       </section>
 
-      <section class="panel wide" id="article-panel">
+      <section class="panel wide product-mode-panel" id="article-panel">
         <h2>调研文章</h2>
         <article id="article-content" class="article"></article>
       </section>
 
-      <section class="panel" id="qa-panel">
+      <section class="panel product-mode-panel" id="qa-panel">
         <h2>知识库问答</h2>
         <div id="qa-answer" class="stack"></div>
       </section>
 
-      <section class="panel" id="trace-panel">
+      <section class="panel developer-mode-panel" id="trace-panel">
         <h2>Runtime Trace</h2>
         <ol id="trace-list" class="timeline"></ol>
       </section>
 
-      <section class="panel" id="sse-panel">
+      <section class="panel developer-mode-panel" id="sse-panel">
         <h2>SSE 事件流</h2>
         <ol id="sse-event-list" class="timeline"></ol>
       </section>
 
-      <section class="panel wide" id="multi-agent-panel">
+      <section class="panel wide developer-mode-panel" id="multi-agent-panel">
         <h2>Multi-Agent 编排</h2>
         <div id="multi-agent" class="stack"></div>
       </section>
 
-      <section class="panel wide" id="process-panel">
+      <section class="panel wide developer-mode-panel" id="process-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Process Introspection</p>
@@ -568,12 +572,12 @@
         </div>
       </section>
 
-      <section class="panel" id="pipeline-worker-panel">
+      <section class="panel developer-mode-panel" id="pipeline-worker-panel">
         <h2>Pipeline Worker</h2>
         <div id="pipeline-worker" class="metric-grid"></div>
       </section>
 
-      <section class="panel wide" id="stress-panel">
+      <section class="panel wide developer-mode-panel" id="stress-panel">
         <h2>稳定性压测</h2>
         <div id="stress-report" class="metric-grid"></div>
       </section>

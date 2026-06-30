@@ -131,6 +131,19 @@ class PaperStormChatAgentTest(unittest.TestCase):
             )
             self.assertNotIn("无源器件非线性导致", reply["assistant_message"]["content"])
 
+    def test_social_chat_does_not_leak_the_session_research_topic(self):
+        service = self.make_service()
+        session = service.create_chat_session(topic="pim 神经网络抑制", run_mode="fake")
+
+        reply = service.send_chat_message(session["chat_id"], "莫西莫西")
+
+        content = reply["assistant_message"]["content"].lower()
+        self.assertFalse(reply["retrieval_triggered"])
+        self.assertFalse(reply["used_task_id"])
+        self.assertEqual(reply["router_decision"]["intent"], "casual_chat")
+        self.assertNotIn("pim", content)
+        self.assertNotIn("神经网络抑制", content)
+
     def test_fastapi_adapter_exposes_chat_session_routes(self):
         from fastapi.testclient import TestClient
 

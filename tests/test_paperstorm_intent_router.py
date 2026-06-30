@@ -66,6 +66,53 @@ class PaperStormIntentRouterTest(unittest.TestCase):
         self.assertEqual(research["intent"], "run_research")
         self.assertTrue(research["need_retrieval"])
 
+    def test_social_messages_never_inherit_the_research_topic(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        router = PaperStormIntentRouter()
+        for message in ["莫西莫西", "谢谢", "你在干嘛", "今天天气不错"]:
+            with self.subTest(message=message):
+                decision = router.route(
+                    message=message,
+                    session={"topic": "pim 神经网络抑制", "task_id": "task-pim"},
+                    context_window=[],
+                )
+                self.assertEqual(decision["intent"], "casual_chat")
+                self.assertFalse(decision["need_retrieval"])
+                self.assertEqual(decision["rewritten_query"], message)
+
+    def test_ambiguous_short_followup_without_context_asks_for_clarification(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        decision = PaperStormIntentRouter().route(
+            message="这个呢？",
+            session={"topic": "pim 神经网络抑制"},
+            context_window=[],
+        )
+
+        self.assertEqual(decision["intent"], "clarify")
+        self.assertFalse(decision["need_retrieval"])
+        self.assertNotIn("pim", decision["rewritten_query"].lower())
+
+    def test_invalid_or_low_confidence_llm_decision_falls_back_safely(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        for response in [
+            "not-json",
+            '{"intent":"research_qa","need_retrieval":true,"tool":"research_qa",'
+            '"confidence":0.2,"reason":"uncertain"}',
+        ]:
+            with self.subTest(response=response):
+                decision = PaperStormIntentRouter(
+                    llm_router=lambda _prompt, value=response: value
+                ).route(
+                    message="莫西莫西",
+                    session={"topic": "pim 神经网络抑制"},
+                    context_window=[],
+                )
+                self.assertEqual(decision["intent"], "casual_chat")
+                self.assertFalse(decision["need_retrieval"])
+
 
 if __name__ == "__main__":
     unittest.main()
