@@ -199,6 +199,10 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         top_k: int = Field(default=5, ge=1, le=20)
         backend: str = "deterministic"
 
+    class RetrievalRuntimeBenchmarkRequest(BaseModel):
+        top_k: int = Field(default=5, ge=1, le=20)
+        embedding: str = "auto"
+
     @app.get("/")
     def get_dashboard_home():
         index_path = dashboard_dir / "index.html"
@@ -350,6 +354,17 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.get("/evaluations/rag-v41/latest")
     def get_rag_evaluation_v41():
         return service.get_rag_evaluation_v41()
+
+    @app.post("/evaluations/retrieval-runtime")
+    def run_retrieval_runtime_benchmark(request: RetrievalRuntimeBenchmarkRequest):
+        return service.run_retrieval_runtime_benchmark(
+            embedding=request.embedding,
+            top_k=request.top_k,
+        )
+
+    @app.get("/evaluations/retrieval-runtime/latest")
+    def get_retrieval_runtime_benchmark():
+        return service.get_retrieval_runtime_benchmark()
 
     @app.post("/research-agent/ask")
     def ask_research_agent(request: ResearchAgentAskRequest):

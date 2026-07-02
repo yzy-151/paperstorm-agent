@@ -581,12 +581,13 @@ class ProductionControlPlaneV45:
 class PaperStormProductionRuntimeV45:
     runtime_name = "paperstorm-production-v4.5"
 
-    def __init__(self, root_dir, task_service, control_plane=None):
+    def __init__(self, root_dir, task_service, control_plane=None, intent_router=None):
         from .paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
 
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.task_service = task_service
+        self.intent_router = intent_router
         self.control = control_plane or ProductionControlPlaneV45(
             self.root_dir / "production_v45.sqlite"
         )
@@ -621,9 +622,15 @@ class PaperStormProductionRuntimeV45:
             with self.control.trace_span(
                 trace_id, "agent_runtime", "conversation_graph"
             ):
+                from .paperstorm_router_llm import build_intent_router
+
+                intent_router = self.intent_router or build_intent_router(
+                    run_mode=payload.get("run_mode", "fake")
+                )
                 runtime = self.graph_runtime_class(
                     self.root_dir / "langgraph_v44",
                     self.task_service,
+                    intent_router=intent_router,
                 )
                 graph_result = runtime.invoke(**payload)
             for event in graph_result.get("node_events") or []:
@@ -662,19 +669,25 @@ class PaperStormProductionRuntimeV45:
 
     def get_thread_state(self, thread_id: str):
         runtime = self.graph_runtime_class(
-            self.root_dir / "langgraph_v44", self.task_service
+            self.root_dir / "langgraph_v44",
+            self.task_service,
+            intent_router=self.intent_router,
         )
         return runtime.get_thread_state(thread_id)
 
     def get_thread_history(self, thread_id: str, limit: int = 50):
         runtime = self.graph_runtime_class(
-            self.root_dir / "langgraph_v44", self.task_service
+            self.root_dir / "langgraph_v44",
+            self.task_service,
+            intent_router=self.intent_router,
         )
         return runtime.get_thread_history(thread_id, limit=limit)
 
     def get_graph_spec(self):
         runtime = self.graph_runtime_class(
-            self.root_dir / "langgraph_v44", self.task_service
+            self.root_dir / "langgraph_v44",
+            self.task_service,
+            intent_router=self.intent_router,
         )
         return dict(
             runtime.get_graph_spec(),

@@ -74,6 +74,8 @@ class ConversationStateV44(TypedDict, total=False):
     error: str
     executed_nodes: List[str]
     node_events: List[Dict]
+    retrieval_stack: str
+    retrieval_mode: str
 
 
 class StormDeepResearchToolV44:
@@ -170,6 +172,8 @@ class StormDeepResearchToolV44:
             "evidence_sufficiency": result.get("evidence_sufficiency") or {},
             "retrieval_triggered": bool(result.get("retrieval_triggered")),
             "decision": result.get("decision") or {},
+            "retrieval_stack": "storm_deep_research_tool",
+            "retrieval_mode": "",
         }
 
 
@@ -604,6 +608,8 @@ class PaperStormLangGraphRuntime:
                 "evidence_grade": source.get("evidence_sufficiency")
                 or state.get("evidence_grade")
                 or {},
+                "retrieval_stack": source.get("retrieval_stack", ""),
+                "retrieval_mode": source.get("retrieval_mode", ""),
             },
         )
 
@@ -733,6 +739,8 @@ class PaperStormLangGraphRuntime:
             "node_events": trace_events or state.get("node_events") or [],
             "checkpoint_count": checkpoint_count,
             "idempotent_replay": False,
+            "retrieval_stack": state.get("retrieval_stack", ""),
+            "retrieval_mode": state.get("retrieval_mode", ""),
         }
 
     def _request_trace_events(self, thread_id: str, request_id: str):

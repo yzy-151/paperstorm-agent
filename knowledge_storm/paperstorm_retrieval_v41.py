@@ -35,6 +35,9 @@ def reciprocal_rank_fusion(
                 chunk_id,
                 dict(item, rrf_score=0.0, fusion_hits=0, source_ranks={}),
             )
+            for score_key in ("bm25_score", "dense_score"):
+                if item.get(score_key) is not None and target.get(score_key) is None:
+                    target[score_key] = item[score_key]
             target["rrf_score"] += weights[source_index] / (rank_constant + rank)
             target["fusion_hits"] += 1
             target["source_ranks"][str(source_index)] = rank
@@ -192,8 +195,113 @@ class HybridPaperIndex:
             enriched = dict(item)
             enriched["retrieval_mode"] = mode
             enriched["final_rank"] = rank
+            enriched["score"] = round(
+                float(
+                    item.get(
+                        "rrf_score",
+                        item.get("bm25_score", item.get("dense_score", 0.0)),
+                    )
+                ),
+                8,
+            )
             output.append(enriched)
         return output
+
+    @classmethod
+    def from_documents(
+        cls,
+        documents: Iterable[Dict],
+        embedding_provider,
+        chunk_size: int = 500,
+        chunk_overlap: int = 100,
+    ):
+        from .paperstorm_rag import chunk_text
+
+        if chunk_overlap >= chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size")
+        chunks = []
+        for doc_index, document in enumerate(documents or [], start=1):
+            text = str(document.get("text") or "")
+            document_id = document.get("document_id") or "doc-{0}".format(doc_index)
+            for chunk_index, content in enumerate(
+                chunk_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap),
+                start=1,
+            ):
+                chunk_id = "{0}-chunk-{1}".format(document_id, chunk_index)
+                chunks.append(
+                    {
+                        "chunk_id": chunk_id,
+                        "document_id": document_id,
+                        "title": document.get("title") or document_id,
+                        "content": content,
+                        "url": document.get("url") or "",
+                        "source_type": document.get("source_type") or "document",
+                        "metadata": dict(
+                            document.get("metadata") or {}, chunk_index=chunk_index
+                        ),
+                    }
+                )
+        return cls(chunks=chunks, embedding_provider=embedding_provider)
+
+    @classmethod
+    def from_run_dir(
+        cls,
+        run_dir,
+        embedding_provider,
+        chunk_size: int = 500,
+        chunk_overlap: int = 100,
+    ):
+        """Build a V4.1 index from a research run dir, same sources as the
+        legacy runtime index: polished article plus raw search results."""
+        run_dir = Path(run_dir)
+        documents = []
+        article = _read_first_existing(
+            [
+                run_dir / "storm_gen_article_polished.txt",
+                run_dir / "storm_gen_article.txt",
+            ]
+        )
+        if article:
+            documents.append(
+                {
+                    "document_id": "generated_article",
+                    "title": "Generated PaperStorm Article",
+                    "text": article,
+                    "source_type": "article",
+                    "url": str(run_dir / "storm_gen_article_polished.txt"),
+                }
+            )
+        for index, result in enumerate(
+            _read_json(run_dir / "raw_search_results.json", []), start=1
+        ):
+            snippets = result.get("snippets") or []
+            text = "\n".join(
+                [
+                    str(result.get("title") or ""),
+                    str(result.get("description") or ""),
+                    "\n".join(str(item) for item in snippets),
+                ]
+            ).strip()
+            if text:
+                documents.append(
+                    {
+                        "document_id": "retrieval-{0}".format(index),
+                        "title": result.get("title") or "Retrieved source {0}".format(index),
+                        "text": text,
+                        "source_type": result.get("source_type") or "retrieval",
+                        "url": result.get("url") or "",
+                        "metadata": {
+                            "result_index": index,
+                            "query": result.get("query", ""),
+                        },
+                    }
+                )
+        return cls.from_documents(
+            documents,
+            embedding_provider=embedding_provider,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
 
     def _bm25_search(self, query: str, top_k: int):
         scores = self._bm25.get_scores(multilingual_tokenize(query))
@@ -278,3 +386,19 @@ def _cosine(left, right):
     if not left_norm or not right_norm:
         return 0.0
     return numerator / (left_norm * right_norm)
+
+
+def _read_first_existing(paths):
+    for path in paths:
+        if path.exists():
+            return path.read_text(encoding="utf-8", errors="replace")
+    return ""
+
+
+def _read_json(path: Path, default):
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return default

@@ -10,6 +10,7 @@ class PaperStormKnowledgeBase:
     def __init__(self, documents: List[Dict], run_dir: Optional[Path] = None):
         self.documents = documents
         self.run_dir = Path(run_dir) if run_dir else None
+        self.retrieval_meta: Dict = {}
 
     @classmethod
     def from_run_dir(cls, run_dir):
@@ -89,19 +90,26 @@ class PaperStormKnowledgeBase:
             "grounded": bool(evidence),
             "memory_context": memory_context,
             "evidence": evidence,
+            "retrieval_stack": self.retrieval_meta.get("stack", ""),
+            "retrieval_mode": self.retrieval_meta.get("mode", ""),
         }
 
     def search(self, query: str, top_k: int = 3):
         if self.run_dir:
             try:
-                from .paperstorm_rag import PaperStormRAGIndex
+                from .paperstorm_retrieval_runtime import search_runtime_index
 
-                index = PaperStormRAGIndex.from_run_dir(self.run_dir)
-                results = index.search(query, top_k=top_k)
-                if results:
-                    return [_rag_chunk_to_doc(item) for item in results]
+                outcome = search_runtime_index(self.run_dir, query, top_k=top_k)
+                self.retrieval_meta = {
+                    "stack": outcome.get("stack", ""),
+                    "mode": outcome.get("mode", ""),
+                    "embedding": outcome.get("embedding", ""),
+                }
+                if outcome.get("results"):
+                    return [_rag_chunk_to_doc(item) for item in outcome["results"]]
             except Exception:
                 pass
+        self.retrieval_meta = {"stack": "legacy_fallback", "mode": "set_overlap"}
         terms = _tokenize(query)
         scored = []
         for index, doc in enumerate(self.documents):
@@ -183,6 +191,11 @@ def _rag_chunk_to_doc(chunk: Dict):
         "vector_score": chunk.get("vector_score", 0),
         "hybrid_score": chunk.get("hybrid_score", 0),
         "rerank_score": chunk.get("rerank_score", 0),
+        "bm25_score": chunk.get("bm25_score", 0),
+        "dense_score": chunk.get("dense_score", 0),
+        "rrf_score": chunk.get("rrf_score", 0),
+        "retrieval_mode": chunk.get("retrieval_mode", ""),
+        "final_rank": chunk.get("final_rank", 0),
     }
 
 

@@ -654,6 +654,19 @@ class PaperStormTaskService:
         root = self.root_dir / "evaluations" / "runtime_v44_latest"
         return _read_json(root / "langgraph_benchmark_v44.json", {})
 
+    def run_retrieval_runtime_benchmark(self, embedding: str = "auto", top_k: int = 5):
+        from .paperstorm_retrieval_runtime import run_retrieval_benchmark
+
+        return run_retrieval_benchmark(
+            self.root_dir / "evaluations" / "retrieval_runtime_latest",
+            top_k=top_k,
+            embedding=embedding,
+        )
+
+    def get_retrieval_runtime_benchmark(self):
+        root = self.root_dir / "evaluations" / "retrieval_runtime_latest"
+        return _read_json(root / "retrieval_runtime_benchmark.json", {})
+
     def _langgraph_runtime_v44(self):
         from .paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
 

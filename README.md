@@ -1173,6 +1173,58 @@ scorecard.md
 - 文章质量。
 - Runtime 可观测性。
 
+## 11.5 运行时检索栈与意图路由
+
+### 运行时检索栈（V4.1 已接入聊天/知识库路径）
+
+聊天与知识库问答的默认召回已从轻量索引切换到 V4.1 栈：
+BM25（rank-bm25，中英混合 unigram/bigram 分词）+ Dense + RRF 融合，
+可选 Cross-Encoder 二次重排。环境变量：
+
+- `PAPERSTORM_RETRIEVAL_STACK`：`auto`（默认，依赖可用时用 V4.1，否则回退 legacy）/ `v41` / `legacy`。
+- `PAPERSTORM_RETRIEVAL_EMBEDDING`：`auto`（默认 hash，快且无模型依赖）/ `real`（sentence-transformers 多语模型，需已缓存或可下载）。
+- `PAPERSTORM_RETRIEVAL_MODE`：`hybrid`（默认 BM25+Dense+RRF）/ `bm25` / `dense` / `hybrid_rerank`。
+- `PAPERSTORM_EMBEDDING_MODEL`、`PAPERSTORM_MODEL_CACHE`：真实向量模型与缓存目录。
+
+运行时检索带"有意义相关度门槛"（词/中文 bigram 重叠或强向量相似度），
+无关问题会拒答而不是从弱相关证据编造答案。
+
+### 前后对比 Benchmark（证明接入后的提升）
+
+CLI：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m knowledge_storm.paperstorm_retrieval_runtime `
+  --output-dir .\results\paperstorm_retrieval_runtime --embedding hash --top-k 5
+```
+
+HTTP 接口：`POST /evaluations/retrieval-runtime`（body `{"embedding":"hash","top_k":5}`），
+结果读取 `GET /evaluations/retrieval-runtime/latest`。
+
+同一 100 条可审计 seed 集（80 条检索用例）上的结果：
+
+| 指标 | legacy（词法重叠+hash 向量） | V4.1（BM25+Dense+RRF） | 差值 |
+| --- | ---: | ---: | ---: |
+| Recall@K | 0.3625 | 0.7750 | +0.4125（+113.8%） |
+| MRR | 0.2804 | 0.5510 | +0.2706 |
+| nDCG@K | 0.3006 | 0.6075 | +0.3069 |
+| P95 延迟 | 0.67 ms | 1.48 ms | +0.81 ms |
+
+真实 embedding（`--embedding real`）下 V4.1 为 Recall@K 0.9875 vs legacy 0.90，
+且 P95 更低（75.4 ms vs 125.6 ms）。
+
+### 意图路由是否使用 LLM：使用
+
+路由策略是"规则兜底 + LLM 增强"：
+
+- `run_mode=paperstorm`（真实模式）：默认启用 LLM 路由（DeepSeek，配置见
+  `PAPERSTORM_ROUTER_PROVIDER/MODEL/API_KEY/API_BASE`，缺省回退 `DEEPSEEK_*` 环境变量或 `secrets.toml`）。
+- `run_mode=fake`（本地演示）：默认纯规则，显式设 `PAPERSTORM_ROUTER_LLM=1` 可开启。
+- LLM 决策需要置信度 ≥ 0.65，且不能与高置信规则冲突：
+  规则判定闲聊/系统问题时不允许 LLM 强行检索或降级为 clarify；
+  规则判定需要检索时不允许 LLM 降级为闲聊/clarify；
+  解析失败或超时自动回退规则。
+
 ## 12. 运行 MCP-style Server
 
 手工 `tools/list` 验证：

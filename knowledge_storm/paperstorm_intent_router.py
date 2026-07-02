@@ -226,13 +226,23 @@ def route_high_confidence_rules(
 
 
 def _llm_decision_safe(decision: Dict, guard_decision: Optional[Dict]) -> bool:
-    """Refuse LLM decisions that force retrieval on clearly casual/system turns."""
+    """Refuse LLM decisions that fight a high-confidence rule outcome."""
     if not guard_decision:
         return True
-    if not decision.get("need_retrieval"):
-        return True
     guard_tool = str((guard_decision or {}).get("tool") or "")
-    return guard_tool not in {"chat_fallback", "clarify"}
+    if guard_tool in {"chat_fallback", "clarify"}:
+        # The rules already decided this turn must not touch retrieval.
+        if decision.get("need_retrieval"):
+            return False
+        # A plain chat/system guard should not be downgraded to "clarify".
+        if guard_tool == "chat_fallback" and decision.get("tool") == "clarify":
+            return False
+        return True
+    # The rules already decided this turn needs retrieval; do not let the LLM
+    # downgrade it to chat or clarification.
+    if decision.get("tool") in {"chat_fallback", "clarify"}:
+        return False
+    return True
 
 
 def rewrite_query(message: str, session: Dict, context_window: List[Dict]) -> str:

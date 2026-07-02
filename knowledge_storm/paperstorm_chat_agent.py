@@ -562,6 +562,8 @@ def _graph_answer_payload(graph_run: Dict):
         "qa_history_count": 0,
         "router_decision": router_decision,
         "artifact_uri": graph_run.get("artifact_uri", ""),
+        "retrieval_stack": graph_run.get("retrieval_stack", ""),
+        "retrieval_mode": graph_run.get("retrieval_mode", ""),
     }
 
 
