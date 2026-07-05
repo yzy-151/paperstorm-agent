@@ -207,6 +207,26 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn('setDashboardMode("chat")', script)
         self.assertIn('body[data-mode="developer"]', styles)
 
+    def test_dashboard_exposes_retrieval_runtime_benchmark_panel(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("retrieval-runtime-panel", index)
+        self.assertIn("run-retrieval-runtime", index)
+        self.assertIn("load-retrieval-runtime", index)
+        self.assertIn("retrieval-runtime-table", index)
+        self.assertIn("retrieval-runtime-summary", index)
+        self.assertIn("runtime-integration-status", index)
+        self.assertIn("runRetrievalRuntimeBenchmark", script)
+        self.assertIn("loadRetrievalRuntimeBenchmark", script)
+        self.assertIn("renderRetrievalRuntimeBenchmark", script)
+        self.assertIn("/evaluations/retrieval-runtime", script)
+
     def test_dashboard_exposes_enterprise_kb_v32_workflow(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(

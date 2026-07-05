@@ -117,6 +117,7 @@ class PaperStormChatAgent:
                 "router_decision": router_decision,
                 "tool_decision": _tool_decision(router_decision, answer),
                 "citation_count": len(answer.get("citations") or []),
+                "retrieval_stack": answer.get("retrieval_stack", ""),
             },
         )
         session["messages"].append(assistant_message)

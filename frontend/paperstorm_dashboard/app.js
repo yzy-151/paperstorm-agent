@@ -915,7 +915,7 @@ function renderResearchQA(answer) {
   document.querySelector("#research-answer").innerHTML = `
     <strong>Agent</strong>
     <p>${escapeHtml(answer.answer || "暂无回答。")}</p>
-    <div class="label">grounded: ${Boolean(answer.grounded)} · task_id: ${escapeHtml(answer.used_task_id || "")}</div>
+    <div class="label">grounded: ${Boolean(answer.grounded)} · task_id: ${escapeHtml(answer.used_task_id || "")}${answer.retrieval_stack ? ` · stack: ${escapeHtml(answer.retrieval_stack)}` : ""}</div>
   `;
   document.querySelector("#research-decision").textContent =
     JSON.stringify(answer.decision || {}, null, 2);
@@ -1095,6 +1095,71 @@ function renderProductionBenchmarkV45(report) {
   }, null, 2);
 }
 
+async function runRetrievalRuntimeBenchmark() {
+  try {
+    setStatus("running retrieval runtime benchmark", "running");
+    setButtonBusy("run-retrieval-runtime", true, "对比运行中");
+    const report = await fetchJson("/evaluations/retrieval-runtime", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({embedding: "hash", top_k: 5}),
+    });
+    renderRetrievalRuntimeBenchmark(report);
+    const delta = report.deltas?.recall_at_k ?? 0;
+    setStatus(
+      `retrieval benchmark: v4.1 recall ${report.v41?.recall_at_k} vs legacy ${report.legacy?.recall_at_k} (${delta >= 0 ? "+" : ""}${delta})`,
+      "success",
+    );
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("run-retrieval-runtime", false);
+  }
+}
+
+async function loadRetrievalRuntimeBenchmark() {
+  try {
+    setStatus("loading latest retrieval benchmark", "loading");
+    setButtonBusy("load-retrieval-runtime", true, "加载中");
+    const report = await fetchJson("/evaluations/retrieval-runtime/latest");
+    renderRetrievalRuntimeBenchmark(report);
+    setStatus("latest retrieval benchmark loaded", Object.keys(report).length ? "success" : "idle");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("load-retrieval-runtime", false);
+  }
+}
+
+function renderRetrievalRuntimeBenchmark(report) {
+  const rows = [
+    ["Recall@K", "recall_at_k"],
+    ["MRR", "mrr"],
+    ["nDCG@K", "ndcg_at_k"],
+    ["P95 延迟(ms)", "p95_latency_ms"],
+  ];
+  const hasReport = Boolean(report && report.deltas);
+  document.querySelector("#retrieval-runtime-table").innerHTML = hasReport
+    ? rows.map(([label, key]) => `
+      <tr>
+        <td>${escapeHtml(label)}</td>
+        <td>${escapeHtml(report.legacy?.[key] ?? "")}</td>
+        <td>${escapeHtml(report.v41?.[key] ?? "")}</td>
+        <td>${escapeHtml(report.deltas?.[key] ?? "")}</td>
+      </tr>
+    `).join("")
+    : `<tr><td colspan="4">尚未运行对比，或最近报告为空。</td></tr>`;
+  document.querySelector("#retrieval-runtime-summary").textContent = hasReport
+    ? JSON.stringify({
+        dataset: report.dataset,
+        embedding: report.embedding,
+        case_count: report.legacy?.case_count,
+        relative_recall_gain_pct: report.deltas?.relative_recall_gain_pct,
+        stack_meta: report.stack_meta,
+      }, null, 2)
+    : "尚未运行对比。点击“运行检索对比 Benchmark”生成 legacy vs V4.1 报告；或设置 PAPERSTORM_RETRIEVAL_EMBEDDING=real 后再跑真实向量对比。";
+}
+
 function appendChatMessage(message) {
   const list = document.querySelector("#chat-message-list");
   list.insertAdjacentHTML("beforeend", chatBubble(message));
@@ -1105,8 +1170,11 @@ function chatBubble(message) {
   const role = message.role === "user" ? "user" : "assistant";
   const label = role === "user" ? "你" : "PaperStorm";
   const metadata = message.metadata || {};
+  const stack = metadata.retrieval_stack
+    ? ` · stack: ${escapeHtml(metadata.retrieval_stack)}`
+    : "";
   const meta = metadata.used_task_id
-    ? `<div class="label">task: ${escapeHtml(metadata.used_task_id)} · retrieval: ${Boolean(metadata.retrieval_triggered)}</div>`
+    ? `<div class="label">task: ${escapeHtml(metadata.used_task_id)} · retrieval: ${Boolean(metadata.retrieval_triggered)}${stack}</div>`
     : "";
   return `
     <div class="chat-message ${role}">
@@ -1331,6 +1399,8 @@ document.querySelector("#run-production-v45-benchmark").addEventListener("click"
 document.querySelector("#load-production-v45-benchmark").addEventListener("click", loadProductionBenchmarkV45);
 document.querySelector("#load-production-v45-status").addEventListener("click", loadProductionStatusV45);
 document.querySelector("#load-production-v45-trace").addEventListener("click", loadProductionTraceV45);
+document.querySelector("#run-retrieval-runtime").addEventListener("click", runRetrievalRuntimeBenchmark);
+document.querySelector("#load-retrieval-runtime").addEventListener("click", loadRetrievalRuntimeBenchmark);
 document.querySelector("#create-enterprise-kb").addEventListener("click", createEnterpriseKB);
 document.querySelector("#list-enterprise-kb").addEventListener("click", listEnterpriseKB);
 document.querySelector("#ask-enterprise-kb").addEventListener("click", askEnterpriseKB);

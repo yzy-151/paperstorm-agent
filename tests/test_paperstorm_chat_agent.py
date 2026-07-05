@@ -31,6 +31,10 @@ class PaperStormChatAgentTest(unittest.TestCase):
         self.assertEqual(reply["mode"], "chat")
         self.assertTrue(reply["retrieval_triggered"])
         self.assertTrue(reply["used_task_id"])
+        self.assertEqual(
+            reply["assistant_message"]["metadata"].get("retrieval_stack"),
+            "storm_deep_research_tool",
+        )
         self.assertTrue(reply["assistant_message"]["content"])
         self.assertGreaterEqual(len(reply["messages"]), 2)
         self.assertEqual(loaded["chat_id"], session["chat_id"])
