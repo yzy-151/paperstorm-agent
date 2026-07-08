@@ -173,6 +173,8 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("chat-session-id", index)
         self.assertIn("create-chat-session", index)
         self.assertIn("send-chat-message", index)
+        self.assertIn("chat-run-mode", index)
+        self.assertIn("chat-retriever", index)
         self.assertIn("chat-message-list", index)
         self.assertIn("chat-context-window", index)
         self.assertIn("chat-compressed-context", index)

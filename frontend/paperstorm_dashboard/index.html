@@ -251,6 +251,20 @@
           <section class="chat-main">
             <div class="chat-session-bar">
               <span>会话：<span id="chat-session-id-label">尚未创建</span></span>
+              <label class="session-select">
+                运行模式
+                <select id="chat-run-mode">
+                  <option value="fake">fake（本地演示）</option>
+                  <option value="paperstorm">paperstorm（真实检索+LLM）</option>
+                </select>
+              </label>
+              <label class="session-select">
+                检索器
+                <select id="chat-retriever">
+                  <option value="arxiv">arxiv</option>
+                  <option value="local-pdf">local-pdf</option>
+                </select>
+              </label>
               <button id="new-chat-button" type="button">新建聊天</button>
             </div>
             <div id="chat-message-list" class="chat-message-list">

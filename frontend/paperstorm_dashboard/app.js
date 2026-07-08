@@ -304,11 +304,17 @@ async function askResearchAgent() {
 }
 
 async function createChatSession() {
+  const runMode = document.querySelector("#chat-run-mode")?.value
+    || document.querySelector("#task-run-mode").value;
+  const retriever = document.querySelector("#chat-retriever")?.value
+    || document.querySelector("#task-retriever").value;
+  document.querySelector("#task-run-mode").value = runMode;
+  document.querySelector("#task-retriever").value = retriever;
   const payload = {
     title: document.querySelector("#task-topic").value.trim() || "PaperStorm Chat",
     topic: document.querySelector("#task-topic").value.trim(),
-    run_mode: document.querySelector("#task-run-mode").value,
-    retriever: document.querySelector("#task-retriever").value,
+    run_mode: runMode,
+    retriever: retriever,
     output_language: document.querySelector("#task-output-language").value,
     expected_keywords: splitKeywords(document.querySelector("#task-expected-keyword").value),
     forbidden_keywords: splitKeywords(document.querySelector("#task-forbidden-keyword").value),
@@ -999,6 +1005,14 @@ function renderChatSession(session) {
   }
   if (session.tenant_id) {
     document.querySelector("#chat-tenant-id").value = session.tenant_id;
+  }
+  if (session.run_mode) {
+    document.querySelector("#chat-run-mode").value = session.run_mode;
+    document.querySelector("#task-run-mode").value = session.run_mode;
+  }
+  if (session.retriever) {
+    document.querySelector("#chat-retriever").value = session.retriever;
+    document.querySelector("#task-retriever").value = session.retriever;
   }
   if (typeof session.memory_enabled === "boolean") {
     document.querySelector("#chat-memory-enabled").checked = session.memory_enabled;
