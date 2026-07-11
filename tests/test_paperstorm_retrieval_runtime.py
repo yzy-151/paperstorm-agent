@@ -88,6 +88,33 @@ class PaperStormRetrievalRuntimeTest(unittest.TestCase):
             self.assertEqual(outcome["stack"], "legacy")
             self.assertEqual(outcome["mode"], "legacy_hybrid")
 
+    def test_runtime_index_is_lru_cached_and_invalidated_on_file_change(self):
+        from knowledge_storm.paperstorm_retrieval_runtime import search_runtime_index
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            (run_dir / "storm_gen_article.txt").write_text(
+                "PIM passive intermodulation neural network suppression.",
+                encoding="utf-8",
+            )
+            (run_dir / "raw_search_results.json").write_text("[]", encoding="utf-8")
+            first = search_runtime_index(
+                run_dir, "PIM 是什么？", top_k=2, stack="legacy", embedding="hash"
+            )
+            second = search_runtime_index(
+                run_dir, "PIM 是什么？", top_k=2, stack="legacy", embedding="hash"
+            )
+            self.assertFalse(first["cached"])
+            self.assertTrue(second["cached"])
+            (run_dir / "storm_gen_article.txt").write_text(
+                "PIM article changed with new content.",
+                encoding="utf-8",
+            )
+            third = search_runtime_index(
+                run_dir, "PIM 是什么？", top_k=2, stack="legacy", embedding="hash"
+            )
+            self.assertFalse(third["cached"])
+
 
 if __name__ == "__main__":
     unittest.main()

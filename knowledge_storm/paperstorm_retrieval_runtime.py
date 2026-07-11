@@ -14,10 +14,12 @@ Env knobs:
 """
 
 import argparse
+import collections
 import json
 import math
 import os
 import statistics
+import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -59,6 +61,62 @@ def runtime_mode(override: Optional[str] = None) -> str:
 
 _REAL_EMBEDDING_PROVIDER = None
 
+_INDEX_LRU_LOCK = threading.Lock()
+
+
+def _index_cache_maxsize() -> int:
+    try:
+        return max(0, int(os.getenv("PAPERSTORM_RETRIEVAL_INDEX_CACHE_SIZE", "16")))
+    except ValueError:
+        return 16
+
+
+class _IndexLRU:
+    """Small process-local LRU for built retrieval indexes.
+
+    Follow-up questions reuse the same run dir; rebuilding the BM25 model and
+    embeddings on every query is wasteful. The LRU is keyed by run dir,
+    stack/embedding config and the run-dir file signature, so any change to
+    the article or raw search results invalidates the entry naturally.
+    """
+
+    def __init__(self, maxsize: int):
+        self.maxsize = max(int(maxsize or 0), 0)
+        self._data = collections.OrderedDict()
+
+    def get(self, key):
+        with _INDEX_LRU_LOCK:
+            if key not in self._data:
+                return None
+            self._data.move_to_end(key)
+            return self._data[key]
+
+    def put(self, key, value):
+        with _INDEX_LRU_LOCK:
+            if key in self._data:
+                self._data.move_to_end(key)
+            self._data[key] = value
+            while self.maxsize and len(self._data) > self.maxsize:
+                self._data.popitem(last=False)
+
+
+_INDEX_LRU = _IndexLRU(_index_cache_maxsize())
+
+
+def _run_dir_signature(run_dir):
+    """mtime+size signature of the files that feed the runtime index."""
+    parts = []
+    for name in (
+        "storm_gen_article_polished.txt",
+        "storm_gen_article.txt",
+        "raw_search_results.json",
+    ):
+        path = Path(run_dir) / name
+        if path.exists():
+            stat = path.stat()
+            parts.append((name, stat.st_mtime_ns, stat.st_size))
+    return tuple(parts)
+
 
 def _dense_provider(embedding: str):
     global _REAL_EMBEDDING_PROVIDER
@@ -87,6 +145,19 @@ def build_runtime_index(
     """Build the runtime retrieval index for a research run dir."""
     stack = runtime_stack(stack)
     embedding = runtime_embedding(embedding)
+    signature = _run_dir_signature(run_dir)
+    cache_key = (
+        str(Path(run_dir).resolve()),
+        stack,
+        embedding,
+        int(chunk_size),
+        int(chunk_overlap),
+        signature,
+    )
+    cached = _INDEX_LRU.get(cache_key)
+    if cached is not None:
+        index, meta = cached
+        return index, dict(meta, cached=True)
     provider = _dense_provider(embedding)
     if stack == "v41":
         from .paperstorm_retrieval_v41 import HybridPaperIndex
@@ -106,7 +177,9 @@ def build_runtime_index(
             chunk_overlap=chunk_overlap,
             embedding_provider=provider,
         )
-    return index, {"stack": stack, "embedding": embedding}
+    meta = {"stack": stack, "embedding": embedding, "cached": False}
+    _INDEX_LRU.put(cache_key, (index, meta))
+    return index, meta
 
 
 def search_runtime_index(
@@ -145,6 +218,7 @@ def search_runtime_index(
         "stack": meta["stack"],
         "embedding": meta["embedding"],
         "mode": mode if meta["stack"] == "v41" else "legacy_hybrid",
+        "cached": bool(meta.get("cached")),
     }
 
 

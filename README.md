@@ -1185,6 +1185,8 @@ BM25（rank-bm25，中英混合 unigram/bigram 分词）+ Dense + RRF 融合，
 - `PAPERSTORM_RETRIEVAL_EMBEDDING`：`auto`（默认 hash，快且无模型依赖）/ `real`（sentence-transformers 多语模型，需已缓存或可下载）。
 - `PAPERSTORM_RETRIEVAL_MODE`：`hybrid`（默认 BM25+Dense+RRF）/ `bm25` / `dense` / `hybrid_rerank`。
 - `PAPERSTORM_EMBEDDING_MODEL`、`PAPERSTORM_MODEL_CACHE`：真实向量模型与缓存目录。
+- `PAPERSTORM_RETRIEVAL_INDEX_CACHE_SIZE`：运行时检索索引 LRU 容量（默认 16，0 关闭），
+  同一调研任务的追问复用已建好的 BM25+向量索引，文件变化自动失效。
 
 运行时检索带"有意义相关度门槛"（词/中文 bigram 重叠或强向量相似度），
 无关问题会拒答而不是从弱相关证据编造答案。
@@ -1224,6 +1226,8 @@ HTTP 接口：`POST /evaluations/retrieval-runtime`（body `{"embedding":"hash",
   规则判定闲聊/系统问题时不允许 LLM 强行检索或降级为 clarify；
   规则判定需要检索时不允许 LLM 降级为闲聊/clarify；
   解析失败或超时自动回退规则。
+- `PAPERSTORM_ROUTER_CACHE_SIZE`：意图路由 LLM 响应 LRU 容量（默认 512，0 关闭），
+  相同消息+上下文直接复用上一次决策，节省 API 调用。
 
 ## 12. 运行 MCP-style Server
 

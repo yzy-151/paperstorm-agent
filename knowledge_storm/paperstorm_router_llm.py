@@ -14,6 +14,7 @@ Env knobs:
     PAPERSTORM_ROUTER_API_BASE    falls back to DEEPSEEK_API_BASE
 """
 
+import functools
 import os
 import re
 from pathlib import Path
@@ -22,6 +23,38 @@ from typing import Callable, Optional
 
 DEFAULT_PROVIDER = "deepseek"
 DEFAULT_MODEL = "deepseek-chat"
+
+
+def _router_cache_size() -> int:
+    try:
+        return max(0, int(os.getenv("PAPERSTORM_ROUTER_CACHE_SIZE", "512")))
+    except ValueError:
+        return 512
+
+
+@functools.lru_cache(maxsize=_router_cache_size())
+def _cached_router_completion(model_name: str, prompt: str, api_key: str, api_base: str) -> str:
+    """LRU-cached router completion.
+
+    The cache key is the full prompt plus model/config, so identical messages
+    in identical context reuse the decision instead of paying another API call.
+    Set PAPERSTORM_ROUTER_CACHE_SIZE=0 to disable (fresh decision every turn).
+    """
+    import litellm
+
+    response = litellm.completion(
+        model=model_name,
+        messages=[{"role": "user", "content": prompt}],
+        api_key=api_key,
+        api_base=api_base,
+        temperature=0.0,
+        max_tokens=180,
+        timeout=20,
+        cache={"no-cache": True, "no-store": True},
+    )
+    choice = response["choices"][0]
+    message = choice.get("message") or {}
+    return str(message.get("content") or "")
 
 
 def _load_flat_toml_env(path: str = "secrets.toml"):
@@ -63,21 +96,7 @@ def build_router_llm_callable(
     model_name = "{0}/{1}".format(provider, model)
 
     def router_llm(prompt: str) -> str:
-        import litellm
-
-        response = litellm.completion(
-            model=model_name,
-            messages=[{"role": "user", "content": prompt}],
-            api_key=api_key,
-            api_base=api_base,
-            temperature=0.0,
-            max_tokens=180,
-            timeout=20,
-            cache={"no-cache": True, "no-store": True},
-        )
-        choice = response["choices"][0]
-        message = choice.get("message") or {}
-        return str(message.get("content") or "")
+        return _cached_router_completion(model_name, prompt, api_key, api_base)
 
     return router_llm
 
