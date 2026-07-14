@@ -229,6 +229,18 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("renderRetrievalRuntimeBenchmark", script)
         self.assertIn("/evaluations/retrieval-runtime", script)
 
+    def test_dashboard_supports_deep_link_result_loading(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("loadDeepLink", script)
+        self.assertIn('params.get("load")', script)
+        self.assertIn('"bench"', script)
+        self.assertIn("/evaluations/context-v42/latest", script)
+        self.assertIn("/evaluations/memory-v43/latest", script)
+
     def test_dashboard_exposes_enterprise_kb_v32_workflow(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(

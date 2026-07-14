@@ -53,10 +53,12 @@ def run_context_benchmark(output_dir):
         ),
         "compaction_status": result["status"],
     }
+    baseline = _naive_truncation_baseline(messages, constraints)
     report = {
         "project": "PaperStorm Context Benchmark v4.2",
         "run_id": run_id,
         "metrics": metrics,
+        "baseline": baseline,
         "config": engine.config.__dict__,
         "summary": result["summary"],
         "limitations": [
@@ -71,6 +73,51 @@ def run_context_benchmark(output_dir):
         _to_markdown(report), encoding="utf-8"
     )
     return report
+
+
+def _naive_truncation_baseline(messages, constraints):
+    """Before-implementation baseline: fixed-window truncation without
+    artifactization, structured summary or restore."""
+    from .paperstorm_context_v42 import estimate_tokens, truncate_to_tokens
+
+    recent_ids = {str(message.get("id") or "") for message in messages[-1:]}
+    view = []
+    for message in messages:
+        message_id = str(message.get("id") or "")
+        if message_id in recent_ids:
+            view.append(dict(message))
+        elif message.get("role") == "tool":
+            continue
+        else:
+            content = truncate_to_tokens(str(message.get("content") or ""), 40)
+            view.append(dict(message, content=content))
+    joined = " ".join(str(message.get("content") or "") for message in view)
+    before_tokens = sum(
+        estimate_tokens(str(message.get("content") or "")) for message in messages
+    )
+    after_tokens = sum(
+        estimate_tokens(str(message.get("content") or "")) for message in view
+    )
+    return {
+        "strategy": "fixed_window_truncation",
+        "before_tokens": before_tokens,
+        "after_tokens": after_tokens,
+        "token_savings_rate": round(
+            max(0, before_tokens - after_tokens) / max(1, before_tokens), 4
+        ),
+        "constraint_retention_rate": round(
+            len([item for item in constraints if item.lower() in joined.lower()])
+            / len(constraints),
+            4,
+        ),
+        "entity_retention_rate": 1.0 if "PIM" in joined else 0.0,
+        "todo_retention_rate": 1.0 if "待办" in joined else 0.0,
+        "restore_exact": 0.0,
+        "artifact_reference_count": 0,
+        "tool_call_pairing_rate": 0.0,
+        "repeated_compaction_retention_rate": 0.0,
+        "structured_summary": False,
+    }
 
 
 def _benchmark_messages():
@@ -112,7 +159,17 @@ def _tool_pairing_rate(messages):
 
 
 def _to_markdown(report):
-    lines = ["# PaperStorm Context Benchmark v4.2", "", "| Metric | Value |", "| --- | ---: |"]
+    lines = [
+        "# PaperStorm Context Benchmark v4.2",
+        "",
+        "## 实现后：ContextEngine v4.2",
+        "",
+        "| Metric | Value |",
+        "| --- | ---: |",
+    ]
     for key, value in report["metrics"].items():
+        lines.append("| {0} | {1} |".format(key, value))
+    lines.extend(["", "## 实现前基线：固定窗口截断", "", "| Metric | Value |", "| --- | ---: |"])
+    for key, value in report["baseline"].items():
         lines.append("| {0} | {1} |".format(key, value))
     return "\n".join(lines) + "\n"

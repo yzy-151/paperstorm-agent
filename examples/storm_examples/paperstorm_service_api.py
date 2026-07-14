@@ -203,6 +203,11 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         top_k: int = Field(default=5, ge=1, le=20)
         embedding: str = "auto"
 
+    class MultiTaskBenchmarkRequest(BaseModel):
+        top_k: int = Field(default=5, ge=1, le=20)
+        embedding: str = "hash"
+        zotero_root: Optional[str] = None
+
     @app.get("/")
     def get_dashboard_home():
         index_path = dashboard_dir / "index.html"
@@ -366,6 +371,18 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     def get_retrieval_runtime_benchmark():
         return service.get_retrieval_runtime_benchmark()
 
+    @app.post("/evaluations/multi-task")
+    def run_multi_task_benchmark(request: MultiTaskBenchmarkRequest):
+        return service.run_multi_task_benchmark(
+            embedding=request.embedding,
+            top_k=request.top_k,
+            zotero_root=request.zotero_root,
+        )
+
+    @app.get("/evaluations/multi-task/latest")
+    def get_multi_task_benchmark():
+        return service.get_multi_task_benchmark()
+
     @app.post("/research-agent/ask")
     def ask_research_agent(request: ResearchAgentAskRequest):
         return service.ask_research_agent(**_request_payload(request))
@@ -426,6 +443,10 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     def run_context_benchmark_v42():
         return service.run_context_benchmark_v42()
 
+    @app.get("/evaluations/context-v42/latest")
+    def get_context_benchmark_v42():
+        return service.get_context_benchmark_v42()
+
     @app.post("/memories")
     def create_memory(request: MemoryCreateRequest):
         return service.create_memory(**_request_payload(request))
@@ -461,6 +482,10 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.post("/evaluations/memory-v43")
     def run_memory_benchmark_v43():
         return service.run_memory_benchmark_v43()
+
+    @app.get("/evaluations/memory-v43/latest")
+    def get_memory_benchmark_v43():
+        return service.get_memory_benchmark_v43()
 
     @app.post("/evaluations/runtime-v44")
     def run_langgraph_benchmark_v44():

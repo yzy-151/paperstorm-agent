@@ -145,6 +145,12 @@ class PaperStormContextV42Test(unittest.TestCase):
         self.assertNotEqual(report["run_id"], repeated["run_id"])
         self.assertEqual(report["metrics"]["repeated_compaction_retention_rate"], 1.0)
         self.assertEqual(saved["project"], "PaperStorm Context Benchmark v4.2")
+        self.assertIn("baseline", report)
+        self.assertEqual(report["baseline"]["restore_exact"], 0.0)
+        self.assertGreater(
+            report["metrics"]["tool_call_pairing_rate"],
+            report["baseline"]["tool_call_pairing_rate"],
+        )
 
     def test_chat_service_exposes_context_meter_compaction_and_restore(self):
         from knowledge_storm.paperstorm_service import PaperStormTaskService

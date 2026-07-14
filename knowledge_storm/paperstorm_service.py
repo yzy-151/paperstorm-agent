@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import time
 import uuid
@@ -551,6 +552,10 @@ class PaperStormTaskService:
             self.root_dir / "evaluations" / "context_v42_latest"
         )
 
+    def get_context_benchmark_v42(self):
+        root = self.root_dir / "evaluations" / "context_v42_latest"
+        return _read_json(root / "context_benchmark_v42.json", {})
+
     def create_memory(self, **payload):
         return self._memory_service_v43().upsert(**payload)
 
@@ -585,6 +590,10 @@ class PaperStormTaskService:
         return run_memory_benchmark(
             self.root_dir / "evaluations" / "memory_v43_latest"
         )
+
+    def get_memory_benchmark_v43(self):
+        root = self.root_dir / "evaluations" / "memory_v43_latest"
+        return _read_json(root / "memory_benchmark_v43.json", {})
 
     def invoke_conversation_graph(self, **payload):
         return self._production_runtime_v45().invoke(**payload)
@@ -653,6 +662,30 @@ class PaperStormTaskService:
     def get_langgraph_benchmark_v44(self):
         root = self.root_dir / "evaluations" / "runtime_v44_latest"
         return _read_json(root / "langgraph_benchmark_v44.json", {})
+
+    def run_multi_task_benchmark(
+        self,
+        embedding: str = "hash",
+        top_k: int = 5,
+        zotero_root: Optional[str] = None,
+    ):
+        from .paperstorm_multi_task_benchmark import run_multi_task_benchmark
+
+        root = zotero_root or os.getenv("PAPERSTORM_ZOTERO_ROOT", "")
+        if not root:
+            raise ValueError(
+                "zotero_root is required (or set PAPERSTORM_ZOTERO_ROOT)"
+            )
+        return run_multi_task_benchmark(
+            root,
+            self.root_dir / "evaluations" / "multi_task_latest",
+            embedding=embedding,
+            top_k=top_k,
+        )
+
+    def get_multi_task_benchmark(self):
+        root = self.root_dir / "evaluations" / "multi_task_latest"
+        return _read_json(root / "multi_task_benchmark.json", {})
 
     def run_retrieval_runtime_benchmark(self, embedding: str = "auto", top_k: int = 5):
         from .paperstorm_retrieval_runtime import run_retrieval_benchmark

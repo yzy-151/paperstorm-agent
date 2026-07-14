@@ -253,6 +253,12 @@ class PaperStormMemoryV43Test(unittest.TestCase):
             self.assertEqual(first["metrics"]["duplicate_rate"], 0.0)
             self.assertGreaterEqual(first["metrics"]["memory_enabled_task_success"], first["metrics"]["memory_disabled_task_success"])
             self.assertGreater(first["metrics"]["background_throughput_per_second"], 0)
+            self.assertIn("baseline", first)
+            self.assertGreater(first["baseline"]["duplicate_rate"], 0.0)
+            self.assertGreater(
+                first["metrics"]["memory_recall_at_k"],
+                first["baseline"]["recall_at_k"],
+            )
 
     def test_fastapi_exposes_memory_governance_and_benchmark(self):
         try:

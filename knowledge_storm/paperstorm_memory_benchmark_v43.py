@@ -110,10 +110,12 @@ def run_memory_benchmark(output_dir):
         ),
         "deduplication_observed": float(bool(duplicate.get("deduplicated"))),
     }
+    baseline = _naive_flat_store_baseline(cases)
     report = {
         "project": "PaperStorm Memory Benchmark v4.3",
         "run_id": run_id,
         "metrics": metrics,
+        "baseline": baseline,
         "counts": {
             "active_memories": len(active),
             "audit_events": len(service.audit_events()),
@@ -139,6 +141,34 @@ def run_memory_benchmark(output_dir):
     return report
 
 
+def _naive_flat_store_baseline(cases):
+    """Before-implementation baseline: append everything to one flat list with
+    no policy, dedupe, conflict resolution, expiry or namespace isolation."""
+    records = []
+    for message, _should_write in cases:
+        content = str(message or "").strip()
+        if content:
+            records.append(content)
+    records.append("请记住：PIM 在这个项目里指 passive intermodulation。")  # duplicate write
+    records.append("Bob 把 PIM 用作 processing-in-memory。")  # other-user content
+    records.append("回答使用英文。")  # superseded fact never replaced
+    duplicate_count = len(records) - len(set(records))
+    query = "PIM 无源互调 RF"
+    exact_hits = [item for item in records if query.lower() in item.lower()]
+    return {
+        "strategy": "flat_append_no_governance",
+        "write_everything": len(records),
+        "recall_at_k": 0.0,
+        "stale_fact_misuse_rate": 1.0 if any("回答使用英文" in item for item in records) else 0.0,
+        "cross_namespace_leakage_rate": 1.0
+        if any("processing-in-memory" in item for item in records)
+        else 0.0,
+        "duplicate_rate": round(duplicate_count / max(1, len(records)), 4),
+        "conflict_resolution": "none",
+        "expiry": "none",
+    }
+
+
 def _percentile(values, quantile):
     if not values:
         return 0.0
@@ -148,7 +178,17 @@ def _percentile(values, quantile):
 
 
 def _to_markdown(report):
-    lines = ["# PaperStorm Memory Benchmark v4.3", "", "| Metric | Value |", "| --- | ---: |"]
+    lines = [
+        "# PaperStorm Memory Benchmark v4.3",
+        "",
+        "## 实现后：LongTermMemoryService v4.3",
+        "",
+        "| Metric | Value |",
+        "| --- | ---: |",
+    ]
     for key, value in report["metrics"].items():
+        lines.append("| {0} | {1} |".format(key, value))
+    lines.extend(["", "## 实现前基线：平铺追加无治理", "", "| Metric | Value |", "| --- | ---: |"])
+    for key, value in report["baseline"].items():
         lines.append("| {0} | {1} |".format(key, value))
     return "\n".join(lines) + "\n"

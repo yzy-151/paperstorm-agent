@@ -46,9 +46,14 @@ def runtime_embedding(override: Optional[str] = None) -> str:
     if value not in {"auto", "real", "hash"}:
         value = "auto"
     if value == "auto":
-        # Runtime path stays fast and dependency-free by default; set
-        # PAPERSTORM_RETRIEVAL_EMBEDDING=real to switch to a sentence model.
-        value = "hash"
+        # Quality-first: use a real sentence model when available; tests and
+        # offline demos force PAPERSTORM_RETRIEVAL_EMBEDDING=hash explicitly.
+        try:
+            import sentence_transformers  # noqa: F401
+
+            value = "real"
+        except Exception:
+            value = "hash"
     return value
 
 

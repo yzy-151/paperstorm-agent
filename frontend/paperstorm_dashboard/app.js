@@ -1131,6 +1131,66 @@ async function runRetrievalRuntimeBenchmark() {
   }
 }
 
+async function loadContextBenchmarkV42() {
+  try {
+    const report = await fetchJson("/evaluations/context-v42/latest");
+    renderContextBenchmarkV42(report);
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
+async function loadMemoryBenchmarkV43() {
+  try {
+    const report = await fetchJson("/evaluations/memory-v43/latest");
+    renderMemoryBenchmarkV43(report);
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
+async function loadLatestBenchmarks() {
+  await Promise.allSettled([
+    loadRetrievalRuntimeBenchmark(),
+    loadContextBenchmarkV42(),
+    loadMemoryBenchmarkV43(),
+    loadRuntimeBenchmarkV44(),
+    loadProductionBenchmarkV45(),
+    loadRAGEvaluationV4(),
+    loadRAGEvaluationV41(),
+  ]);
+}
+
+async function loadDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const target = params.get("load");
+  if (!target) {
+    return;
+  }
+  try {
+    if (target === "bench") {
+      await loadLatestBenchmarks();
+      setStatus("benchmark results loaded", "success");
+    } else if (target.startsWith("chat:")) {
+      const chatId = target.slice(5);
+      const session = await fetchJson(`/chat/sessions/${encodeURIComponent(chatId)}`);
+      renderChatSession(session);
+      setStatus(`loaded chat ${chatId}`, "success");
+    } else if (target.startsWith("task:")) {
+      const taskId = target.slice(5);
+      const data = await fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/dashboard`);
+      renderDashboard(data);
+      setStatus(`loaded task ${taskId}`, "success");
+    } else if (target.startsWith("kb:")) {
+      const kbId = target.slice(3);
+      document.querySelector("#enterprise-kb-id").value = kbId;
+      await askEnterpriseKB();
+    }
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
 async function loadRetrievalRuntimeBenchmark() {
   try {
     setStatus("loading latest retrieval benchmark", "loading");
@@ -1424,3 +1484,4 @@ document.querySelector("#run-rag-eval-v41").addEventListener("click", runRAGEval
 document.querySelector("#load-rag-eval-v41").addEventListener("click", loadRAGEvaluationV41);
 
 loadDashboard();
+loadDeepLink();
