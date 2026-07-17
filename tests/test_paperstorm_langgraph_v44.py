@@ -63,6 +63,46 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             self.assertEqual(state["values"]["request_id"], "request-casual")
             self.assertTrue((Path(temp_dir) / "graph_runtime" / "checkpoints.sqlite").exists())
 
+    def test_casual_chat_uses_injected_chat_llm(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                chat_llm=lambda _prompt: "在的！想聊面试还是论文调研？我都可以帮你。",
+            )
+            result = runtime.invoke(
+                thread_id="thread-llm-chat",
+                request_id="request-llm-chat",
+                user_id="alice",
+                message="莫西莫西",
+                run_mode="fake",
+            )
+            self.assertEqual(
+                result["answer"],
+                "在的！想聊面试还是论文调研？我都可以帮你。",
+            )
+            self.assertFalse(result["retrieval_triggered"])
+            self.assertIn("casual_chat", result["executed_nodes"])
+
+    def test_casual_chat_escalates_to_research_when_llm_needs_retrieval(self):
+        from knowledge_storm.paperstorm_langgraph_v44 import RETRIEVE_MARKER
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                chat_llm=lambda _prompt: RETRIEVE_MARKER,
+            )
+            result = runtime.invoke(
+                thread_id="thread-escalate",
+                request_id="request-escalate",
+                user_id="alice",
+                message="说说最近 5G 和 6G 的关键差异",
+                run_mode="fake",
+            )
+            self.assertTrue(result["retrieval_triggered"])
+            self.assertIn("deep_research", result["executed_nodes"])
+            self.assertEqual(result["route"], "deep_research")
+            self.assertTrue(result["answer"])
+
     def test_long_term_memory_is_shared_across_threads_not_copied_into_store(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime, _ = self.make_runtime(temp_dir)

@@ -581,13 +581,21 @@ class ProductionControlPlaneV45:
 class PaperStormProductionRuntimeV45:
     runtime_name = "paperstorm-production-v4.5"
 
-    def __init__(self, root_dir, task_service, control_plane=None, intent_router=None):
+    def __init__(
+        self,
+        root_dir,
+        task_service,
+        control_plane=None,
+        intent_router=None,
+        chat_llm=None,
+    ):
         from .paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
 
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.task_service = task_service
         self.intent_router = intent_router
+        self.chat_llm = chat_llm
         self.control = control_plane or ProductionControlPlaneV45(
             self.root_dir / "production_v45.sqlite"
         )
@@ -622,15 +630,17 @@ class PaperStormProductionRuntimeV45:
             with self.control.trace_span(
                 trace_id, "agent_runtime", "conversation_graph"
             ):
-                from .paperstorm_router_llm import build_intent_router
+                from .paperstorm_router_llm import build_chat_llm_callable, build_intent_router
 
                 intent_router = self.intent_router or build_intent_router(
                     run_mode=payload.get("run_mode", "fake")
                 )
+                chat_llm = self.chat_llm or build_chat_llm_callable()
                 runtime = self.graph_runtime_class(
                     self.root_dir / "langgraph_v44",
                     self.task_service,
                     intent_router=intent_router,
+                    chat_llm=chat_llm,
                 )
                 graph_result = runtime.invoke(**payload)
             for event in graph_result.get("node_events") or []:
@@ -672,6 +682,7 @@ class PaperStormProductionRuntimeV45:
             self.root_dir / "langgraph_v44",
             self.task_service,
             intent_router=self.intent_router,
+            chat_llm=self.chat_llm,
         )
         return runtime.get_thread_state(thread_id)
 
@@ -680,6 +691,7 @@ class PaperStormProductionRuntimeV45:
             self.root_dir / "langgraph_v44",
             self.task_service,
             intent_router=self.intent_router,
+            chat_llm=self.chat_llm,
         )
         return runtime.get_thread_history(thread_id, limit=limit)
 
@@ -688,6 +700,7 @@ class PaperStormProductionRuntimeV45:
             self.root_dir / "langgraph_v44",
             self.task_service,
             intent_router=self.intent_router,
+            chat_llm=self.chat_llm,
         )
         return dict(
             runtime.get_graph_spec(),

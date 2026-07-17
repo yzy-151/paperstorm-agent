@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 class PaperStormChatAgentTest(unittest.TestCase):
@@ -113,7 +115,8 @@ class PaperStormChatAgentTest(unittest.TestCase):
         service = self.make_service()
         session = service.create_chat_session(topic="pim 神经网络抑制", run_mode="fake")
 
-        reply = service.send_chat_message(session["chat_id"], "你好，你能做什么？")
+        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+            reply = service.send_chat_message(session["chat_id"], "你好，你能做什么？")
 
         self.assertFalse(reply["retrieval_triggered"])
         self.assertFalse(reply["used_task_id"])
@@ -124,22 +127,24 @@ class PaperStormChatAgentTest(unittest.TestCase):
         service = self.make_service()
         session = service.create_chat_session(topic="pim 神经网络抑制", run_mode="fake")
 
-        for question in ["你是什么模型？", "当前上下文怎么压缩？", "这个网页怎么使用？"]:
-            reply = service.send_chat_message(session["chat_id"], question)
-            self.assertFalse(reply["retrieval_triggered"], question)
-            self.assertFalse(reply["used_task_id"], question)
-            self.assertEqual(
-                reply["research_answer"]["decision"]["action"],
-                "chat_fallback",
-                question,
-            )
-            self.assertNotIn("无源器件非线性导致", reply["assistant_message"]["content"])
+        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+            for question in ["你是什么模型？", "当前上下文怎么压缩？", "这个网页怎么使用？"]:
+                reply = service.send_chat_message(session["chat_id"], question)
+                self.assertFalse(reply["retrieval_triggered"], question)
+                self.assertFalse(reply["used_task_id"], question)
+                self.assertEqual(
+                    reply["research_answer"]["decision"]["action"],
+                    "chat_fallback",
+                    question,
+                )
+                self.assertNotIn("无源器件非线性导致", reply["assistant_message"]["content"])
 
     def test_social_chat_does_not_leak_the_session_research_topic(self):
         service = self.make_service()
         session = service.create_chat_session(topic="pim 神经网络抑制", run_mode="fake")
 
-        reply = service.send_chat_message(session["chat_id"], "莫西莫西")
+        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+            reply = service.send_chat_message(session["chat_id"], "莫西莫西")
 
         content = reply["assistant_message"]["content"].lower()
         self.assertFalse(reply["retrieval_triggered"])
@@ -147,6 +152,35 @@ class PaperStormChatAgentTest(unittest.TestCase):
         self.assertEqual(reply["router_decision"]["intent"], "casual_chat")
         self.assertNotIn("pim", content)
         self.assertNotIn("神经网络抑制", content)
+
+    def test_casual_interview_question_gets_topic_aware_reply(self):
+        service = self.make_service()
+        session = service.create_chat_session(topic="pim 神经网络抑制", run_mode="fake")
+
+        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+            reply = service.send_chat_message(session["chat_id"], "帮我准备面试")
+
+        content = reply["assistant_message"]["content"]
+        self.assertFalse(reply["retrieval_triggered"])
+        self.assertIn("面试", content)
+        self.assertNotEqual(
+            content,
+            "你好，我是 PaperStorm Research Agent。你可以闲聊、查询长期记忆、问已有知识库，或启动论文调研与深度研究。",
+        )
+
+    def test_casual_after_research_does_not_reuse_stale_retrieval_stack(self):
+        service = self.make_service()
+        session = service.create_chat_session(topic="pim 神经网络抑制", run_mode="fake")
+
+        service.send_chat_message(session["chat_id"], "PIM 是什么？")
+        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+            casual = service.send_chat_message(session["chat_id"], "莫西莫西")
+
+        self.assertFalse(casual["retrieval_triggered"])
+        self.assertEqual(
+            casual["assistant_message"]["metadata"].get("retrieval_stack"),
+            "",
+        )
 
     def test_fastapi_adapter_exposes_chat_session_routes(self):
         from fastapi.testclient import TestClient

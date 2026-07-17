@@ -59,14 +59,24 @@ def _cached_router_completion(model_name: str, prompt: str, api_key: str, api_ba
 
 def _load_flat_toml_env(path: str = "secrets.toml"):
     """Load flat KEY = \"value\" TOML into the environment (no-op if absent)."""
-    try:
-        text = Path(path).read_text(encoding="utf-8")
-    except OSError:
-        return
-    for key, value in re.findall(
-        r'^\s*([A-Za-z0-9_]+)\s*=\s*"([^"]*)"', text, flags=re.MULTILINE
-    ):
-        os.environ.setdefault(key, value)
+    candidates = [Path(path)]
+    if os.getenv("PAPERSTORM_SECRETS_PATH"):
+        candidates.append(Path(os.getenv("PAPERSTORM_SECRETS_PATH")))
+    candidates.append(Path(__file__).resolve().parents[1] / "secrets.toml")
+    seen = set()
+    for candidate in candidates:
+        try:
+            text = candidate.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        resolved = str(candidate.resolve())
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        for key, value in re.findall(
+            r'^\s*([A-Za-z0-9_]+)\s*=\s*"([^"]*)"', text, flags=re.MULTILINE
+        ):
+            os.environ.setdefault(key, value)
 
 
 def build_router_llm_callable(
@@ -78,6 +88,64 @@ def build_router_llm_callable(
         enabled = flag in {"1", "true", "yes", "on"}
     if not enabled:
         return None
+    config = _resolve_provider_config()
+    if config is None:
+        return None
+    model_name, api_key, api_base = config
+
+    def router_llm(prompt: str) -> str:
+        return _cached_router_completion(model_name, prompt, api_key, api_base)
+
+    return router_llm
+
+
+def build_chat_llm_callable(
+    enabled: Optional[bool] = None,
+) -> Optional[Callable[[str], str]]:
+    """Return a prompt->text callable that generates casual chat replies.
+
+    Policy:
+        - PAPERSTORM_CHAT_LLM=1 forces on, =0 forces off.
+        - Otherwise auto: enabled whenever a provider API key is configured,
+          so local demos with keys get real conversational replies; offline
+          environments fall back to the deterministic local template.
+    """
+    if enabled is None:
+        flag = str(os.getenv("PAPERSTORM_CHAT_LLM", "")).strip().lower()
+        if flag in {"0", "false", "off", "no"}:
+            return None
+        if flag in {"1", "true", "yes", "on"}:
+            enabled = True
+        # otherwise enabled stays None -> auto: build when a key is configured
+    if enabled is False:
+        return None
+    config = _resolve_provider_config()
+    if config is None:
+        return None
+    model_name, api_key, api_base = config
+
+    def chat_llm(prompt: str) -> str:
+        import litellm
+
+        response = litellm.completion(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            api_key=api_key,
+            api_base=api_base,
+            temperature=0.7,
+            max_tokens=400,
+            timeout=25,
+            cache={"no-cache": True, "no-store": True},
+        )
+        choice = response["choices"][0]
+        message = choice.get("message") or {}
+        return str(message.get("content") or "")
+
+    return chat_llm
+
+
+def _resolve_provider_config():
+    """Return (model_name, api_key, api_base) or None when not configured."""
     _load_flat_toml_env()
     provider = os.getenv("PAPERSTORM_ROUTER_PROVIDER") or DEFAULT_PROVIDER
     model = os.getenv("PAPERSTORM_ROUTER_MODEL") or DEFAULT_MODEL
@@ -93,12 +161,7 @@ def build_router_llm_callable(
     )
     if not api_key:
         return None
-    model_name = "{0}/{1}".format(provider, model)
-
-    def router_llm(prompt: str) -> str:
-        return _cached_router_completion(model_name, prompt, api_key, api_base)
-
-    return router_llm
+    return "{0}/{1}".format(provider, model), api_key, api_base
 
 
 def build_intent_router(

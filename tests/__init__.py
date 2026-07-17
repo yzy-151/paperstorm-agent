@@ -3,3 +3,4 @@
 import os
 
 os.environ.setdefault("PAPERSTORM_RETRIEVAL_EMBEDDING", "hash")
+os.environ.setdefault("PAPERSTORM_CHAT_LLM", "0")

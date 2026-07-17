@@ -7,7 +7,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, TypedDict
+from typing import Callable, Dict, List, Optional, TypedDict
 
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -21,6 +21,8 @@ from .paperstorm_research_qa import evaluate_evidence_sufficiency
 
 
 logging.getLogger("langgraph.pregel._retry").setLevel(logging.WARNING)
+
+RETRIEVE_MARKER = "__NEED_RESEARCH__"
 
 
 class ConversationRequestV44(BaseModel):
@@ -76,6 +78,7 @@ class ConversationStateV44(TypedDict, total=False):
     node_events: List[Dict]
     retrieval_stack: str
     retrieval_mode: str
+    escalate_to_retrieval: bool
 
 
 class StormDeepResearchToolV44:
@@ -187,6 +190,7 @@ class PaperStormLangGraphRuntime:
         intent_router: Optional[PaperStormIntentRouter] = None,
         memory_service: Optional[LongTermMemoryService] = None,
         deep_research_tool=None,
+        chat_llm: Optional[Callable[[str], str]] = None,
     ):
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
@@ -196,6 +200,7 @@ class PaperStormLangGraphRuntime:
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         self.task_service = task_service
         self.intent_router = intent_router or PaperStormIntentRouter()
+        self.chat_llm = chat_llm
         self.memory_service = memory_service or LongTermMemoryService(
             Path(task_service.root_dir) / "memory_service_v43"
         )
@@ -233,6 +238,8 @@ class PaperStormLangGraphRuntime:
             "error": "",
             "executed_nodes": [],
             "node_events": [],
+            "retrieval_stack": "",
+            "retrieval_mode": "",
         }
         config = {"configurable": {"thread_id": request.thread_id}}
         try:
@@ -386,8 +393,15 @@ class PaperStormLangGraphRuntime:
             },
         )
         builder.add_edge("deep_research", "answer_with_citations")
-        for node in [
+        builder.add_conditional_edges(
             "casual_chat",
+            self._after_casual_chat,
+            {
+                "knowledge_retrieval": "knowledge_retrieval",
+                "memory_candidate_write": "memory_candidate_write",
+            },
+        )
+        for node in [
             "memory_answer",
             "answer_with_citations",
             "refuse_or_clarify",
@@ -437,9 +451,10 @@ class PaperStormLangGraphRuntime:
 
     def _casual_chat(self, state: ConversationStateV44):
         started = time.perf_counter()
-        answer = _casual_answer(state["message"], state.get("memory_recall") or {})
         decision = state.get("router_decision") or {}
+        escalate = False
         if _is_explicit_memory_write(state["message"]):
+            answer = _casual_answer(state["message"], state.get("memory_recall") or {})
             decision = {
                 "intent": "memory_write",
                 "need_retrieval": False,
@@ -450,6 +465,7 @@ class PaperStormLangGraphRuntime:
                 "router": "langgraph_memory_policy_v44",
             }
         elif _is_memory_question(state["message"]):
+            answer = _casual_answer(state["message"], state.get("memory_recall") or {})
             decision = {
                 "intent": "memory_recall",
                 "need_retrieval": False,
@@ -459,6 +475,14 @@ class PaperStormLangGraphRuntime:
                 "reason": "memory question has no relevant hit",
                 "router": "langgraph_memory_policy_v44",
             }
+        else:
+            answer = self._casual_answer(state)
+            if answer == RETRIEVE_MARKER:
+                answer = ""
+                escalate = True
+            elif not answer:
+                answer = _casual_answer(state["message"], state.get("memory_recall") or {})
+                escalate = _needs_research_fallback(state)
         return self._success_update(
             state,
             "casual_chat",
@@ -471,8 +495,33 @@ class PaperStormLangGraphRuntime:
                 "retrieval_triggered": False,
                 "route": "casual_chat",
                 "router_decision": decision,
+                "escalate_to_retrieval": escalate,
             },
         )
+
+    def _casual_answer(self, state: ConversationStateV44) -> str:
+        """Generate the casual reply: LLM first when available, local fallback."""
+        if self.chat_llm is not None:
+            try:
+                reply = self._chat_llm_answer(state)
+                if reply:
+                    return reply
+            except Exception:
+                pass
+        return _casual_answer(
+            state.get("message") or "",
+            state.get("memory_recall") or {},
+        )
+
+    def _chat_llm_answer(self, state: ConversationStateV44) -> str:
+        return str(self.chat_llm(_casual_chat_prompt(state)) or "").strip()
+
+    @staticmethod
+    def _after_casual_chat(state: ConversationStateV44):
+        """Answer-first: escalate to retrieval only when the chat layer says so."""
+        if state.get("escalate_to_retrieval"):
+            return "knowledge_retrieval"
+        return "memory_candidate_write"
 
     def _memory_answer(self, state: ConversationStateV44):
         started = time.perf_counter()
@@ -814,7 +863,98 @@ def _casual_answer(message: str, memory_recall: Dict):
         return "我会通过 V4.3 Memory Policy 校验这条信息；符合稳定事实、偏好或规则时才会跨会话保存。"
     if "你是谁" in text or "模型" in text:
         return "我是 PaperStorm 的 LangGraph Conversation Runtime 演示层，基础模型由运行时配置决定。"
+    if "能做什么" in text or "可以做什么" in text or "介绍一下" in text:
+        return (
+            "我是 PaperStorm Research Agent，可以陪你闲聊、回答论文调研与技术问题，"
+            "也能基于 arXiv/本地 PDF 做深度调研、生成带引用的中文综述，并管理跨会话记忆。"
+            "你可以直接问‘PIM 是什么？’试试深度调研，或者问‘你能做什么？’了解能力边界。"
+        )
+    if any(token in text for token in ["面试", "求职", "简历", "offer", "hr"]):
+        return (
+            "面试准备可以按四条主线来：1) 项目定位——PaperStorm 是在 Stanford STORM 上做的"
+            "工程化增强，不是从零写聊天机器人；2) 实现细节——RAG（BM25+Dense+RRF）、可恢复"
+            " Context、可治理 Memory、LangGraph 编排、SQLite WAL 治理；3) 数据说话——seed 集"
+            "检索 Recall@K 从 0.36 提到 0.78~0.99，Context 压缩省 66% 且可恢复；4) 边界——"
+            "本地治理基线与真实生产的区别。想深入哪条，我可以展开讲。"
+        )
+    if any(token in text for token in ["人话", "听不懂", "说人话", "换个说法", "风格"]):
+        return (
+            "抱歉刚才回答太像说明书了。简单说：我能帮你做三件事——闲聊、用已有资料回答"
+            "技术问题、需要时自动去检索论文再回答。你想聊哪个方向，我换个更自然的说法陪你聊。"
+        )
+    if _is_greeting(message):
+        return _greeting_reply(message)
     return "你好，我是 PaperStorm Research Agent。你可以闲聊、查询长期记忆、问已有知识库，或启动论文调研与深度研究。"
+
+
+def _casual_chat_prompt(state: ConversationStateV44) -> str:
+    memory = state.get("memory_recall") or {}
+    memory_lines = [
+        "- {0}".format(item.get("content", ""))
+        for item in (memory.get("results") or [])[:3]
+    ]
+    topic = str(state.get("topic") or "").strip()
+    return (
+        "你是 PaperStorm Research Agent 的聊天回复生成器。用户可能在闲聊、问系统能力，"
+        "或聊面试/求职话题。请用自然、简洁、有温度的中文回复（3-5 句），不要提内部实现"
+        "细节，不要编造不存在的功能。如果用户提到面试准备，可以基于项目背景给出可执行的建议。\n"
+        "如果你能直接回答，就直接回答；只有当你认为必须检索外部资料/论文才能回答时，"
+        "才只回复一行：{0}\n"
+        "会话主题（仅供背景，不要直接复述）：{1}\n"
+        "跨会话记忆（仅供参考）：{2}\n"
+        "用户消息：{3}\n"
+        "回复：".format(
+            RETRIEVE_MARKER,
+            topic or "无",
+            "\n".join(memory_lines) or "无",
+            str(state.get("message") or ""),
+        )
+    )
+
+
+def _needs_research_fallback(state: ConversationStateV44) -> bool:
+    """Local safety net: escalate when the message clearly needs retrieval and
+    the chat layer produced no LLM answer (e.g. offline fake mode)."""
+    from .paperstorm_intent_router import route_high_confidence_rules
+
+    decision = route_high_confidence_rules(
+        str(state.get("message") or ""),
+        {
+            "topic": str(state.get("topic") or ""),
+            "task_id": str(state.get("task_id") or ""),
+        },
+        state.get("context_window") or [],
+    )
+    return bool(
+        decision and decision.get("intent") in {"research_qa", "run_research"}
+    )
+
+
+def _is_greeting(message: str) -> bool:
+    normalized = str(message or "").strip().lower().strip(" ！!。？?～~")
+    return normalized in {
+        "你好",
+        "您好",
+        "hello",
+        "hi",
+        "hey",
+        "早上好",
+        "晚上好",
+        "下午好",
+        "莫西莫西",
+        "もしもし",
+    }
+
+
+def _greeting_reply(message: str) -> str:
+    variants = [
+        "你好呀！我是 PaperStorm，论文调研和知识库问答都能帮你。想聊点啥？",
+        "嗨，我在呢。你可以问我技术问题，也可以让我去检索论文，或者就是随便聊聊。",
+        "你好！直接说需求就行——提问、调研论文、管理记忆都可以。",
+        "哈喽！有什么想聊的？论文、面试、技术问题都行。",
+    ]
+    index = sum(ord(character) for character in str(message or "")) % len(variants)
+    return variants[index]
 
 
 def _is_memory_question(message: str):

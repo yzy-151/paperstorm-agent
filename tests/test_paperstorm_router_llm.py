@@ -63,6 +63,15 @@ class PaperStormRouterLLMTest(unittest.TestCase):
             self.skipTest("no router API key configured in this environment")
         self.assertIsNotNone(router.llm_router)
 
+    def test_chat_llm_builder_respects_enable_flag(self):
+        from knowledge_storm.paperstorm_router_llm import build_chat_llm_callable
+
+        self.assertIsNone(build_chat_llm_callable(enabled=False))
+        callable_result = build_chat_llm_callable(enabled=True)
+        if callable_result is None:
+            self.skipTest("no chat LLM provider key configured in this environment")
+        self.assertTrue(callable(callable_result))
+
 
 if __name__ == "__main__":
     unittest.main()

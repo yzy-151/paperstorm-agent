@@ -104,6 +104,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
 | `PAPERSTORM_RETRIEVAL_MODE` | `hybrid`（默认）/ `bm25` / `dense` / `hybrid_rerank` |
 | `PAPERSTORM_RETRIEVAL_INDEX_CACHE_SIZE` | 运行时检索索引 LRU 容量（默认 16） |
 | `PAPERSTORM_ROUTER_CACHE_SIZE` | 意图路由 LLM 响应 LRU 容量（默认 512） |
+| `PAPERSTORM_CHAT_LLM` | 闲聊回复 LLM：`1` 强制开 / `0` 关闭 / 空=有 key 自动开 |
 | `PAPERSTORM_ZOTERO_ROOT` | Zotero 数据目录，用于真实论文评测 |
 | `PAPERSTORM_MODEL_CACHE` | sentence-transformers 模型缓存目录 |
 
@@ -180,6 +181,11 @@ span trace、`storm_deep_research` 隔离工具。
 `run_mode=paperstorm` 默认启用 LLM 路由（DeepSeek），`fake` 模式默认纯规则；
 LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突（闲聊/系统问题不允许被降级为
 检索或 clarify，反之亦然），解析失败/超时自动回退规则。
+
+**回复策略是"生成优先、答不了才检索"**：闲聊类消息默认直接由 LLM 生成自然回复
+（配置了 API key 即自动启用，`PAPERSTORM_CHAT_LLM=0` 关闭，离线回退到本地模板）；
+只有当 LLM 明确表示需要检索（输出 `__NEED_RESEARCH__` 标记）或消息明显是调研请求时，
+才升级到知识检索 / 深度调研，避免"聊什么都是固定话术"。
 
 ### 缓存
 
