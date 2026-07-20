@@ -11,3 +11,4 @@ numpy
 litellm
 diskcache
 ddgs
+pypdf
