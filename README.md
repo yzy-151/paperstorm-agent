@@ -105,6 +105,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
 | `PAPERSTORM_RETRIEVAL_INDEX_CACHE_SIZE` | 运行时检索索引 LRU 容量（默认 16） |
 | `PAPERSTORM_ROUTER_CACHE_SIZE` | 意图路由 LLM 响应 LRU 容量（默认 512） |
 | `PAPERSTORM_CHAT_LLM` | 闲聊回复 LLM：`1` 强制开 / `0` 关闭 / 空=有 key 自动开 |
+| `PAPERSTORM_JUDGE_LLM` | 证据裁判 LLM：`1` 强制开 / `0` 关闭 / 空=有 key 自动开 |
 | `PAPERSTORM_ZOTERO_ROOT` | Zotero 数据目录，用于真实论文评测 |
 | `PAPERSTORM_MODEL_CACHE` | sentence-transformers 模型缓存目录 |
 
@@ -186,6 +187,12 @@ LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突（闲聊/系�
 （配置了 API key 即自动启用，`PAPERSTORM_CHAT_LLM=0` 关闭，离线回退到本地模板）；
 只有当 LLM 明确表示需要检索（输出 `__NEED_RESEARCH__` 标记）或消息明显是调研请求时，
 才升级到知识检索 / 深度调研，避免"聊什么都是固定话术"。
+
+**证据充分性由"LLM 证据裁判"判定**（模仿 Claude Code / Hermes 的做法：模型读问题+
+证据自行判断"能不能答"）：有 key 时自动启用，裁判说"需要更多检索/无法回答"就升级到
+深度调研；无 LLM 时用保守的确定性判定——要求问题与证据有**实质词重叠**（词/CJK
+大词，过滤"效果/方法"等常用词）**且与会话主题锚点相关**，避免只撞上一个通用词就把
+无关知识库当成答案。
 
 ### 缓存
 

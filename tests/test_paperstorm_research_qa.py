@@ -101,6 +101,43 @@ class PaperStormResearchQATest(unittest.TestCase):
         )
         self.assertEqual(answer["decision"]["action"], "answer_from_existing_kb")
 
+    def test_evidence_sufficiency_rejects_off_topic_question(self):
+        from knowledge_storm.paperstorm_research_qa import evaluate_evidence_sufficiency
+
+        evidence = [
+            {
+                "title": "Generated article",
+                "content": "PIM 在本任务中指 passive intermodulation，是 RF 系统中由无源器件非线性导致的互调杂散问题。",
+                "score": 0.5,
+            },
+            {
+                "title": "Neural PIM",
+                "content": "RF passive intermodulation suppression with neural networks.",
+                "score": 0.4,
+            },
+        ]
+        citations = [{"id": 1}, {"id": 2}]
+        off_topic = evaluate_evidence_sufficiency(
+            question="muon优化器为什么效果好？",
+            evidence=evidence,
+            citations=citations,
+            topic="pim 神经网络抑制",
+            expected_keywords=["passive intermodulation"],
+            forbidden_keywords=["DRAM"],
+        )
+        self.assertFalse(off_topic["sufficient"])
+        self.assertEqual(off_topic["meaningful_overlap"], [])
+        related = evaluate_evidence_sufficiency(
+            question="PIM 是什么？",
+            evidence=evidence,
+            citations=citations,
+            topic="pim 神经网络抑制",
+            expected_keywords=["passive intermodulation"],
+            forbidden_keywords=["DRAM"],
+        )
+        self.assertTrue(related["sufficient"])
+        self.assertIn("pim", related["meaningful_overlap"])
+
     def test_research_qa_persists_qa_history_for_followup(self):
         service = self.make_service()
         first = service.ask_research_agent(

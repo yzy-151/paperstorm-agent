@@ -191,6 +191,7 @@ class PaperStormLangGraphRuntime:
         memory_service: Optional[LongTermMemoryService] = None,
         deep_research_tool=None,
         chat_llm: Optional[Callable[[str], str]] = None,
+        evidence_judge: Optional[Callable[[str], str]] = None,
     ):
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
@@ -201,6 +202,7 @@ class PaperStormLangGraphRuntime:
         self.task_service = task_service
         self.intent_router = intent_router or PaperStormIntentRouter()
         self.chat_llm = chat_llm
+        self.evidence_judge = evidence_judge
         self.memory_service = memory_service or LongTermMemoryService(
             Path(task_service.root_dir) / "memory_service_v43"
         )
@@ -594,15 +596,41 @@ class PaperStormLangGraphRuntime:
     def _evidence_grade(self, state: ConversationStateV44):
         started = time.perf_counter()
         result = state.get("knowledge_result") or {}
+        question = (state.get("router_decision") or {}).get("rewritten_query") or state["message"]
         grade = evaluate_evidence_sufficiency(
-            question=(state.get("router_decision") or {}).get("rewritten_query")
-            or state["message"],
+            question=question,
             evidence=result.get("evidence") or [],
             citations=result.get("citations") or [],
             topic=state.get("topic") or "",
             expected_keywords=state.get("expected_keywords") or [],
             forbidden_keywords=state.get("forbidden_keywords") or [],
         )
+        judge = "local"
+        if self.evidence_judge is not None:
+            try:
+                verdict = _parse_judge_verdict(
+                    self.evidence_judge(
+                        _evidence_judge_prompt(
+                            question=question,
+                            topic=state.get("topic") or "",
+                            expected_keywords=state.get("expected_keywords") or [],
+                            evidence=result.get("evidence") or [],
+                        )
+                    )
+                )
+                if verdict == "can_answer":
+                    grade["sufficient"] = True
+                    grade["score"] = max(float(grade.get("score") or 0), 80.0)
+                    grade["reason"] = "llm_judge: evidence is sufficient"
+                    judge = "llm"
+                elif verdict == "need_retrieval":
+                    grade["sufficient"] = False
+                    grade["score"] = min(float(grade.get("score") or 0), 40.0)
+                    grade["reason"] = "llm_judge: evidence is insufficient"
+                    judge = "llm"
+            except Exception:
+                pass
+        grade["judge"] = judge
         return self._success_update(
             state, "evidence_grade", started, {"evidence_grade": grade}, score=grade["score"]
         )
@@ -614,7 +642,7 @@ class PaperStormLangGraphRuntime:
             result = self.deep_research_tool.run(
                 {
                     "question": decision.get("rewritten_query") or state["message"],
-                    "topic": state.get("topic") or state["message"],
+                    "topic": _question_topic(state),
                     "task_id": state.get("task_id") or "",
                     "run_mode": state.get("run_mode") or "fake",
                     "retriever": state.get("retriever") or "arxiv",
@@ -894,22 +922,92 @@ def _casual_chat_prompt(state: ConversationStateV44) -> str:
         for item in (memory.get("results") or [])[:3]
     ]
     topic = str(state.get("topic") or "").strip()
+    history_lines = []
+    for item in (state.get("context_window") or [])[-6:]:
+        role = item.get("role") or ""
+        if role == "user":
+            label = "用户"
+        elif role == "assistant":
+            label = "助手"
+        else:
+            label = "系统"
+        content = str(item.get("content") or "")[:200]
+        history_lines.append("{0}: {1}".format(label, content))
     return (
         "你是 PaperStorm Research Agent 的聊天回复生成器。用户可能在闲聊、问系统能力，"
         "或聊面试/求职话题。请用自然、简洁、有温度的中文回复（3-5 句），不要提内部实现"
         "细节，不要编造不存在的功能。如果用户提到面试准备，可以基于项目背景给出可执行的建议。\n"
+        "这是同一会话的连续对话，你有完整的会话上下文（不是没有记忆），请自然地接着聊。\n"
         "如果你能直接回答，就直接回答；只有当你认为必须检索外部资料/论文才能回答时，"
         "才只回复一行：{0}\n"
-        "会话主题（仅供背景，不要直接复述）：{1}\n"
-        "跨会话记忆（仅供参考）：{2}\n"
-        "用户消息：{3}\n"
+        "最近对话记录：\n{1}\n"
+        "会话主题（仅供背景，不要直接复述）：{2}\n"
+        "跨会话记忆（仅供参考）：{3}\n"
+        "用户消息：{4}\n"
         "回复：".format(
             RETRIEVE_MARKER,
+            "\n".join(history_lines) or "（无）",
             topic or "无",
             "\n".join(memory_lines) or "无",
             str(state.get("message") or ""),
         )
     )
+
+
+def _evidence_judge_prompt(
+    question: str,
+    topic: str,
+    expected_keywords: List[str],
+    evidence: List[Dict],
+) -> str:
+    lines = [
+        "你是严谨的证据裁判。只判断现有检索证据能否回答用户问题，不要生成答案。",
+        "用户问题：{0}".format(question),
+    ]
+    if topic:
+        lines.append("会话主题：{0}".format(topic))
+    if expected_keywords:
+        lines.append("期望关键词：{0}".format("、".join(expected_keywords)))
+    lines.append("检索到的证据：")
+    for index, item in enumerate((evidence or [])[:5], start=1):
+        content = "{0}：{1}".format(
+            str(item.get("title") or ""),
+            str(item.get("content") or "")[:220],
+        )
+        lines.append("[{0}] {1}".format(index, content))
+    lines.append("只回复三个词之一：可以回答 / 需要更多检索 / 无法回答")
+    return "\n".join(lines)
+
+
+def _parse_judge_verdict(text: str) -> Optional[str]:
+    lowered = str(text or "").lower()
+    if any(marker in lowered for marker in ("可以回答", "能回答", "足够")):
+        return "can_answer"
+    if any(
+        marker in lowered
+        for marker in ("需要更多检索", "需要检索", "无法回答", "不能回答", "不足", "无法")
+    ):
+        return "need_retrieval"
+    return None
+
+
+def _question_topic(state: ConversationStateV44) -> str:
+    """Use the session topic only when the question still relates to it;
+    otherwise let a fresh research task follow the question itself."""
+    message = str(state.get("message") or "")
+    rewritten = str(
+        (state.get("router_decision") or {}).get("rewritten_query") or message
+    )
+    session_topic = str(state.get("topic") or "").strip()
+    if session_topic and _meaningful_overlap(session_topic, rewritten):
+        return session_topic
+    return rewritten
+
+
+def _meaningful_overlap(left: str, right: str) -> bool:
+    from .paperstorm_retrieval_runtime import meaningful_terms
+
+    return bool(meaningful_terms(left) & meaningful_terms(right))
 
 
 def _needs_research_fallback(state: ConversationStateV44) -> bool:

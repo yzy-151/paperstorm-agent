@@ -103,6 +103,108 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             self.assertEqual(result["route"], "deep_research")
             self.assertTrue(result["answer"])
 
+    def test_evidence_judge_can_force_research_for_off_topic_kb(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            from knowledge_storm.paperstorm_service import PaperStormTaskService
+
+            service = PaperStormTaskService(Path(temp_dir) / "service")
+            task = service.submit_research_task(
+                topic="pim 神经网络抑制",
+                run_mode="fake",
+                expected_keywords=["passive intermodulation"],
+                forbidden_keywords=["DRAM"],
+            )
+            service.run_task(task["task_id"])
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                task_service=service,
+                evidence_judge=lambda _prompt: "需要更多检索",
+            )
+            result = runtime.invoke(
+                thread_id="thread-judge",
+                request_id="request-judge",
+                user_id="alice",
+                message="请检索一下 Transformer 注意力机制和大语言模型训练的关系",
+                topic="pim 神经网络抑制",
+                task_id=task["task_id"],
+                run_mode="fake",
+            )
+            self.assertTrue(result["retrieval_triggered"])
+            self.assertIn("deep_research", result["executed_nodes"])
+            self.assertEqual(result["route"], "deep_research")
+
+    def test_evidence_judge_can_accept_existing_kb(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            from knowledge_storm.paperstorm_service import PaperStormTaskService
+
+            service = PaperStormTaskService(Path(temp_dir) / "service")
+            task = service.submit_research_task(
+                topic="pim 神经网络抑制",
+                run_mode="fake",
+                expected_keywords=["passive intermodulation"],
+                forbidden_keywords=["DRAM"],
+            )
+            service.run_task(task["task_id"])
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                task_service=service,
+                evidence_judge=lambda _prompt: "可以回答",
+            )
+            result = runtime.invoke(
+                thread_id="thread-judge-ok",
+                request_id="request-judge-ok",
+                user_id="alice",
+                message="PIM 是什么？",
+                topic="pim 神经网络抑制",
+                task_id=task["task_id"],
+                run_mode="fake",
+            )
+            self.assertEqual((result["evidence_grade"] or {}).get("judge"), "llm")
+            self.assertEqual(result["route"], "existing_knowledge")
+            self.assertFalse(result["retrieval_triggered"])
+            self.assertIn("passive intermodulation", result["answer"])
+
+    def test_casual_chat_prompt_includes_conversation_history(self):
+        recorded = {}
+
+        def recorder(prompt):
+            recorded["prompt"] = prompt
+            return "继续聊！"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(temp_dir, chat_llm=recorder)
+            runtime.invoke(
+                thread_id="thread-history",
+                request_id="request-history",
+                user_id="alice",
+                message="是因为要想我保密吗",
+                run_mode="fake",
+                context_window=[
+                    {"role": "user", "content": "所以你跑在啥模型上"},
+                    {"role": "assistant", "content": "我是基于大语言模型构建的智能助手。"},
+                ],
+            )
+            self.assertIn("所以你跑在啥模型上", recorded["prompt"])
+            self.assertIn("连续对话", recorded["prompt"])
+
+    def test_question_topic_follows_question_when_off_topic(self):
+        from knowledge_storm.paperstorm_langgraph_v44 import _question_topic
+
+        state = {
+            "message": "你去查一下muon优化器，这个优化器为啥效果好",
+            "router_decision": {"rewritten_query": "muon 优化器 为什么效果好"},
+            "topic": "pim 神经网络抑制",
+        }
+        topic = _question_topic(state)
+        self.assertNotIn("pim", topic.lower())
+        self.assertIn("muon", topic.lower())
+        related = {
+            "message": "PIM 是什么？",
+            "router_decision": {"rewritten_query": "PIM 是什么？"},
+            "topic": "pim 神经网络抑制",
+        }
+        self.assertIn("pim", _question_topic(related).lower())
+
     def test_long_term_memory_is_shared_across_threads_not_copied_into_store(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime, _ = self.make_runtime(temp_dir)

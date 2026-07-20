@@ -72,6 +72,15 @@ class PaperStormRouterLLMTest(unittest.TestCase):
             self.skipTest("no chat LLM provider key configured in this environment")
         self.assertTrue(callable(callable_result))
 
+    def test_judge_llm_builder_respects_enable_flag(self):
+        from knowledge_storm.paperstorm_router_llm import build_judge_llm_callable
+
+        self.assertIsNone(build_judge_llm_callable(enabled=False))
+        callable_result = build_judge_llm_callable(enabled=True)
+        if callable_result is None:
+            self.skipTest("no judge LLM provider key configured in this environment")
+        self.assertTrue(callable(callable_result))
+
 
 if __name__ == "__main__":
     unittest.main()

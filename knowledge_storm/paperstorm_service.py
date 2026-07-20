@@ -733,20 +733,39 @@ class PaperStormTaskService:
     def _run_fake_research(self, state: Dict):
         output_dir = Path(state["output_dir"])
         topic = state["topic"]
+        topic_lower = str(topic or "").lower()
+        pim_topic = (
+            "pim" in topic_lower
+            or "无源互调" in topic_lower
+            or "passive intermodulation" in topic_lower
+        )
+        if pim_topic:
+            keyword = "passive intermodulation"
+            framing = "是 RF 系统中由无源器件非线性导致的互调杂散问题"
+        else:
+            keyword = topic
+            framing = "是该方向的核心研究问题"
         article = (
             "# {topic}\n\n"
-            "PIM 在本任务中指 passive intermodulation，是 RF 系统中由无源器件"
-            "非线性导致的互调杂散问题。[1]\n\n"
-            "神经网络方法可以学习非线性抵消器，用于 passive intermodulation "
-            "suppression 和 cancellation。[2]\n"
-        ).format(topic=topic)
+            "围绕“{topic}”的调研结论：{keyword} {framing}；"
+            "模型驱动与数据驱动（神经网络）方法可用于建模、抑制与对消，"
+            "并需要可复现的 benchmark 验证效果。[1]\n\n"
+            "工程化要点：混合检索（BM25+Dense+RRF）、证据门控、可恢复上下文"
+            "与跨会话记忆共同保证回答可溯源。[2]\n"
+        ).format(topic=topic, keyword=keyword, framing=framing)
         raw_results = [
             {
-                "title": "Neural passive intermodulation cancellation",
-                "description": "RF passive intermodulation suppression with neural networks.",
-                "url": "https://example.com/pim",
-                "snippets": ["Neural cancellers reduce passive intermodulation products."],
-            }
+                "title": "{0} 研究综述".format(topic),
+                "description": "围绕 {0} 的检索结果与关键方法。".format(topic),
+                "url": "https://example.com/topic-0",
+                "snippets": ["{0} 的模型驱动与数据驱动方法对比。".format(topic)],
+            },
+            {
+                "title": "Neural methods for {0}".format(topic),
+                "description": "Neural network approaches for {0} modeling and suppression.".format(topic),
+                "url": "https://example.com/topic-1",
+                "snippets": ["Neural modeling and cancellation for {0}.".format(topic)],
+            },
         ]
         summary = {
             "success": True,
@@ -768,16 +787,30 @@ class PaperStormTaskService:
         )
         (output_dir / "conversation_log.json").write_text(
             json.dumps(
-                [
-                    {
-                        "role": "researcher",
-                        "message": "如何定义 RF 场景下的 PIM？",
-                    },
-                    {
-                        "role": "expert",
-                        "message": "这里 PIM 指 passive intermodulation，不是 processing-in-memory。",
-                    },
-                ],
+                (
+                    [
+                        {
+                            "role": "researcher",
+                            "message": "如何定义 RF 场景下的 PIM？",
+                        },
+                        {
+                            "role": "expert",
+                            "message": "这里 PIM 指 passive intermodulation，不是 processing-in-memory。",
+                        },
+                    ]
+                    if pim_topic
+                    else [
+                        {
+                            "role": "researcher",
+                            "message": "如何界定这个主题的核心问题？",
+                        },
+                        {
+                            "role": "expert",
+                            "message": "围绕“{0}”，先给出定义与关键方法，"
+                            "再比较模型驱动与数据驱动路线。".format(topic),
+                        },
+                    ]
+                ),
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -792,7 +825,13 @@ class PaperStormTaskService:
             encoding="utf-8",
         )
         (output_dir / "reflection.txt").write_text(
-            "Critic: 检索结果需要过滤 processing-in-memory / DRAM 语义，保留 RF passive intermodulation 方向。",
+            (
+                "Critic: 检索结果需要过滤 processing-in-memory / DRAM 语义，"
+                "保留 RF passive intermodulation 方向。"
+                if pim_topic
+                else "Critic: 检索结果需要区分相关与跑题内容，围绕 {0} "
+                "保留模型驱动与数据驱动两条主线，并记录证据来源。".format(topic)
+            ),
             encoding="utf-8",
         )
         trace_events = [

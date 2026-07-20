@@ -167,11 +167,13 @@ def evaluate_evidence_sufficiency(
     topic_terms = _terms(topic)
     keyword_overlap = sorted(question_terms & evidence_terms)
     topic_overlap = sorted((question_terms | topic_terms) & evidence_terms)
+    meaningful_overlap = _meaningful_overlap(question, evidence_text)
+    topic_anchor_overlap = _meaningful_overlap(question, topic)
     expected_hits = _keyword_hits(evidence_text, expected_keywords)
     forbidden_hits = _keyword_hits(combined, forbidden_keywords)
     evidence_count = len(evidence)
     citation_count = len(citations)
-    has_relevance_signal = bool(keyword_overlap) or _has_domain_anchor(
+    has_relevance_signal = bool(meaningful_overlap) or bool(keyword_overlap) or _has_domain_anchor(
         question,
         topic,
         expected_hits,
@@ -190,10 +192,22 @@ def evaluate_evidence_sufficiency(
         score -= 15
     score = max(0, min(100, score))
     is_disambiguation_question = bool(forbidden_hits and expected_hits and "pim" in question.lower())
-    sufficient = evidence_count > 0 and citation_count > 0 and (
-        (score >= 55 and has_relevance_signal)
-        or (score >= 40 and bool(keyword_overlap) and has_relevance_signal)
-        or is_disambiguation_question
+    # Question-relevance gate: the question must share a meaningful term with
+    # the evidence AND (when the session declares a topic) must also connect to
+    # that topic. Otherwise the existing knowledge base is about something else
+    # and we must not answer from it — escalate to fresh research instead.
+    question_relevant = bool(meaningful_overlap) and (
+        not topic or bool(topic_anchor_overlap) or is_disambiguation_question
+    )
+    sufficient = (
+        evidence_count > 0
+        and citation_count > 0
+        and question_relevant
+        and (
+            (score >= 55 and has_relevance_signal)
+            or (score >= 40 and bool(keyword_overlap) and has_relevance_signal)
+            or is_disambiguation_question
+        )
     )
     if not sufficient:
         reason = "insufficient evidence for the question"
@@ -210,6 +224,8 @@ def evaluate_evidence_sufficiency(
         "keyword_overlap": keyword_overlap,
         "topic_relevance": round(min(1.0, len(topic_overlap) / max(1, len(question_terms))), 4),
         "has_relevance_signal": has_relevance_signal,
+        "meaningful_overlap": meaningful_overlap,
+        "topic_anchor_overlap": topic_anchor_overlap,
         "expected_keyword_hits": expected_hits,
         "forbidden_keyword_hits": forbidden_hits,
     }
@@ -259,6 +275,15 @@ def _terms(text: str):
         "系",
     }
     return {term for term in terms if term not in stop_terms}
+
+
+def _meaningful_overlap(question: str, evidence_text: str):
+    """Word / CJK-bigram overlap between question and evidence; single CJK
+    characters are noise (e.g. one shared char must not make a PIM KB look
+    relevant to a Muon-optimizer question)."""
+    from .paperstorm_retrieval_runtime import meaningful_terms
+
+    return sorted(meaningful_terms(question) & meaningful_terms(evidence_text))
 
 
 def _keyword_hits(text: str, keywords: List[str]):

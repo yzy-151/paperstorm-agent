@@ -261,8 +261,16 @@ def rewrite_query(message: str, session: Dict, context_window: List[Dict]) -> st
 
 
 def looks_like_followup(text: str) -> bool:
-    markers = ["那", "它", "这个", "上述", "继续", "为什么", "如何", "区别", "还有呢"]
-    return any(marker in text for marker in markers) and len(text) < 120
+    text = str(text or "").strip()
+    if not text or len(text) >= 80:
+        return False
+    lead_markers = ("那", "它", "这个", "上述", "继续", "还有呢", "然后呢", "然后", "再")
+    if text.startswith(lead_markers):
+        return True
+    # Short pronoun/demonstrative phrases without their own subject.
+    return len(text) <= 20 and any(
+        marker in text for marker in ("这个", "它", "那", "上述", "继续", "还有呢")
+    )
 
 
 def is_system_help(message: str) -> bool:

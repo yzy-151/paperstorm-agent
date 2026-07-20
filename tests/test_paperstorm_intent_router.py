@@ -46,6 +46,23 @@ class PaperStormIntentRouterTest(unittest.TestCase):
         self.assertIn("pim 神经网络抑制", decision["rewritten_query"])
         self.assertIn("PIM 是什么", decision["rewritten_query"])
 
+    def test_router_keeps_standalone_research_request_without_topic_pollution(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        router = PaperStormIntentRouter()
+        decision = router.route(
+            message="你去查一下muon优化器，这个优化器为啥效果好",
+            session={"topic": "pim 神经网络抑制", "task_id": "task-pim"},
+            context_window=[
+                {"role": "user", "content": "PIM 是什么？"},
+                {"role": "assistant", "content": "PIM 指 passive intermodulation。"},
+            ],
+        )
+        self.assertEqual(decision["intent"], "run_research")
+        self.assertTrue(decision["need_retrieval"])
+        self.assertIn("muon", decision["rewritten_query"].lower())
+        self.assertNotIn("pim", decision["rewritten_query"].lower())
+
     def test_router_distinguishes_chat_from_research_without_topic_bias(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
 

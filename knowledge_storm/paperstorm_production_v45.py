@@ -588,6 +588,7 @@ class PaperStormProductionRuntimeV45:
         control_plane=None,
         intent_router=None,
         chat_llm=None,
+        evidence_judge=None,
     ):
         from .paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
 
@@ -596,6 +597,7 @@ class PaperStormProductionRuntimeV45:
         self.task_service = task_service
         self.intent_router = intent_router
         self.chat_llm = chat_llm
+        self.evidence_judge = evidence_judge
         self.control = control_plane or ProductionControlPlaneV45(
             self.root_dir / "production_v45.sqlite"
         )
@@ -630,17 +632,23 @@ class PaperStormProductionRuntimeV45:
             with self.control.trace_span(
                 trace_id, "agent_runtime", "conversation_graph"
             ):
-                from .paperstorm_router_llm import build_chat_llm_callable, build_intent_router
+                from .paperstorm_router_llm import (
+                    build_chat_llm_callable,
+                    build_intent_router,
+                    build_judge_llm_callable,
+                )
 
                 intent_router = self.intent_router or build_intent_router(
                     run_mode=payload.get("run_mode", "fake")
                 )
                 chat_llm = self.chat_llm or build_chat_llm_callable()
+                evidence_judge = self.evidence_judge or build_judge_llm_callable()
                 runtime = self.graph_runtime_class(
                     self.root_dir / "langgraph_v44",
                     self.task_service,
                     intent_router=intent_router,
                     chat_llm=chat_llm,
+                    evidence_judge=evidence_judge,
                 )
                 graph_result = runtime.invoke(**payload)
             for event in graph_result.get("node_events") or []:
@@ -683,6 +691,7 @@ class PaperStormProductionRuntimeV45:
             self.task_service,
             intent_router=self.intent_router,
             chat_llm=self.chat_llm,
+            evidence_judge=self.evidence_judge,
         )
         return runtime.get_thread_state(thread_id)
 
@@ -692,6 +701,7 @@ class PaperStormProductionRuntimeV45:
             self.task_service,
             intent_router=self.intent_router,
             chat_llm=self.chat_llm,
+            evidence_judge=self.evidence_judge,
         )
         return runtime.get_thread_history(thread_id, limit=limit)
 
@@ -701,6 +711,7 @@ class PaperStormProductionRuntimeV45:
             self.task_service,
             intent_router=self.intent_router,
             chat_llm=self.chat_llm,
+            evidence_judge=self.evidence_judge,
         )
         return dict(
             runtime.get_graph_spec(),

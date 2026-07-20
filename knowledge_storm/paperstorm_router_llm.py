@@ -144,6 +144,50 @@ def build_chat_llm_callable(
     return chat_llm
 
 
+def build_judge_llm_callable(
+    enabled: Optional[bool] = None,
+) -> Optional[Callable[[str], str]]:
+    """Return a prompt->text callable used as an LLM evidence judge.
+
+    Frontier agents (Claude Code / Hermes) do not rely on keyword-overlap
+    thresholds: the model itself reads the question plus retrieved evidence and
+    decides whether it can answer. This callable powers that step; it is
+    enabled by default whenever an API key is configured (PAPERSTORM_JUDGE_LLM=0
+    disables, falling back to the deterministic local grader).
+    """
+    if enabled is None:
+        flag = str(os.getenv("PAPERSTORM_JUDGE_LLM", "")).strip().lower()
+        if flag in {"0", "false", "off", "no"}:
+            return None
+        if flag in {"1", "true", "yes", "on"}:
+            enabled = True
+    if enabled is False:
+        return None
+    config = _resolve_provider_config()
+    if config is None:
+        return None
+    model_name, api_key, api_base = config
+
+    def judge_llm(prompt: str) -> str:
+        import litellm
+
+        response = litellm.completion(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            api_key=api_key,
+            api_base=api_base,
+            temperature=0.0,
+            max_tokens=30,
+            timeout=20,
+            cache={"no-cache": True, "no-store": True},
+        )
+        choice = response["choices"][0]
+        message = choice.get("message") or {}
+        return str(message.get("content") or "")
+
+    return judge_llm
+
+
 def _resolve_provider_config():
     """Return (model_name, api_key, api_base) or None when not configured."""
     _load_flat_toml_env()
