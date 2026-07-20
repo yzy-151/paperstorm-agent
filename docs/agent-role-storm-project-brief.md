@@ -144,3 +144,33 @@ results/minimax_zh/RAG/storm_gen_article_polished.txt
 4. Tool registry：检索工具超时、重试、fallback、结果去重和来源质量过滤。
 5. 前端 demo：展示任务状态、中间态、引用来源和最终报告。
 
+## 2026-07-20 更新：PaperStorm MVP
+
+当前学习阶段已经完成 STORM 主链路研读，不建议继续泛读源码。下一阶段目标改为产出一个可放进简历的垂直 Agent 项目：
+
+```text
+PaperStorm：基于 STORM 架构改造的中文论文调研 Agent
+```
+
+MVP 范围：
+
+- 主检索后端使用 arXiv，不优先接 IEEE。arXiv 免费、无需 key、结构化，适合 2 到 3 天内形成闭环；IEEE Xplore API 需要申请 key 和权限审核，作为后续增强项。
+- 补充本地 PDF 论文读取能力，支持用户已有论文库。
+- 复用 STORM 的 `research -> outline -> article -> polish` 四阶段，输出带引用来源的中文论文综述报告。
+- 保留当前已修复的工程稳定性能力：空 query 清洗、UTF-8 输出、Unicode 清理、目录名与模型 topic 分离、配置脱敏、断点续跑。
+
+下一步执行顺序：
+
+```text
+1. 实现 ArxivRM
+2. 实现 LocalPDFRM
+3. 新增 run_paper_storm_minimax.py
+4. 跑通一个中文论文综述样例
+5. 补单元测试、README、样例报告和简历表述
+```
+
+更完整的学习进度和项目计划见：
+
+```text
+docs/paperstorm-mvp-learning-plan.md
+```

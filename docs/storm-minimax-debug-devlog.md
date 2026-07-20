@@ -1,6 +1,6 @@
 # STORM MiniMax M3 调试与改进开发日志
 
-最后更新时间：2026-07-17  
+最后更新时间：2026-07-18  
 维护位置：`docs/storm-minimax-debug-devlog.md`  
 相关入口：`examples/storm_examples/run_storm_wiki_minimax.py`
 
@@ -446,6 +446,41 @@ output_dir_name
   给文件系统用的安全目录名
 ```
 
+### 重点理解
+
+这三个函数不是“用不同方法从 topic 里返回同一种内容”，而是把 topic 的不同使用场景拆开：
+
+| 函数 | 面向对象 | 是否允许中文 | 是否允许模型指令 | 作用 |
+|---|---|---:|---:|---|
+| `get_topic_for_storm()` | LLM / STORM pipeline | 是 | 是 | 生成给模型看的真实研究任务 |
+| `get_output_dir_name()` | Windows 文件系统 | 否 | 否 | 生成安全、稳定的输出目录名 |
+| `strip_invalid_unicode()` | HTTP JSON / UTF-8 编码链路 | 不负责语言判断 | 不负责指令判断 | 删除无法 UTF-8 编码的孤立 surrogate |
+
+例如：
+
+```python
+topic_for_storm = get_topic_for_storm("RAG", output_language="zh")
+output_dir_name = get_output_dir_name("RAG")
+```
+
+结果不是“一个返回英文、一个返回中文”，而是：
+
+```text
+topic_for_storm
+  RAG + 一段要求模型用简体中文输出的英文控制指令
+
+output_dir_name
+  RAG
+```
+
+关键点：
+
+```text
+模型输入可以复杂
+文件夹名必须简单
+HTTP 请求文本必须能 UTF-8 编码
+```
+
 ## 11. 问题八：中文终端输入触发 surrogate 编码错误
 
 ### 现象
@@ -474,6 +509,41 @@ UnicodeEncodeError:
 1. 新增 `--topic` 参数，避免通过终端管道传中文。
 2. 新增 `--output-language zh` 参数，让脚本用稳定的英文控制指令要求模型输出简体中文。
 3. 新增 `strip_invalid_unicode()`，移除孤立 surrogate 字符。
+
+### 重点理解
+
+这里不是简单“加三个参数就支持中文终端”，而是把中文输入风险从不稳定链路里移走。
+
+原失败链路：
+
+```text
+PowerShell / MINGW 管道中文
+  -> Python stdin
+  -> LiteLLM
+  -> httpx JSON body
+  -> UTF-8 编码失败
+```
+
+最终成功链路：
+
+```text
+--topic RAG
+  避免从管道传复杂中文
+
+--output-language zh
+  在 Python 内部追加稳定英文指令，让模型输出中文
+
+strip_invalid_unicode()
+  在入口处清理非法 surrogate，防止 HTTP 请求失败
+```
+
+所以这个修复的本质是：
+
+```text
+不要依赖终端管道承载长中文 prompt
+用结构化参数表达“主题”和“输出语言”
+在进入 LLM 请求前清理编码非法字符
+```
 
 最终命令：
 
@@ -517,6 +587,28 @@ RAG\n\nWrite all research answers...
 给文件系统用的目录名
 ```
 
+这在原作者的默认英文 Wiki 主题场景下通常不会出问题，例如：
+
+```text
+Computer vision
+Albert Einstein
+Retrieval-augmented generation
+```
+
+这些 topic 既能作为模型主题，也基本能被清洗成目录名。
+
+但我们加入 `--output-language zh` 后，代码会把模型控制指令追加到 topic：
+
+```text
+RAG
+
+Write all research answers, outlines, the final article, and the polished article in Simplified Chinese...
+```
+
+如果继续把这个完整字符串用于目录名，就会把换行和整段 prompt 指令也放进路径里，最终触发 Windows 文件名错误。
+
+这不是 Master 额外输入了奇怪内容，而是脚本为了控制模型输出语言，主动把指令拼进了给模型看的 topic；问题出在原来的目录逻辑仍然复用了同一个 topic。
+
 ### 最终修复
 
 给 `STORMWikiRunner.run()` 增加可选参数：
@@ -543,6 +635,25 @@ runner.run(topic=topic_for_storm, output_dir_name=output_dir_name, ...)
 模型收到中文输出指令
 文件夹仍安全命名为 RAG
 ```
+
+### 重点理解
+
+这次修复不是单纯“过滤特殊字符”，而是改了职责边界：
+
+```text
+topic
+  用户输入的原始主题
+
+topic_for_storm
+  模型看到的完整任务，可包含输出语言要求
+
+output_dir_name
+  文件系统看到的安全目录名
+```
+
+原作者并不是“没想到输入 topic 后还会多输入东西”，而是默认 topic 就是干净的百科条目名称。我们把 STORM 改造成中文 Deep Research Agent 后，topic 承载了更多 prompt 控制信息，因此必须显式拆分。
+
+这个问题对 Agent 工程很重要：用户任务、模型指令、文件路径、日志字段不能长期混用同一个字符串。短期看省事，后期一定会在编码、路径、安全或可读性上出问题。
 
 ## 13. 问题十：MiniMax 生成空 query，ddgs 报错
 
@@ -576,6 +687,50 @@ queries = queries[: self.max_search_queries]
 
 如果其中有空字符串，就会进入检索。
 
+### 重点理解
+
+这里不是“遇到空行就检索上一个 query”，而是空行被处理成了一个独立的空字符串 query。
+
+原设计期望模型稳定输出：
+
+```text
+- query 1
+- query 2
+- query 3
+```
+
+因此代码选择了最直接的解析方式：
+
+```text
+按换行 split
+去掉项目符号 -
+去掉前后空白和引号
+取前 max_search_queries 条
+```
+
+但 LLM 的输出不是严格结构化数据，实际可能变成：
+
+```text
+- RAG 原理
+-
+  
+- vector database
+```
+
+旧逻辑处理后得到：
+
+```python
+["RAG 原理", "", "", "vector database"]
+```
+
+随后 `list(set(queries))` 只负责去重，不负责删除空字符串，所以 `""` 仍可能被传给检索器。`ddgs` 收到空 query 后会认为参数非法，于是报：
+
+```text
+DDGSException: query is mandatory.
+```
+
+严格说，这是一个 LLM 工程鲁棒性缺陷。原作者的默认假设是模型会遵守 `- query` 格式，在英文主题和原始 provider 下可能很少触发；但 Agent 系统不能默认相信 LLM 生成的工具参数。凡是要交给外部工具执行的内容，都应该先做空值、长度、格式和业务约束检查。
+
 ### 最终修复
 
 新增：
@@ -595,6 +750,31 @@ clean_search_queries(queries: str, max_search_queries: int) -> List[str]
 
 ```text
 knowledge_storm/storm_wiki/modules/knowledge_curation.py
+```
+
+修复后的关键差异是“先判断有效，再计数”：
+
+```text
+旧逻辑
+  空行也会占用 max_search_queries 名额，并可能进入检索
+
+新逻辑
+  只有非空 query 才加入列表，也只有有效 query 才计入 max_search_queries
+```
+
+同样的输入：
+
+```text
+- RAG 原理
+-
+  
+- vector database
+```
+
+现在会得到：
+
+```python
+["RAG 原理", "vector database"]
 ```
 
 ## 14. 问题十一：中文最终文章不是 UTF-8
