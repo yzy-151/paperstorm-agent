@@ -186,6 +186,9 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             )
             self.assertIn("所以你跑在啥模型上", recorded["prompt"])
             self.assertIn("连续对话", recorded["prompt"])
+            self.assertIn("BM25", recorded["prompt"])
+            self.assertIn("RRF", recorded["prompt"])
+            self.assertIn("当前运行模式", recorded["prompt"])
 
     def test_question_topic_follows_question_when_off_topic(self):
         from knowledge_storm.paperstorm_langgraph_v44 import _question_topic

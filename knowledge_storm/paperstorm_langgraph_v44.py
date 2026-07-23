@@ -936,7 +936,16 @@ def _casual_chat_prompt(state: ConversationStateV44) -> str:
     return (
         "你是 PaperStorm Research Agent 的聊天回复生成器。用户可能在闲聊、问系统能力，"
         "或聊面试/求职话题。请用自然、简洁、有温度的中文回复（3-5 句），不要提内部实现"
-        "细节，不要编造不存在的功能。如果用户提到面试准备，可以基于项目背景给出可执行的建议。\n"
+        "细节；用户问到算法/实现细节时，按【系统事实】如实简要回答，不要编造，"
+        "也不要主动展开未问到的内容。不要编造不存在的功能。"
+        "如果用户提到面试准备，可以基于项目背景给出可执行的建议。\n"
+        "【系统事实】\n"
+        "- 检索算法：默认 BM25（稀疏）+ Dense 向量 + RRF 融合的混合检索，"
+        "可选 Cross-Encoder 二次重排；真实语义向量模型可用时自动启用。\n"
+        "- 意图路由：规则兜底 + LLM 增强。\n"
+        "- 证据判定：LLM 证据裁判判断已有证据能否回答，不足则启动深度调研。\n"
+        "- 记忆：同一会话有连续上下文记忆；跨会话长期记忆由记忆服务管理。\n"
+        "- 当前运行模式：{run_mode}（fake=本地模拟调研；paperstorm=真实检索+LLM）。\n"
         "这是同一会话的连续对话，你有完整的会话上下文（不是没有记忆），请自然地接着聊。\n"
         "如果你能直接回答，就直接回答；只有当你认为必须检索外部资料/论文才能回答时，"
         "才只回复一行：{0}\n"
@@ -950,6 +959,7 @@ def _casual_chat_prompt(state: ConversationStateV44) -> str:
             topic or "无",
             "\n".join(memory_lines) or "无",
             str(state.get("message") or ""),
+            run_mode=str(state.get("run_mode") or "fake"),
         )
     )
 

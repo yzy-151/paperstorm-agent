@@ -63,6 +63,17 @@ class PaperStormIntentRouterTest(unittest.TestCase):
         self.assertIn("muon", decision["rewritten_query"].lower())
         self.assertNotIn("pim", decision["rewritten_query"].lower())
 
+    def test_router_treats_algorithm_meta_question_as_system_help(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        decision = PaperStormIntentRouter().route(
+            message="你当前用什么算法检索？",
+            session={"topic": "pim 神经网络抑制", "task_id": "task-pim"},
+            context_window=[],
+        )
+        self.assertEqual(decision["intent"], "system_help")
+        self.assertFalse(decision["need_retrieval"])
+
     def test_router_distinguishes_chat_from_research_without_topic_bias(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
 
