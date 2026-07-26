@@ -41,6 +41,33 @@
     </section>
 
     <main class="dashboard-grid">
+      <section class="panel wide developer-mode-panel" id="developer-console-index">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Developer Console Map</p>
+            <h2>开发者控制台模块地图</h2>
+          </div>
+          <span class="soft-badge">点击卡片跳转到对应模块</span>
+        </div>
+        <p class="panel-copy">控制台按"评测对比 / 运行时与链路调试"分组；每个模块标题下方的说明就是它测什么、看什么。所有 Benchmark 都可一键运行并重复复现。</p>
+        <div class="dev-module-grid">
+          <a class="dev-module-card" href="#rag-eval-v4-panel"><strong>RAG v4.0 评测</strong><span>100 条 seed：检索/答案/引用/拒答/失败归因</span></a>
+          <a class="dev-module-card" href="#rag-eval-v41-panel"><strong>RAG v4.1 消融</strong><span>8 组分块×检索模式：Recall/MRR/nDCG/P95</span></a>
+          <a class="dev-module-card" href="#retrieval-runtime-panel"><strong>检索前后对比</strong><span>legacy vs V4.1：接入后提升多少</span></a>
+          <a class="dev-module-card" href="#context-v42-panel"><strong>Context v4.2</strong><span>压缩节省率 + 保留/恢复契约</span></a>
+          <a class="dev-module-card" href="#memory-v43-panel"><strong>Memory v4.3</strong><span>写入/召回契约、泄漏/重复/过期</span></a>
+          <a class="dev-module-card" href="#runtime-v44-panel"><strong>LangGraph v4.4</strong><span>路径/幂等/checkpoint/重试/span</span></a>
+          <a class="dev-module-card" href="#production-v45-panel"><strong>Production v4.5</strong><span>ACL/幂等/缓存/作业/熔断/SLO</span></a>
+          <a class="dev-module-card" href="#trace-panel"><strong>Runtime Trace</strong><span>任务运行事件时间线</span></a>
+          <a class="dev-module-card" href="#sse-panel"><strong>SSE 事件流</strong><span>服务端实时事件通道</span></a>
+          <a class="dev-module-card" href="#multi-agent-panel"><strong>Multi-Agent</strong><span>检索结果保留/过滤决策</span></a>
+          <a class="dev-module-card" href="#process-panel"><strong>过程细节</strong><span>outline/reflection/检索/对话</span></a>
+          <a class="dev-module-card" href="#pipeline-worker-panel"><strong>Pipeline Worker</strong><span>worker 配置与运行状态</span></a>
+          <a class="dev-module-card" href="#stress-panel"><strong>稳定性压测</strong><span>并发任务成功率与延迟</span></a>
+          <a class="dev-module-card" href="#chat-mode-panel"><strong>聊天内部调试</strong><span>上下文/记忆/图状态/Checkpoint</span></a>
+        </div>
+      </section>
+
       <section class="panel wide" id="mode-switcher">
         <div class="panel-heading">
           <div>
@@ -387,6 +414,11 @@
         <div id="scorecard" class="metric-grid"></div>
       </section>
 
+      <div class="dev-section-header" id="dev-section-eval">
+        <h3>评测与 Benchmark</h3>
+        <p>全部可一键复现：每个模块下方都写了"测什么"和"结果怎么看"。</p>
+      </div>
+
       <section class="panel wide developer-mode-panel" id="rag-eval-v4-panel">
         <div class="panel-heading">
           <div>
@@ -399,7 +431,7 @@
           <button id="run-rag-eval-v4" type="button">运行 v4.0 基线</button>
           <button id="load-rag-eval-v4" type="button">加载最近报告</button>
         </div>
-        <p class="panel-copy">内置集合用于回归和演示，包含 20 个受控事实的四种问法以及 20 个无答案问题；它被明确标记为种子集，不能替代人工审核的真实论文 Golden Set。</p>
+        <p class="panel-copy">测什么：100 条可审计 seed 的 pass rate、Recall@K、MRR、nDCG、必需词召回、引用 Precision/Recall、拒答准确率与失败阶段归因（retrieval/rerank/compression/generation/citation）。内置集合含 20 个受控事实的四种问法加 20 个无答案问题，属于种子集而非人工审核的 Golden Set。</p>
         <div id="rag-eval-v4-metrics" class="metric-grid"></div>
         <div class="qa-debug-grid">
           <section class="debug-card">
@@ -427,7 +459,7 @@
           <button id="run-rag-eval-v41" type="button">运行八组 Smoke 实验</button>
           <button id="load-rag-eval-v41" type="button">加载最近 V4.1 报告</button>
         </div>
-        <p class="panel-copy">网页按钮使用确定性 Embedding 快速检查完整评测链路；真实多语种 Dense、Cross-Encoder 与 Zotero 论文实验请运行 V4.1 CLI，避免模型下载阻塞 Web 请求。</p>
+        <p class="panel-copy">测什么：ordinary/contextual 分块 × BM25/Dense/Hybrid/Hybrid+Rerank 共 8 组的 Recall@K/MRR/nDCG/P95，找出最优检索配置。网页按钮用确定性 Embedding 快速检查链路；真实多语种与 Zotero 论文实验请运行 V4.1 CLI。</p>
         <div class="table-scroll">
           <table class="eval-table">
             <thead>
@@ -459,7 +491,7 @@
         <div class="button-row">
           <button id="run-context-v42-benchmark" type="button">运行 Context Benchmark</button>
         </div>
-        <p class="panel-copy">已接入聊天链路（真实 ContextEngine 负责每轮压缩与 compaction_id 恢复）。本 Benchmark 对比压缩前后的 token 与保留率；摘要是派生视图，原始 JSONL 事件不会被覆盖。</p>
+        <p class="panel-copy">测什么：token 节省率、约束/实体/待办保留率、工具调用配对、按 compaction_id 精确恢复、重复压缩保留。已接入聊天链路（真实 ContextEngine 每轮执行）；摘要是派生视图，原始 JSONL 永不被覆盖。</p>
         <div id="context-v42-metrics" class="metric-grid"></div>
         <pre id="context-v42-summary"></pre>
       </section>
@@ -475,7 +507,7 @@
         <div class="button-row">
           <button id="run-memory-v43-benchmark" type="button">运行 Memory Benchmark</button>
         </div>
-        <p class="panel-copy">已接入聊天链路（LongTermMemoryService 负责跨会话写入/召回/治理）。本 Benchmark 对比写入精度、Recall@K、过期事实误用、跨用户泄漏、重复率和 P95 延迟。</p>
+        <p class="panel-copy">测什么：写入精度、Recall@K、过期事实误用、跨 namespace 泄漏、重复率、启用/禁用开关与延迟吞吐。已接入聊天链路（LongTermMemoryService 负责跨会话写入/召回/治理）。</p>
         <div id="memory-v43-metrics" class="metric-grid"></div>
         <pre id="memory-v43-summary"></pre>
       </section>
@@ -492,7 +524,7 @@
           <button id="run-runtime-v44-benchmark" type="button">运行 Runtime Benchmark</button>
           <button id="load-runtime-v44-benchmark" type="button">加载最近报告</button>
         </div>
-        <p class="panel-copy">验证路由路径、SQLite checkpoint 恢复、瞬时失败重试、请求幂等、跨用户记忆隔离、trace span 覆盖和 STORM 工具产物契约。</p>
+        <p class="panel-copy">测什么：路径准确率、SQLite checkpoint 恢复、瞬时失败重试、请求幂等、跨用户记忆隔离、trace span 覆盖和 STORM 工具产物契约（期望全部 1.0、泄漏 0）。</p>
         <div id="runtime-v44-metrics" class="metric-grid"></div>
         <pre id="runtime-v44-summary"></pre>
       </section>
@@ -515,7 +547,7 @@
           Trace ID
           <input id="production-v45-trace-id" placeholder="聊天后自动填入" />
         </label>
-        <p class="panel-copy">展示本地 SQLite WAL 治理热路径的 P50/P95/P99、QPS、错误率、降级率、缓存命中、ACL 隔离、作业恢复和 span。真实 LLM/网络压测需在部署环境另行执行。</p>
+        <p class="panel-copy">测什么：本地 SQLite WAL 治理热路径的 P50/P95/P99、QPS、错误率、降级率、缓存命中、ACL 隔离、作业恢复和 span 覆盖（契约指标期望错误率/泄漏 0、幂等/恢复/span 1.0）。真实 LLM/网络压测需在部署环境另行执行。</p>
         <div id="production-v45-metrics" class="metric-grid"></div>
         <div class="qa-debug-grid">
           <section class="debug-card">
@@ -553,7 +585,7 @@
           <button id="run-retrieval-runtime" type="button">运行检索对比 Benchmark</button>
           <button id="load-retrieval-runtime" type="button">加载最近报告</button>
         </div>
-        <p class="panel-copy">同一 100 条可审计 seed 集上对比 legacy（词法重叠 + hash 向量）与 V4.1（BM25 + Dense + RRF）：<code>PAPERSTORM_RETRIEVAL_STACK=v41</code> 已接入聊天/知识库；<code>PAPERSTORM_RETRIEVAL_EMBEDDING=real</code> 可切换真实向量模型。</p>
+        <p class="panel-copy">测什么：同一 100 条 seed 集上 legacy（词法重叠 + hash 向量）与 V4.1（BM25 + Dense + RRF）的 Recall@K/MRR/nDCG/延迟对比，证明接入后提升多少；接入状态卡片同步展示各模块是否已接入聊天链路。</p>
         <div class="table-scroll">
           <table class="eval-table">
             <thead>
@@ -580,18 +612,26 @@
         <div id="qa-answer" class="stack"></div>
       </section>
 
+      <div class="dev-section-header" id="dev-section-runtime">
+        <h3>运行时与链路调试</h3>
+        <p>看链路怎么跑、为什么这么跑：Trace / SSE / Multi-Agent / 过程细节 / Worker / 压测，以及聊天内部的状态与记忆调试。</p>
+      </div>
+
       <section class="panel developer-mode-panel" id="trace-panel">
         <h2>Runtime Trace</h2>
+        <p class="panel-copy">看什么：任务从提交到完成的运行事件时间线（工具调用、状态流转、错误），用于定位一次调研卡在哪一步。</p>
         <ol id="trace-list" class="timeline"></ol>
       </section>
 
       <section class="panel developer-mode-panel" id="sse-panel">
         <h2>SSE 事件流</h2>
+        <p class="panel-copy">看什么：服务端实时事件（连接、心跳、任务状态），确认前端与服务的实时通道是否连通。</p>
         <ol id="sse-event-list" class="timeline"></ol>
       </section>
 
       <section class="panel wide developer-mode-panel" id="multi-agent-panel">
         <h2>Multi-Agent 编排</h2>
+        <p class="panel-copy">看什么：调研检索结果的 Multi-Agent 保留/过滤决策——哪些结果被保留、哪些被过滤及原因。</p>
         <div id="multi-agent" class="stack"></div>
       </section>
 
@@ -603,6 +643,7 @@
           </div>
           <span class="soft-badge">outline / reflection / conversation / search</span>
         </div>
+        <p class="panel-copy">看什么：单次调研的过程产物——outline、reflection/总结、计划与检索、访谈式对话记录。</p>
         <div class="process-grid">
           <section class="process-card">
             <h3>Outline</h3>
@@ -625,11 +666,13 @@
 
       <section class="panel developer-mode-panel" id="pipeline-worker-panel">
         <h2>Pipeline Worker</h2>
+        <p class="panel-copy">看什么：Pipeline Worker 的 runner、运行模式、检索器、LLM 配置与当前状态。</p>
         <div id="pipeline-worker" class="metric-grid"></div>
       </section>
 
       <section class="panel wide developer-mode-panel" id="stress-panel">
         <h2>稳定性压测</h2>
+        <p class="panel-copy">看什么：并发任务压测统计——总任务数、成功/失败、失败率与延迟分位。</p>
         <div id="stress-report" class="metric-grid"></div>
       </section>
     </main>

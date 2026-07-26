@@ -241,6 +241,26 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("/evaluations/context-v42/latest", script)
         self.assertIn("/evaluations/memory-v43/latest", script)
 
+    def test_developer_console_has_module_map_and_grouped_sections(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        styles = (root / "frontend" / "paperstorm_dashboard" / "styles.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("developer-console-index", index)
+        self.assertIn("dev-module-grid", index)
+        self.assertIn("dev-module-card", index)
+        self.assertIn('href="#rag-eval-v4-panel"', index)
+        self.assertIn('href="#chat-mode-panel"', index)
+        self.assertIn("dev-section-eval", index)
+        self.assertIn("dev-section-runtime", index)
+        self.assertIn("测什么", index)
+        self.assertIn(".dev-module-grid", styles)
+        self.assertIn(".dev-section-header", styles)
+
     def test_dashboard_exposes_enterprise_kb_v32_workflow(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(

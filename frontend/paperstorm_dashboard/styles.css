@@ -396,6 +396,58 @@ body[data-mode="developer"] .dashboard-grid {
   width: min(1680px, 100%);
 }
 
+.dev-section-header {
+  grid-column: 1 / -1;
+  padding: 10px 2px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dev-section-header h3 {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.dev-section-header p {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.dev-module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.dev-module-card {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(10, 17, 26, 0.72);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.dev-module-card:hover {
+  border-color: var(--accent);
+  background: var(--panel-hover);
+}
+
+.dev-module-card strong {
+  display: block;
+  color: #f7fbff;
+  font-size: 14px;
+}
+
+.dev-module-card span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .panel-copy {
   margin: 0 0 14px;
   color: var(--muted);
