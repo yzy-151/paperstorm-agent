@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 class PaperStormServiceTest(unittest.TestCase):
@@ -37,6 +39,19 @@ class PaperStormServiceTest(unittest.TestCase):
         self.assertEqual(state["topic"], "pim 神经网络抑制")
         self.assertTrue(Path(state["output_dir"]).exists())
         self.assertIn(task["task_id"], state["output_dir"])
+
+    def test_resolve_zotero_root_prefers_explicit_path_then_env(self):
+        service = self.make_service()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            (Path(temp_dir) / "zotero.sqlite").write_text("", encoding="utf-8")
+            self.assertEqual(
+                service._resolve_zotero_root(zotero_root=temp_dir),
+                temp_dir,
+            )
+            with mock.patch.dict(
+                os.environ, {"PAPERSTORM_ZOTERO_ROOT": temp_dir}, clear=False
+            ):
+                self.assertEqual(service._resolve_zotero_root(), temp_dir)
 
     def test_run_fake_task_writes_article_trace_summary_and_scorecard(self):
         service = self.make_service()

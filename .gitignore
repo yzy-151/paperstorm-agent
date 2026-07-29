@@ -21,6 +21,7 @@ build/
 
 # Project-specific
 secrets.toml
+local_zotero_root.txt
 *.log
 */assertion.log
 *results/

@@ -177,6 +177,20 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         owner_user_id: str = "local-user"
         allowed_user_ids: list[str] = []
 
+    class EnterpriseKnowledgeBaseFromZoteroRequest(BaseModel):
+        zotero_root: Optional[str] = None
+        query_terms: list[str] = []
+        max_papers: int = Field(default=8, ge=1, le=100)
+        name: str = "Zotero 论文知识库"
+        expected_keywords: list[str] = []
+        forbidden_keywords: list[str] = []
+        chunk_size: int = Field(default=500, ge=64, le=4000)
+        chunk_overlap: int = Field(default=100, ge=0, le=500)
+        embedding_provider: str = "hash"
+        tenant_id: str = "local"
+        owner_user_id: str = "local-user"
+        allowed_user_ids: list[str] = []
+
     class EnterpriseKnowledgeBaseAskRequest(BaseModel):
         question: str
         top_k: int = 4
@@ -310,6 +324,14 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.post("/enterprise-kbs")
     def create_enterprise_kb(request: EnterpriseKnowledgeBaseCreateRequest):
         return service.create_enterprise_knowledge_base(**_request_payload(request))
+
+    @app.post("/enterprise-kbs/from-zotero")
+    def create_enterprise_kb_from_zotero(
+        request: EnterpriseKnowledgeBaseFromZoteroRequest,
+    ):
+        return service.create_enterprise_knowledge_base_from_zotero(
+            **_request_payload(request)
+        )
 
     @app.get("/enterprise-kbs")
     def list_enterprise_kbs(

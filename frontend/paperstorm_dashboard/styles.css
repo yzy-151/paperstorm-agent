@@ -448,6 +448,49 @@ body[data-mode="developer"] .dashboard-grid {
   line-height: 1.5;
 }
 
+.zotero-import {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(10, 17, 26, 0.72);
+}
+
+.zotero-import-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.zotero-import-head strong {
+  color: #f7fbff;
+  font-size: 14px;
+}
+
+.zotero-import-head span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.zotero-import-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.zotero-import-row button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--accent-dark);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #31cbb3, #169b88);
+  color: #03100e;
+  font-weight: 850;
+  cursor: pointer;
+}
+
 .panel-copy {
   margin: 0 0 14px;
   color: var(--muted);
@@ -1038,7 +1081,8 @@ code {
   .chat-layout,
   .chat-shell,
   .chat-input-row,
-  .qa-debug-grid {
+  .qa-debug-grid,
+  .zotero-import-row {
     grid-template-columns: 1fr;
   }
 }

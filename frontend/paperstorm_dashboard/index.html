@@ -206,6 +206,27 @@
             <div class="chat-message assistant" id="enterprise-kb-answer">等待知识库问答。</div>
           </div>
         </div>
+        <div class="zotero-import">
+          <div class="zotero-import-head">
+            <strong>从 Zotero 一键导入（不用手动填路径）</strong>
+            <span>服务端默认按顺序读取：填写目录 → PAPERSTORM_ZOTERO_ROOT → 项目根目录 local_zotero_root.txt → ~/Zotero。留空即用默认。</span>
+          </div>
+          <div class="zotero-import-row">
+            <label>
+              检索词（空格/逗号分隔，留空=全部论文）
+              <input id="zotero-kb-terms" placeholder="pim 无源互调 intermodulation" />
+            </label>
+            <label>
+              最多论文数
+              <input id="zotero-kb-max-papers" type="number" min="1" max="100" value="8" />
+            </label>
+            <label>
+              Zotero 数据目录（留空=服务端默认）
+              <input id="zotero-kb-root" placeholder="例如 D:\FILEEEEEEEEEEE\zotero" />
+            </label>
+            <button id="create-zotero-kb" type="button">从 Zotero 导入建库</button>
+          </div>
+        </div>
         <div class="qa-debug-grid developer-surface">
           <section class="debug-card">
             <h3>KB Manifest</h3>

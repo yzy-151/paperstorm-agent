@@ -380,6 +380,77 @@ class PaperStormTaskService:
             allowed_user_ids=allowed_user_ids,
         )
 
+    def create_enterprise_knowledge_base_from_zotero(
+        self,
+        zotero_root: Optional[str] = None,
+        query_terms: Optional[List[str]] = None,
+        max_papers: int = 8,
+        name: str = "Zotero 论文知识库",
+        expected_keywords: Optional[List[str]] = None,
+        forbidden_keywords: Optional[List[str]] = None,
+        chunk_size: int = 500,
+        chunk_overlap: int = 100,
+        embedding_provider: str = "hash",
+        tenant_id: str = "local",
+        owner_user_id: str = "local-user",
+        allowed_user_ids: Optional[List[str]] = None,
+    ):
+        """Create an enterprise KB directly from the local Zotero library.
+
+        The Zotero data directory resolves in this order: explicit argument ->
+        PAPERSTORM_ZOTERO_ROOT -> repo-local local_zotero_root.txt -> ~/Zotero.
+        """
+        from .paperstorm_zotero import discover_zotero_papers
+
+        root = self._resolve_zotero_root(zotero_root)
+        papers = discover_zotero_papers(
+            root,
+            query_terms=query_terms,
+            max_papers=max_papers,
+        )
+        if not papers:
+            raise ValueError(
+                "Zotero 中没有匹配的 PDF 论文：请检查目录与检索词"
+            )
+        result = self.create_enterprise_knowledge_base(
+            name=name,
+            source_paths=[item["path"] for item in papers],
+            expected_keywords=expected_keywords,
+            forbidden_keywords=forbidden_keywords,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            embedding_provider=embedding_provider,
+            tenant_id=tenant_id,
+            owner_user_id=owner_user_id,
+            allowed_user_ids=allowed_user_ids,
+        )
+        result["zotero_root"] = root
+        result["source_papers"] = [
+            {"title": item.get("title") or "", "path": item.get("path") or ""}
+            for item in papers
+        ]
+        return result
+
+    def _resolve_zotero_root(self, zotero_root: Optional[str] = None) -> str:
+        candidates = []
+        if zotero_root:
+            candidates.append(Path(zotero_root))
+        if os.getenv("PAPERSTORM_ZOTERO_ROOT"):
+            candidates.append(Path(os.getenv("PAPERSTORM_ZOTERO_ROOT")))
+        local_file = Path(__file__).resolve().parents[1] / "local_zotero_root.txt"
+        if local_file.exists():
+            value = local_file.read_text(encoding="utf-8").strip()
+            if value:
+                candidates.append(Path(value))
+        candidates.append(Path.home() / "Zotero")
+        for candidate in candidates:
+            if (candidate / "zotero.sqlite").exists():
+                return str(candidate)
+        raise ValueError(
+            "未找到 Zotero 数据目录：请填写目录，或设置 PAPERSTORM_ZOTERO_ROOT，"
+            "或在项目根目录放 local_zotero_root.txt"
+        )
+
     def get_enterprise_knowledge_base(
         self,
         kb_id: str,

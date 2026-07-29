@@ -143,6 +143,9 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
 ![Enterprise KB](docs/screenshots/dashboard-enterprise-kb.png)
 
 - 上传本地文档（.txt/.pdf）建立知识库，基于知识库问答并给出引用；
+- **支持从 Zotero 一键导入建库**：不用手动填路径，服务端默认按顺序读取
+  `PAPERSTORM_ZOTERO_ROOT` → 项目根目录 `local_zotero_root.txt`（gitignored）→
+  `~/Zotero`，也可以在前端手动指定目录和检索词；
 - 创建/查询走 v4.5 ACL（tenant/user/resource），文档变更通过 SHA-256 增量索引 +
   tag 缓存失效。
 

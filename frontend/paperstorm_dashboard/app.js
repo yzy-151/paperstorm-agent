@@ -705,6 +705,38 @@ async function createEnterpriseKB() {
   }
 }
 
+async function createZoteroKB() {
+  const termsValue = document.querySelector("#zotero-kb-terms").value.trim();
+  const payload = {
+    name: document.querySelector("#enterprise-kb-name").value.trim() || "Zotero 论文知识库",
+    query_terms: termsValue
+      ? termsValue.split(/[,，\s]+/).filter(Boolean)
+      : [],
+    max_papers: Number(document.querySelector("#zotero-kb-max-papers").value) || 8,
+    zotero_root: document.querySelector("#zotero-kb-root").value.trim() || undefined,
+    expected_keywords: splitKeywords(document.querySelector("#task-expected-keyword").value),
+    forbidden_keywords: splitKeywords(document.querySelector("#task-forbidden-keyword").value),
+    embedding_provider: "hash",
+  };
+  try {
+    setStatus("importing papers from Zotero", "loading");
+    setButtonBusy("create-zotero-kb", true, "导入中");
+    const kb = await fetchJson("/enterprise-kbs/from-zotero", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    document.querySelector("#enterprise-kb-id").value = kb.kb_id || "";
+    renderEnterpriseKBManifest(kb);
+    const count = (kb.source_papers || []).length;
+    setStatus(`kb ${kb.kb_id} · ${count} 篇论文 · root=${kb.zotero_root}`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    setButtonBusy("create-zotero-kb", false);
+  }
+}
+
 async function listEnterpriseKB() {
   try {
     setStatus("loading enterprise kbs", "loading");
@@ -1476,6 +1508,7 @@ document.querySelector("#load-production-v45-trace").addEventListener("click", l
 document.querySelector("#run-retrieval-runtime").addEventListener("click", runRetrievalRuntimeBenchmark);
 document.querySelector("#load-retrieval-runtime").addEventListener("click", loadRetrievalRuntimeBenchmark);
 document.querySelector("#create-enterprise-kb").addEventListener("click", createEnterpriseKB);
+document.querySelector("#create-zotero-kb").addEventListener("click", createZoteroKB);
 document.querySelector("#list-enterprise-kb").addEventListener("click", listEnterpriseKB);
 document.querySelector("#ask-enterprise-kb").addEventListener("click", askEnterpriseKB);
 document.querySelector("#run-rag-eval-v4").addEventListener("click", runRAGEvaluationV4);

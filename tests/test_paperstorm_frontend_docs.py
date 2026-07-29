@@ -280,6 +280,12 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("createEnterpriseKB", script)
         self.assertIn("askEnterpriseKB", script)
 
+        self.assertIn("create-zotero-kb", index)
+        self.assertIn("zotero-kb-terms", index)
+        self.assertIn("zotero-kb-root", index)
+        self.assertIn("/enterprise-kbs/from-zotero", script)
+        self.assertIn("createZoteroKB", script)
+
     def test_official_chinese_doc_and_readme_include_storm_architecture(self):
         root = Path(__file__).resolve().parents[1]
         official_cn = (root / "docs" / "STORM_OFFICIAL_CN.md").read_text(
