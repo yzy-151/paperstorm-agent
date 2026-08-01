@@ -107,6 +107,36 @@ class _IndexLRU:
 
 _INDEX_LRU = _IndexLRU(_index_cache_maxsize())
 
+STOP_BIGRAMS = frozenset(
+    {
+        "效果", "方法", "用于", "可以", "问题", "相关", "研究", "核心", "主要",
+        "关键", "需要", "通过", "进行", "以及", "这个", "什么", "为什么", "怎么",
+        "如何", "为啥", "这种", "还有", "针对", "关于", "结合", "基于", "从而",
+        "因此", "并且", "然后", "应该", "能够", "可能", "是否", "一下", "这里",
+        "哪些", "区别", "关系", "时候", "地方", "方面", "部分", "内容", "情况",
+        "方式", "思路", "建议", "帮助", "请问", "谢谢", "你好", "您好", "哈哈",
+        "没事", "是的", "对的", "不是", "没有", "知道", "了解", "明白", "感觉",
+        "觉得", "认为", "其实", "真的", "还是", "能帮", "帮我", "给我", "我想",
+    }
+)
+
+
+def meaningful_terms(text: str):
+    """Substantive retrieval terms: Latin words + CJK words/bigrams, with
+    common function/quality bigrams filtered out so one shared word like
+    "效果" cannot make an off-topic knowledge base look relevant."""
+    from .paperstorm_retrieval_v41 import multilingual_tokenize
+
+    tokens = multilingual_tokenize(str(text or "").lower())
+    terms = set()
+    for token in tokens:
+        if len(token) == 1 and "\u4e00" <= token <= "\u9fff":
+            continue
+        if token in STOP_BIGRAMS:
+            continue
+        terms.add(token)
+    return terms
+
 
 def _run_dir_signature(run_dir):
     """mtime+size signature of the files that feed the runtime index."""
@@ -228,15 +258,9 @@ def search_runtime_index(
 
 
 def _meaningful_query_terms(text: str):
-    """Latin words plus CJK bigrams; single CJK characters are noise here."""
-    from .paperstorm_retrieval_v41 import multilingual_tokenize
-
-    tokens = multilingual_tokenize(str(text or "").lower())
-    return {
-        token
-        for token in tokens
-        if not (len(token) == 1 and "\u4e00" <= token <= "\u9fff")
-    }
+    """Back-compat alias of meaningful_terms (Latin words + CJK words/bigrams,
+    single CJK characters and common function words are noise)."""
+    return meaningful_terms(text)
 
 
 def _relevance_gate(results: List[Dict], query: str, embedding: str) -> List[Dict]:
