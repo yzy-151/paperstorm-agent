@@ -478,10 +478,18 @@ class PaperStormLangGraphRuntime:
                 "router": "langgraph_memory_policy_v44",
             }
         else:
+            guard = _rule_guard(state)
             answer = self._casual_answer(state)
             if answer == RETRIEVE_MARKER:
-                answer = ""
-                escalate = True
+                if guard and guard.get("intent") in {"system_help", "clarify"}:
+                    # Meta/system questions must be answered, never escalated.
+                    answer = _casual_answer(
+                        state["message"], state.get("memory_recall") or {}
+                    )
+                    escalate = False
+                else:
+                    answer = ""
+                    escalate = True
             elif not answer:
                 answer = _casual_answer(state["message"], state.get("memory_recall") or {})
                 escalate = _needs_research_fallback(state)
@@ -891,6 +899,12 @@ def _casual_answer(message: str, memory_recall: Dict):
         return "我会通过 V4.3 Memory Policy 校验这条信息；符合稳定事实、偏好或规则时才会跨会话保存。"
     if "你是谁" in text or "模型" in text:
         return "我是 PaperStorm 的 LangGraph Conversation Runtime 演示层，基础模型由运行时配置决定。"
+    if any(token in text for token in ["逻辑", "实现", "流程", "知识库", "工作方式"]):
+        return (
+            "知识库问答的流程是：问题进来先做意图路由和记忆召回，然后用混合检索"
+            "（BM25+Dense+RRF）从当前任务或文档里找证据，证据裁判判断够不够；"
+            "不够就升级深度调研，够就带着引用编号生成中文回答。你想问某一步的细节，我可以展开讲。"
+        )
     if "能做什么" in text or "可以做什么" in text or "介绍一下" in text:
         return (
             "我是 PaperStorm Research Agent，可以陪你闲聊、回答论文调研与技术问题，"
@@ -939,11 +953,15 @@ def _casual_chat_prompt(state: ConversationStateV44) -> str:
         "细节；用户问到算法/实现细节时，按【系统事实】如实简要回答，不要编造，"
         "也不要主动展开未问到的内容。不要编造不存在的功能。"
         "如果用户提到面试准备，可以基于项目背景给出可执行的建议。\n"
+        "用户问系统自身（算法、知识库逻辑、实现细节）时，必须直接按【系统事实】回答，"
+        "禁止使用检索标记。\n"
         "【系统事实】\n"
         "- 检索算法：默认 BM25（稀疏）+ Dense 向量 + RRF 融合的混合检索，"
         "可选 Cross-Encoder 二次重排；真实语义向量模型可用时自动启用。\n"
         "- 意图路由：规则兜底 + LLM 增强。\n"
         "- 证据判定：LLM 证据裁判判断已有证据能否回答，不足则启动深度调研。\n"
+        "- 知识库问答：意图路由 → 记忆召回 → 混合检索 → 证据裁判 → 带引用回答；"
+        "证据不足时升级深度调研。\n"
         "- 记忆：同一会话有连续上下文记忆；跨会话长期记忆由记忆服务管理。\n"
         "- 当前运行模式：{run_mode}（fake=本地模拟调研；paperstorm=真实检索+LLM）。\n"
         "这是同一会话的连续对话，你有完整的会话上下文（不是没有记忆），请自然地接着聊。\n"
@@ -1023,18 +1041,22 @@ def _meaningful_overlap(left: str, right: str) -> bool:
 def _needs_research_fallback(state: ConversationStateV44) -> bool:
     """Local safety net: escalate when the message clearly needs retrieval and
     the chat layer produced no LLM answer (e.g. offline fake mode)."""
+    decision = _rule_guard(state)
+    return bool(
+        decision and decision.get("intent") in {"research_qa", "run_research"}
+    )
+
+
+def _rule_guard(state: ConversationStateV44):
     from .paperstorm_intent_router import route_high_confidence_rules
 
-    decision = route_high_confidence_rules(
+    return route_high_confidence_rules(
         str(state.get("message") or ""),
         {
             "topic": str(state.get("topic") or ""),
             "task_id": str(state.get("task_id") or ""),
         },
         state.get("context_window") or [],
-    )
-    return bool(
-        decision and decision.get("intent") in {"research_qa", "run_research"}
     )
 
 

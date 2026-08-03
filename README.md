@@ -138,7 +138,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
   Production Benchmark、**检索前后对比**（legacy vs V4.1）。
 - 聊天调试：上下文 Meter、压缩事件、记忆召回、图状态与 Checkpoint 历史、Trace。
 
-### 4. 企业知识库
+### 4. 企业文档知识库
 
 ![Enterprise KB](docs/screenshots/dashboard-enterprise-kb.png)
 
@@ -148,6 +148,10 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
   `~/Zotero`，也可以在前端手动指定目录和检索词；
 - 创建/查询走 v4.5 ACL（tenant/user/resource），文档变更通过 SHA-256 增量索引 +
   tag 缓存失效。
+
+> 入口分工：聊天问答是**唯一的交互式问答入口**（面向当前调研任务的知识库）；
+> 企业文档知识库面向你自己上传/导入的文档；只读的"任务知识库问答产物"和
+> "文献检索问答"已收进开发者控制台，不再作为独立用户入口，避免三处问答互相重复。
 
 ## 核心实现
 

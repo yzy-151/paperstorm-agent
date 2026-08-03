@@ -345,10 +345,16 @@ class PaperStormTaskService:
         }
 
     def query_knowledge_base(self, task_id: str, question: str, top_k: int = 3):
+        from .paperstorm_router_llm import build_chat_llm_callable
+
         state = self._read_state(task_id)
         output_dir = Path(state["output_dir"])
         kb = PaperStormKnowledgeBase.from_run_dir(output_dir)
-        answer = kb.answer_question(question, top_k=top_k)
+        answer = kb.answer_question(
+            question,
+            top_k=top_k,
+            answer_generator=build_chat_llm_callable(),
+        )
         write_qa_artifact(output_dir, answer)
         return answer
 
@@ -480,6 +486,8 @@ class PaperStormTaskService:
         tenant_id: str = "local",
         user_id: str = "local-user",
     ):
+        from .paperstorm_router_llm import build_chat_llm_callable
+
         from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
 
         return EnterpriseKnowledgeBaseService(self.root_dir).ask(
@@ -488,6 +496,7 @@ class PaperStormTaskService:
             top_k=top_k,
             tenant_id=tenant_id,
             user_id=user_id,
+            answer_generator=build_chat_llm_callable(),
         )
 
     def enqueue_enterprise_kb_update(

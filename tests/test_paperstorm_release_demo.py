@@ -1,20 +1,31 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
+@mock.patch.dict(
+    os.environ,
+    {
+        "PAPERSTORM_RETRIEVAL_EMBEDDING": "hash",
+        "PAPERSTORM_CHAT_LLM": "0",
+        "PAPERSTORM_JUDGE_LLM": "0",
+    },
+)
 class PaperStormReleaseDemoTest(unittest.TestCase):
     def test_release_demo_builds_service_and_dashboard_artifacts(self):
         from knowledge_storm.paperstorm_release import build_release_demo
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            summary = build_release_demo(
-                service_root=root / "service",
-                dashboard_dir=root / "dashboard",
-                topic="pim 神经网络抑制",
-            )
+            with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+                summary = build_release_demo(
+                    service_root=root / "service",
+                    dashboard_dir=root / "dashboard",
+                    topic="pim 神经网络抑制",
+                )
 
             summary_path = Path(summary["summary_path"])
             dashboard_data = Path(summary["dashboard_data"])

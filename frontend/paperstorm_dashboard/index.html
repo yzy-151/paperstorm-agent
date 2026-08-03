@@ -173,11 +173,11 @@
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Enterprise Knowledge Base</p>
-            <h2>企业知识库 Agent</h2>
+            <h2>企业文档知识库</h2>
           </div>
-          <span class="soft-badge">upload path -> index -> RAG chat -> citations</span>
+          <span class="soft-badge">独立文档库：上传/导入 → 索引 → 问答 → 引用</span>
         </div>
-        <p class="panel-copy">创建知识库后输入问题，Agent 会在你的文档里检索并以引用形式回答；点击“刷新知识库”可以查看已建库列表。Manifest、检索明细等属于开发者控制台。</p>
+        <p class="panel-copy">这是独立于论文调研的文档知识库：上传本地文档或从 Zotero 一键导入，然后基于你的文档问答并给出引用；创建/查询走 v4.5 ACL。聊天模式里的知识库问答则面向当前调研任务，两者是不同入口。</p>
         <div class="chat-layout">
           <div class="chat-controls">
             <label>
@@ -382,7 +382,7 @@
         </div>
       </section>
 
-      <section class="panel wide" id="research-qa-panel">
+      <section class="panel wide developer-mode-panel" id="research-qa-panel">
         <div class="panel-heading">
           <div>
             <p class="section-kicker">Research QA Agent</p>
@@ -628,8 +628,9 @@
         <article id="article-content" class="article"></article>
       </section>
 
-      <section class="panel product-mode-panel" id="qa-panel">
-        <h2>知识库问答</h2>
+      <section class="panel developer-mode-panel" id="qa-panel">
+        <h2>任务知识库问答（只读产物）</h2>
+        <p class="panel-copy">看什么：当前调研任务的知识库问答产物（只读展示）。交互式问答请用聊天模式（面向当前任务）或企业文档知识库（面向你自己的文档）。</p>
         <div id="qa-answer" class="stack"></div>
       </section>
 

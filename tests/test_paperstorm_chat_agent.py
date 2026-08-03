@@ -6,6 +6,14 @@ from pathlib import Path
 from unittest import mock
 
 
+@mock.patch.dict(
+    os.environ,
+    {
+        "PAPERSTORM_RETRIEVAL_EMBEDDING": "hash",
+        "PAPERSTORM_CHAT_LLM": "0",
+        "PAPERSTORM_JUDGE_LLM": "0",
+    },
+)
 class PaperStormChatAgentTest(unittest.TestCase):
     def make_service(self):
         temp_dir = tempfile.TemporaryDirectory()
@@ -101,7 +109,8 @@ class PaperStormChatAgentTest(unittest.TestCase):
             task_id=stale_task["task_id"],
         )
 
-        reply = service.send_chat_message(session["chat_id"], "PIM 是什么？")
+        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+            reply = service.send_chat_message(session["chat_id"], "PIM 是什么？")
 
         self.assertTrue(reply["retrieval_triggered"])
         self.assertNotEqual(reply["used_task_id"], stale_task["task_id"])

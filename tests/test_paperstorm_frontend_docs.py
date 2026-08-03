@@ -154,6 +154,10 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("askResearchAgent", script)
         self.assertIn("renderResearchQA", script)
         self.assertIn("chat-transcript", styles)
+        self.assertIn(
+            'class="panel wide developer-mode-panel" id="research-qa-panel"',
+            index,
+        )
 
     def test_dashboard_exposes_dual_mode_research_and_chat_context(self):
         root = Path(__file__).resolve().parents[1]
@@ -261,6 +265,16 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn(".dev-module-grid", styles)
         self.assertIn(".dev-section-header", styles)
 
+    def test_qa_artifact_panel_is_developer_console_only(self):
+        root = Path(__file__).resolve().parents[1]
+        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'class="panel developer-mode-panel" id="qa-panel"',
+            index,
+        )
+
     def test_dashboard_exposes_enterprise_kb_v32_workflow(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
@@ -279,6 +293,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("/enterprise-kbs", script)
         self.assertIn("createEnterpriseKB", script)
         self.assertIn("askEnterpriseKB", script)
+        self.assertIn("企业文档知识库", index)
 
         self.assertIn("create-zotero-kb", index)
         self.assertIn("zotero-kb-terms", index)

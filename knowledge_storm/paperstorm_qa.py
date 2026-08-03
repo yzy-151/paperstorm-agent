@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from .paperstorm_memory import PaperStormMemoryStore
 
@@ -72,6 +72,7 @@ class PaperStormKnowledgeBase:
         question: str,
         memory_store: Optional[PaperStormMemoryStore] = None,
         top_k: int = 3,
+        answer_generator: Optional[Callable[[str], str]] = None,
     ):
         question = str(question or "").strip()
         if not question:
@@ -83,6 +84,15 @@ class PaperStormKnowledgeBase:
             else {}
         )
         answer = _compose_answer(question, evidence, memory_context)
+        if answer_generator is not None:
+            try:
+                generated = str(
+                    answer_generator(_kb_answer_prompt(question, evidence)) or ""
+                ).strip()
+                if generated:
+                    answer = generated
+            except Exception:
+                pass
         return {
             "question": question,
             "answer": answer,
@@ -165,6 +175,25 @@ def _citation_from_doc(index: int, doc: Dict):
         "chunk_id": doc.get("chunk_id") or doc.get("id") or "",
         "score": doc.get("score", 0),
     }
+
+
+def _kb_answer_prompt(question: str, evidence: List[Dict]) -> str:
+    lines = [
+        "你是论文/文档知识库问答助手。请用中文回答问题，并基于给出的证据组织答案；",
+        "引用证据时保留编号如 [1]、[2]。不要编造证据之外的内容；如果证据不足，直接说'现有资料不足以回答'。",
+        "问题：{0}".format(question),
+        "证据：",
+    ]
+    for index, doc in enumerate((evidence or [])[:6], start=1):
+        lines.append(
+            "[{0}] {1}：{2}".format(
+                index,
+                str(doc.get("title") or doc.get("id") or "")[:60],
+                str(doc.get("content") or "")[:260],
+            )
+        )
+    lines.append("回答：")
+    return "\n".join(lines)
 
 
 def _with_score(doc: Dict, score: int):

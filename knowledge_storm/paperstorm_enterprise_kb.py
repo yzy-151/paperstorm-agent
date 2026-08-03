@@ -3,9 +3,14 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
-from .paperstorm_qa import _citation_from_doc, _compose_answer, _rag_chunk_to_doc
+from .paperstorm_qa import (
+    _citation_from_doc,
+    _compose_answer,
+    _kb_answer_prompt,
+    _rag_chunk_to_doc,
+)
 from .paperstorm_rag import (
     ContextCompressionRetriever,
     PaperStormRAGIndex,
@@ -154,6 +159,7 @@ class EnterpriseKnowledgeBaseService:
         top_k: int = 4,
         tenant_id: str = "local",
         user_id: str = "local-user",
+        answer_generator: Optional[Callable[[str], str]] = None,
     ) -> Dict:
         question = str(question or "").strip()
         if not question:
@@ -188,6 +194,15 @@ class EnterpriseKnowledgeBaseService:
         )
         evidence = [_rag_chunk_to_doc(chunk) for chunk in retrieved.get("chunks") or []]
         answer = _compose_answer(question, evidence, memory_context={})
+        if answer_generator is not None:
+            try:
+                generated = str(
+                    answer_generator(_kb_answer_prompt(question, evidence)) or ""
+                ).strip()
+                if generated:
+                    answer = generated
+            except Exception:
+                pass
         result = {
             "kb_id": kb_id,
             "question": question,

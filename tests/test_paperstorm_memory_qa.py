@@ -101,6 +101,29 @@ class PaperStormMemoryQATest(unittest.TestCase):
         self.assertEqual(answer["citations"][0]["source_type"], "article")
         self.assertIn("chunk_id", answer["citations"][0])
 
+    def test_kb_answer_generator_produces_generated_answer(self):
+        from knowledge_storm.paperstorm_qa import PaperStormKnowledgeBase
+
+        run_dir = self.make_run_dir(
+            {
+                "storm_gen_article_polished.txt": (
+                    "PIM passive intermodulation suppression with neural networks."
+                ),
+                "raw_search_results.json": [],
+            }
+        )
+        kb = PaperStormKnowledgeBase.from_run_dir(run_dir)
+        generated = kb.answer_question(
+            "PIM 是什么？",
+            answer_generator=lambda _prompt: "PIM 指 passive intermodulation，可用神经网络抑制。[1]",
+        )
+        self.assertEqual(
+            generated["answer"],
+            "PIM 指 passive intermodulation，可用神经网络抑制。[1]",
+        )
+        fallback = kb.answer_question("PIM 是什么？")
+        self.assertTrue(fallback["answer"])
+
     def test_kb_qa_tool_exposes_schema_and_runs(self):
         from knowledge_storm.paperstorm_tools import KnowledgeBaseQATool
 

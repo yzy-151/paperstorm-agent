@@ -1,8 +1,10 @@
 import json
+import os
 import tempfile
 import unittest
 import warnings
 from pathlib import Path
+from unittest import mock
 
 
 class FlakyDeepResearchTool:
@@ -27,6 +29,14 @@ class FlakyDeepResearchTool:
         }
 
 
+@mock.patch.dict(
+    os.environ,
+    {
+        "PAPERSTORM_RETRIEVAL_EMBEDDING": "hash",
+        "PAPERSTORM_CHAT_LLM": "0",
+        "PAPERSTORM_JUDGE_LLM": "0",
+    },
+)
 class PaperStormLangGraphV44Test(unittest.TestCase):
     def make_runtime(self, root, **kwargs):
         from knowledge_storm.paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
@@ -103,6 +113,25 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             self.assertEqual(result["route"], "deep_research")
             self.assertTrue(result["answer"])
 
+    def test_meta_question_never_escalates_even_if_llm_emits_marker(self):
+        from knowledge_storm.paperstorm_langgraph_v44 import RETRIEVE_MARKER
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                chat_llm=lambda _prompt: RETRIEVE_MARKER,
+            )
+            result = runtime.invoke(
+                thread_id="thread-meta",
+                request_id="request-meta",
+                user_id="alice",
+                message="你说一下知识库问答那边的逻辑，具体实现",
+                run_mode="fake",
+            )
+            self.assertFalse(result["retrieval_triggered"])
+            self.assertNotIn("deep_research", result["executed_nodes"])
+            self.assertTrue(result["answer"])
+
     def test_evidence_judge_can_force_research_for_off_topic_kb(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             from knowledge_storm.paperstorm_service import PaperStormTaskService
@@ -150,15 +179,16 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
                 task_service=service,
                 evidence_judge=lambda _prompt: "可以回答",
             )
-            result = runtime.invoke(
-                thread_id="thread-judge-ok",
-                request_id="request-judge-ok",
-                user_id="alice",
-                message="PIM 是什么？",
-                topic="pim 神经网络抑制",
-                task_id=task["task_id"],
-                run_mode="fake",
-            )
+            with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+                result = runtime.invoke(
+                    thread_id="thread-judge-ok",
+                    request_id="request-judge-ok",
+                    user_id="alice",
+                    message="PIM 是什么？",
+                    topic="pim 神经网络抑制",
+                    task_id=task["task_id"],
+                    run_mode="fake",
+                )
             self.assertEqual((result["evidence_grade"] or {}).get("judge"), "llm")
             self.assertEqual(result["route"], "existing_knowledge")
             self.assertFalse(result["retrieval_triggered"])

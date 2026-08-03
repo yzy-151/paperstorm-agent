@@ -6,6 +6,14 @@ from pathlib import Path
 from unittest import mock
 
 
+@mock.patch.dict(
+    os.environ,
+    {
+        "PAPERSTORM_RETRIEVAL_EMBEDDING": "hash",
+        "PAPERSTORM_CHAT_LLM": "0",
+        "PAPERSTORM_JUDGE_LLM": "0",
+    },
+)
 class PaperStormServiceTest(unittest.TestCase):
     def make_service(self):
         temp_dir = tempfile.TemporaryDirectory()
@@ -84,7 +92,8 @@ class PaperStormServiceTest(unittest.TestCase):
         )
         service.run_task(task["task_id"])
 
-        answer = service.query_knowledge_base(task["task_id"], "PIM 是什么？")
+        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+            answer = service.query_knowledge_base(task["task_id"], "PIM 是什么？")
 
         self.assertTrue(answer["grounded"])
         self.assertTrue(answer["citations"])
@@ -101,7 +110,8 @@ class PaperStormServiceTest(unittest.TestCase):
             forbidden_keywords=["DRAM"],
         )
         service.run_task(task["task_id"])
-        service.query_knowledge_base(task["task_id"], "PIM 是什么？")
+        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+            service.query_knowledge_base(task["task_id"], "PIM 是什么？")
 
         bundle = service.get_dashboard_bundle(task["task_id"])
 

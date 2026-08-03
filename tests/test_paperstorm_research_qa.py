@@ -1,8 +1,18 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
+@mock.patch.dict(
+    os.environ,
+    {
+        "PAPERSTORM_RETRIEVAL_EMBEDDING": "hash",
+        "PAPERSTORM_CHAT_LLM": "0",
+        "PAPERSTORM_JUDGE_LLM": "0",
+    },
+)
 class PaperStormResearchQATest(unittest.TestCase):
     def make_service(self):
         temp_dir = tempfile.TemporaryDirectory()
