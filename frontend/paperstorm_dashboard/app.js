@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v4.5";
+const DASHBOARD_VERSION = "v5.0";
 let activeProductMode = "chat";
 
 async function loadDashboard() {

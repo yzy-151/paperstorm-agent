@@ -119,7 +119,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
   证据不足自动启动深度调研；说"请记住：…"保存跨会话记忆。
 - 会话栏可切换**运行模式**（fake 本地演示 / paperstorm 真实检索+LLM）与**检索器**
   （arxiv / local-pdf）。
-- 每条回复标注运行时与检索栈：`paperstorm-production-v4.5`、
+- 每条回复标注运行时与检索栈：`paperstorm-production-v5.0`、
   `langgraph-v4.4`、`storm_deep_research_tool` / `v41`。
 
 ### 2. 调研写文章模式
@@ -309,7 +309,7 @@ tests/                              # 191 项自动化测试
 docs/                               # 操作手册 / 面试材料 / 借鉴来源
 ```
 
-## 版本演进与历史（v0.1 → v4.5）
+## 版本演进与历史（v0.1 → v5.0）
 
 | 版本 | 主题 | 关键产物 |
 | --- | --- | --- |
@@ -321,6 +321,7 @@ docs/                               # 操作手册 / 面试材料 / 借鉴来源
 | v3.1 Enterprise Intent Router | 企业意图路由 | `PaperStormIntentRouter` |
 | v3.2 Enterprise Knowledge Base Agent | 企业知识库 | `EnterpriseKnowledgeBaseService` |
 | v4.0 → v4.5 | 评测基线、混合检索、可恢复 Context、可治理 Memory、LangGraph、生产治理 | 本文档主线 |
+| **v5.0 Cyclone（气旋）** | 生成优先聊天（LLM 回复）、LLM 证据裁判、主题锚点相关性判定、中文知识库答案、Zotero 一键建库、开发者控制台模块地图 | 当前版本 |
 
 更早的完整版本说明归档在
 [docs/archive/2026-08-04-legacy/README-v4.5-legacy.md](docs/archive/2026-08-04-legacy/README-v4.5-legacy.md)。

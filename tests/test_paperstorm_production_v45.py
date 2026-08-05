@@ -252,7 +252,7 @@ class PaperStormProductionV45Test(unittest.TestCase):
             )
             report = run_production_benchmark(Path(temp_dir) / "benchmark", request_count=30)
 
-            self.assertEqual(result["runtime"], "paperstorm-production-v4.5")
+            self.assertEqual(result["runtime"], "paperstorm-production-v5.0")
             self.assertTrue(replay["governance"]["idempotent_replay"])
             self.assertTrue(trace["spans"])
             for metric in ["latency_p50_ms", "latency_p95_ms", "latency_p99_ms", "qps", "error_rate", "degradation_rate"]:
@@ -313,13 +313,13 @@ class PaperStormProductionV45Test(unittest.TestCase):
             )
 
         self.assertEqual(invoked.status_code, 200)
-        self.assertEqual(result["runtime"], "paperstorm-production-v4.5")
+        self.assertEqual(result["runtime"], "paperstorm-production-v5.0")
         self.assertEqual(state.json()["values"]["request_id"], "api-v45-request")
         self.assertTrue(history.json()["checkpoints"])
         self.assertTrue(trace.json()["spans"])
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(status.json()["backend"], "sqlite-wal")
-        self.assertEqual(status.json()["version"], "v4.5")
+        self.assertEqual(status.json()["version"], "v5.0")
         self.assertIn("latency_p95_ms", benchmark.json()["metrics"])
 
 

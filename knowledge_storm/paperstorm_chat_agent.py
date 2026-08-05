@@ -64,7 +64,7 @@ class PaperStormChatAgent:
             "memory_context": {},
             "long_term_memory": {},
             "memory_write": {"status": "not_evaluated"},
-            "conversation_runtime": "paperstorm-production-v4.5",
+            "conversation_runtime": "paperstorm-production-v5.0",
             "graph_run": {},
             "created_at": _now(),
             "updated_at": _now(),
@@ -174,7 +174,7 @@ class PaperStormChatAgent:
         session["long_term_memory"] = long_term_memory
         session["memory_write"] = memory_write
         session["conversation_runtime"] = graph_run.get(
-            "runtime", "paperstorm-production-v4.5"
+            "runtime", "paperstorm-production-v5.0"
         )
         session["graph_run"] = graph_run
         session["updated_at"] = _now()

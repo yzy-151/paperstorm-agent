@@ -270,7 +270,7 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\start_paperstor
   --port 8002
 ```
 
-打开 `http://127.0.0.1:8002`，V4.5 聊天回复中的 `conversation_runtime` 应为 `paperstorm-production-v4.5`，同时 `graph_runtime` 仍为 `langgraph-v4.4`。发布前至少验证：普通聊天、显式记忆写入、跨 session 召回、fake 深度调研、Graph State/Checkpoint 刷新和 Runtime Benchmark。
+打开 `http://127.0.0.1:8002`，V5.0 聊天回复中的 `conversation_runtime` 应为 `paperstorm-production-v5.0`，同时 `graph_runtime` 仍为 `langgraph-v4.4`。发布前至少验证：普通聊天、显式记忆写入、跨 session 召回、fake 深度调研、Graph State/Checkpoint 刷新和 Runtime Benchmark。
 
 SQLite Checkpointer 仅用于本地单进程演示。V4.5 已在外层补充 SQLite WAL 事务幂等和持久任务，但没有把 LangGraph checkpoint 迁到生产数据库，也没有完成同步调用的强制异步取消；不要把它描述成多 worker 生产持久化方案。
 

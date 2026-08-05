@@ -502,7 +502,7 @@ class ProductionControlPlaneV45:
                     "SELECT COUNT(*) AS count FROM {0}".format(table)
                 ).fetchone()["count"]
         return {
-            "version": "v4.5",
+            "version": "v5.0",
             "backend": "sqlite-wal",
             "database_path": str(self.database_path),
             "counts": counts,
@@ -579,7 +579,7 @@ class ProductionControlPlaneV45:
 
 
 class PaperStormProductionRuntimeV45:
-    runtime_name = "paperstorm-production-v4.5"
+    runtime_name = "paperstorm-production-v5.0"
 
     def __init__(
         self,

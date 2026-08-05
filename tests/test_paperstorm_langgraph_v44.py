@@ -410,7 +410,7 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             latest = client.get("/evaluations/runtime-v44/latest")
 
         self.assertEqual(invoked.status_code, 200)
-        self.assertEqual(invoked.json()["runtime"], "paperstorm-production-v4.5")
+        self.assertEqual(invoked.json()["runtime"], "paperstorm-production-v5.0")
         self.assertEqual(invoked.json()["graph_runtime"], "langgraph-v4.4")
         self.assertEqual(state.json()["values"]["request_id"], "api-request")
         self.assertTrue(history.json()["checkpoints"])
@@ -426,7 +426,7 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             reply = service.send_chat_message(session["chat_id"], "你好")
 
             self.assertEqual(
-                reply["conversation_runtime"], "paperstorm-production-v4.5"
+                reply["conversation_runtime"], "paperstorm-production-v5.0"
             )
             self.assertEqual(reply["graph_run"]["graph_runtime"], "langgraph-v4.4")
             self.assertEqual(reply["graph_run"]["status"], "succeeded")
