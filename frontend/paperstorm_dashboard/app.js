@@ -1,5 +1,5 @@
 let sseSource = null;
-const DASHBOARD_VERSION = "v5.0";
+const DASHBOARD_VERSION = "v5.1";
 let activeProductMode = "chat";
 
 async function loadDashboard() {
@@ -688,7 +688,7 @@ async function createEnterpriseKB() {
     return;
   }
   try {
-    setStatus("building enterprise kb", "loading");
+    setStatus("building local kb", "loading");
     setButtonBusy("create-enterprise-kb", true, "建库中");
     const kb = await fetchJson("/enterprise-kbs", {
       method: "POST",

@@ -293,7 +293,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         self.assertIn("/enterprise-kbs", script)
         self.assertIn("createEnterpriseKB", script)
         self.assertIn("askEnterpriseKB", script)
-        self.assertIn("企业文档知识库", index)
+        self.assertIn("本地文档知识库", index)
 
         self.assertIn("create-zotero-kb", index)
         self.assertIn("zotero-kb-terms", index)

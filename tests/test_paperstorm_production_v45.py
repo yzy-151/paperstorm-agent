@@ -319,7 +319,7 @@ class PaperStormProductionV45Test(unittest.TestCase):
         self.assertTrue(trace.json()["spans"])
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(status.json()["backend"], "sqlite-wal")
-        self.assertEqual(status.json()["version"], "v5.0")
+        self.assertEqual(status.json()["version"], "v5.1")
         self.assertIn("latency_p95_ms", benchmark.json()["metrics"])
 
 

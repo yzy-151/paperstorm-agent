@@ -907,7 +907,7 @@ def _casual_answer(message: str, memory_recall: Dict):
         )
     if "能做什么" in text or "可以做什么" in text or "介绍一下" in text:
         return (
-            "我是 PaperStorm Research Agent，可以陪你闲聊、回答论文调研与技术问题，"
+            "我是 PaperStorm Research Agent，可以陪你聊天、回答论文调研与技术问题，"
             "也能基于 arXiv/本地 PDF 做深度调研、生成带引用的中文综述，并管理跨会话记忆。"
             "你可以直接问‘PIM 是什么？’试试深度调研，或者问‘你能做什么？’了解能力边界。"
         )
@@ -921,12 +921,12 @@ def _casual_answer(message: str, memory_recall: Dict):
         )
     if any(token in text for token in ["人话", "听不懂", "说人话", "换个说法", "风格"]):
         return (
-            "抱歉刚才回答太像说明书了。简单说：我能帮你做三件事——闲聊、用已有资料回答"
+            "抱歉刚才回答太像说明书了。简单说：我能帮你做三件事——聊天、用已有资料回答"
             "技术问题、需要时自动去检索论文再回答。你想聊哪个方向，我换个更自然的说法陪你聊。"
         )
     if _is_greeting(message):
         return _greeting_reply(message)
-    return "你好，我是 PaperStorm Research Agent。你可以闲聊、查询长期记忆、问已有知识库，或启动论文调研与深度研究。"
+    return "你好，我是 PaperStorm Research Agent。你可以聊天、查询长期记忆、问已有知识库，或启动论文调研与深度研究。"
 
 
 def _casual_chat_prompt(state: ConversationStateV44) -> str:
@@ -948,7 +948,7 @@ def _casual_chat_prompt(state: ConversationStateV44) -> str:
         content = str(item.get("content") or "")[:200]
         history_lines.append("{0}: {1}".format(label, content))
     return (
-        "你是 PaperStorm Research Agent 的聊天回复生成器。用户可能在闲聊、问系统能力，"
+        "你是 PaperStorm Research Agent 的聊天回复生成器。用户可能在聊天、问系统能力，"
         "或聊面试/求职话题。请用自然、简洁、有温度的中文回复（3-5 句），不要提内部实现"
         "细节；用户问到算法/实现细节时，按【系统事实】如实简要回答，不要编造，"
         "也不要主动展开未问到的内容。不要编造不存在的功能。"

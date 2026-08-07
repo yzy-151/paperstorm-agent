@@ -104,7 +104,7 @@ class PaperStormEnterpriseV32Test(unittest.TestCase):
             )
             answer = service.ask_enterprise_knowledge_base(
                 kb["kb_id"],
-                "企业知识库 agent 使用什么？",
+                "本地知识库 agent 使用什么？",
             )
 
             self.assertIn("kb_id", kb)

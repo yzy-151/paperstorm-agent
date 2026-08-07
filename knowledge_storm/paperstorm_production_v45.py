@@ -502,7 +502,7 @@ class ProductionControlPlaneV45:
                     "SELECT COUNT(*) AS count FROM {0}".format(table)
                 ).fetchone()["count"]
         return {
-            "version": "v5.0",
+            "version": "v5.1",
             "backend": "sqlite-wal",
             "database_path": str(self.database_path),
             "counts": counts,

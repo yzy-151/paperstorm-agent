@@ -372,7 +372,7 @@ def _expand_query(question: str):
     additions = []
     lowered = text.lower()
     bilingual_terms = {
-        "企业知识库": "enterprise knowledge base internal documents",
+        "本地知识库": "local knowledge base internal documents",
         "知识库": "knowledge base documents",
         "使用": "use uses using",
         "agent": "agent agents",

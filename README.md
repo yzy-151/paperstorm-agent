@@ -28,7 +28,7 @@ Agent 平台原型：
 ```mermaid
 flowchart LR
   A[用户输入] --> B[意图路由<br/>规则兜底 + LLM 增强]
-  B -->|闲聊/系统| C[casual_chat]
+  B -->|聊天/系统| C[casual_chat]
   B -->|知识问答| D[记忆召回]
   B -->|论文调研| E[知识检索<br/>BM25+Dense+RRF]
   D --> F[证据评分]
@@ -104,7 +104,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
 | `PAPERSTORM_RETRIEVAL_MODE` | `hybrid`（默认）/ `bm25` / `dense` / `hybrid_rerank` |
 | `PAPERSTORM_RETRIEVAL_INDEX_CACHE_SIZE` | 运行时检索索引 LRU 容量（默认 16） |
 | `PAPERSTORM_ROUTER_CACHE_SIZE` | 意图路由 LLM 响应 LRU 容量（默认 512） |
-| `PAPERSTORM_CHAT_LLM` | 闲聊回复 LLM：`1` 强制开 / `0` 关闭 / 空=有 key 自动开 |
+| `PAPERSTORM_CHAT_LLM` | 聊天回复 LLM：`1` 强制开 / `0` 关闭 / 空=有 key 自动开 |
 | `PAPERSTORM_JUDGE_LLM` | 证据裁判 LLM：`1` 强制开 / `0` 关闭 / 空=有 key 自动开 |
 | `PAPERSTORM_ZOTERO_ROOT` | Zotero 数据目录，用于真实论文评测 |
 | `PAPERSTORM_MODEL_CACHE` | sentence-transformers 模型缓存目录 |
@@ -115,12 +115,14 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
 
 ![Chat Mode](docs/screenshots/dashboard-chat.png)
 
-- 输入即问答：普通闲聊/系统问题不会触发检索；技术问题优先复用已有调研任务，
+- 输入即问答：普通聊天/系统问题不会触发检索；技术问题优先复用已有调研任务，
   证据不足自动启动深度调研；说"请记住：…"保存跨会话记忆。
 - 会话栏可切换**运行模式**（fake 本地演示 / paperstorm 真实检索+LLM）与**检索器**
   （arxiv / local-pdf）。
 - 每条回复标注运行时与检索栈：`paperstorm-production-v5.0`、
   `langgraph-v4.4`、`storm_deep_research_tool` / `v41`。
+
+![Chat Mode（补充截图）](docs/screenshots/dashboard-chat2.png)
 
 ### 2. 调研写文章模式
 
@@ -128,6 +130,10 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
 
 - 提交调研主题 → 运行任务 → 轮询状态 → 查看文章 / 评估分数 / trace。
 - fake 模式快速生成示例结果；paperstorm 模式调用真实 arXiv/PDF 检索与 LLM。
+
+![Research Mode（补充截图）](docs/screenshots/dashboard-research2.png)
+
+![Research Mode（补充截图）](docs/screenshots/dashboard-research3.png)
 
 ### 3. 开发者控制台与 Benchmark
 
@@ -138,7 +144,11 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
   Production Benchmark、**检索前后对比**（legacy vs V4.1）。
 - 聊天调试：上下文 Meter、压缩事件、记忆召回、图状态与 Checkpoint 历史、Trace。
 
-### 4. 企业文档知识库
+![Developer Console（补充截图）](docs/screenshots/dashboard-developer-bench2.png)
+
+![Developer Console（补充截图）](docs/screenshots/dashboard-developer-bench3.png)
+
+### 4. 本地文档知识库
 
 ![Enterprise KB](docs/screenshots/dashboard-enterprise-kb.png)
 
@@ -150,7 +160,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
   tag 缓存失效。
 
 > 入口分工：聊天问答是**唯一的交互式问答入口**（面向当前调研任务的知识库）；
-> 企业文档知识库面向你自己上传/导入的文档；只读的"任务知识库问答产物"和
+> 本地文档知识库面向你自己上传/导入的文档；只读的"任务知识库问答产物"和
 > "文献检索问答"已收进开发者控制台，不再作为独立用户入口，避免三处问答互相重复。
 
 ## 核心实现
@@ -187,10 +197,10 @@ span trace、`storm_deep_research` 隔离工具。
 ### 意图路由：规则兜底 + LLM 增强
 
 `run_mode=paperstorm` 默认启用 LLM 路由（DeepSeek），`fake` 模式默认纯规则；
-LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突（闲聊/系统问题不允许被降级为
+LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突（聊天/系统问题不允许被降级为
 检索或 clarify，反之亦然），解析失败/超时自动回退规则。
 
-**回复策略是"生成优先、答不了才检索"**：闲聊类消息默认直接由 LLM 生成自然回复
+**回复策略是"生成优先、答不了才检索"**：聊天类消息默认直接由 LLM 生成自然回复
 （配置了 API key 即自动启用，`PAPERSTORM_CHAT_LLM=0` 关闭，离线回退到本地模板）；
 只有当 LLM 明确表示需要检索（输出 `__NEED_RESEARCH__` 标记）或消息明显是调研请求时，
 才升级到知识检索 / 深度调研，避免"聊什么都是固定话术"。
@@ -306,7 +316,7 @@ knowledge_storm/
 examples/storm_examples/            # FastAPI 服务 / MCP server / 评测 CLI
 frontend/paperstorm_dashboard/      # 网页端 Dashboard
 tests/                              # 191 项自动化测试
-docs/                               # 操作手册 / 面试材料 / 借鉴来源
+docs/                               # 操作手册 / 简历材料 / 借鉴来源
 ```
 
 ## 版本演进与历史（v0.1 → v5.0）
@@ -318,27 +328,14 @@ docs/                               # 操作手册 / 面试材料 / 借鉴来源
 | v1.1 Demo Runbook | 演示链路打磨 | `start_paperstorm_service.py`（submit -> queued -> running -> succeeded） |
 | v2.0 Research QA Agent | 文献检索问答 | `/research-agent/ask`、`research_qa_benchmark_report` |
 | v3.0 RAG Memory Benchmark | 检索/记忆/压缩基准 | `PaperStormRAGIndex`、`ContextCompressionRetriever`、`PaperStormLongTermMemoryIndex` |
-| v3.1 Enterprise Intent Router | 企业意图路由 | `PaperStormIntentRouter` |
-| v3.2 Enterprise Knowledge Base Agent | 企业知识库 | `EnterpriseKnowledgeBaseService` |
+| v3.1 Enterprise Intent Router | 本地意图路由 | `PaperStormIntentRouter` |
+| v3.2 Enterprise Knowledge Base Agent | 本地知识库 | `EnterpriseKnowledgeBaseService` |
 | v4.0 → v4.5 | 评测基线、混合检索、可恢复 Context、可治理 Memory、LangGraph、生产治理 | 本文档主线 |
 | **v5.0 Cyclone（气旋）** | 生成优先聊天（LLM 回复）、LLM 证据裁判、主题锚点相关性判定、中文知识库答案、Zotero 一键建库、开发者控制台模块地图 | 当前版本 |
+| **v5.1** | 本地知识库措辞统一、聊天/问答措辞统一、README 重构与新增界面截图 | 当前版本 |
 
 更早的完整版本说明归档在
 [docs/archive/2026-08-04-legacy/README-v4.5-legacy.md](docs/archive/2026-08-04-legacy/README-v4.5-legacy.md)。
-
-## 面试高频问题
-
-- **为什么先手写 Runtime，再用 LangGraph？** 先理解 Tool/Hook/Session/Trace/Retry
-  的内部机制，再在成熟框架上做工程取舍，避免重复造状态图。
-- **Memory 和 Context 有什么区别？** Context 是当前线程的 token 工作集（预算/压缩/
-  恢复）；Memory 是跨会话稳定事实（写入策略/namespace/有效期/冲突/删除）；文档 RAG
-  是可引用证据。三者生命周期与可信度不同。
-- **这是生产系统吗？** 准确表述是"本地生产治理基线"：SQLite、显式 tenant/user 和
-  本地 worker 证明 ACL/幂等/缓存失效/任务恢复/span 协议；真实企业部署仍需
-  OAuth/OIDC、PostgreSQL/Redis、分布式队列与真实流量压测。
-- **Benchmark 数字怎么看？** 契约类指标（幂等/恢复/ACL/span）稳定；延迟是本地
-  参考值，随机器负载变化；检索提升按数据集区分（中文/释义型查询提升显著，
-  词面匹配型查询两者接近）。
 
 ## License
 

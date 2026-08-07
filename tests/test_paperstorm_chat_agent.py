@@ -174,7 +174,7 @@ class PaperStormChatAgentTest(unittest.TestCase):
         self.assertIn("面试", content)
         self.assertNotEqual(
             content,
-            "你好，我是 PaperStorm Research Agent。你可以闲聊、查询长期记忆、问已有知识库，或启动论文调研与深度研究。",
+            "你好，我是 PaperStorm Research Agent。你可以聊天、查询长期记忆、问已有知识库，或启动论文调研与深度研究。",
         )
 
     def test_casual_after_research_does_not_reuse_stale_retrieval_stack(self):
