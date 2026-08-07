@@ -27,3 +27,10 @@ local_zotero_root.txt
 *results/
 .venv/
 node_modules
+
+# 内部文档：仅保留在本地，不上传 GitHub
+docs/VERSION_PLAN.md
+docs/RESUME_INTERVIEW_PLAN.md
+docs/OPERATION_GUIDE.md
+docs/archive/
+docs/dual-agent-projects-resume.md

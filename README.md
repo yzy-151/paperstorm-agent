@@ -334,8 +334,6 @@ docs/                               # 操作手册 / 简历材料 / 借鉴来源
 | **v5.0 Cyclone（气旋）** | 生成优先聊天（LLM 回复）、LLM 证据裁判、主题锚点相关性判定、中文知识库答案、Zotero 一键建库、开发者控制台模块地图 | 当前版本 |
 | **v5.1** | 本地知识库措辞统一、聊天/问答措辞统一、README 重构与新增界面截图 | 当前版本 |
 
-更早的完整版本说明归档在
-[docs/archive/2026-08-04-legacy/README-v4.5-legacy.md](docs/archive/2026-08-04-legacy/README-v4.5-legacy.md)。
 
 ## License
 
