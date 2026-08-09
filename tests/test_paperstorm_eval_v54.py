@@ -338,5 +338,62 @@ class ContextEvaluationV54Test(unittest.TestCase):
         self.assertIn("不能证明回答质量提升", " ".join(report["limitations"]))
 
 
+class EvaluationApiV54Test(unittest.TestCase):
+    def test_api_imports_dataset_saves_review_and_runs_context_pilot(self):
+        from fastapi.testclient import TestClient
+
+        from examples.storm_examples.paperstorm_service_api import create_app
+
+        cases = [_case(1, split="dev"), _case(2, split="test")]
+        dataset = _dataset(cases)
+        dataset["corpus"] = [
+            {
+                "chunk_id": "doc-1-c1",
+                "document_id": "doc-1",
+                "title": "Paper 1",
+                "content": "passive intermodulation neural cancellation",
+                "retrieval_content": "passive intermodulation neural cancellation",
+                "metadata": {"page_number": 1},
+            },
+            {
+                "chunk_id": "doc-2-c1",
+                "document_id": "doc-2",
+                "title": "Paper 2",
+                "content": "mimo channel estimation",
+                "retrieval_content": "mimo channel estimation",
+                "metadata": {"page_number": 1},
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_path = root / "candidate.json"
+            dataset_path.write_text(
+                json.dumps(dataset, ensure_ascii=False), encoding="utf-8"
+            )
+            client = TestClient(create_app(service_root=root / "service"))
+
+            empty = client.get("/evaluations/v54/status")
+            imported = client.post(
+                "/evaluations/v54/dataset", json={"dataset_path": str(dataset_path)}
+            )
+            annotations = client.get("/evaluations/v54/annotations")
+            saved = client.put(
+                "/evaluations/v54/annotations/case-2", json=_valid_review("case-2", "doc-2")
+            )
+            context = client.post("/evaluations/v54/context")
+            latest = client.get("/evaluations/v54/latest")
+
+        self.assertEqual(empty.status_code, 200)
+        self.assertFalse(empty.json()["configured"])
+        self.assertEqual(imported.status_code, 200)
+        self.assertEqual(imported.json()["candidate_count"], 2)
+        self.assertEqual(len(annotations.json()["cases"]), 2)
+        self.assertEqual(saved.json()["review_status"], "reviewed")
+        self.assertEqual(context.status_code, 200)
+        self.assertEqual(context.json()["evidence_type"], "deterministic_real_paper_probe")
+        self.assertEqual(latest.status_code, 200)
+        self.assertNotIn(str(dataset_path), json.dumps(latest.json(), ensure_ascii=False))
+
+
 if __name__ == "__main__":
     unittest.main()

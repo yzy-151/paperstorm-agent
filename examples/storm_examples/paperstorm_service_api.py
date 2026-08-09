@@ -31,7 +31,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="5.1")
+    app = FastAPI(title="PaperStorm Agent Service", version="5.4")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -222,6 +222,23 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         embedding: str = "hash"
         zotero_root: Optional[str] = None
 
+    class EvaluationDatasetV54Request(BaseModel):
+        dataset_path: str
+
+    class EvaluationReviewV54Request(BaseModel):
+        query_validity: str
+        edited_query: str = ""
+        relevant_document_ids: list[str] = []
+        evidence_sufficiency: str
+        reviewer_notes: str = ""
+
+    class EvaluationRetrievalV54Request(BaseModel):
+        embedding: str = "hash"
+        top_k: int = Field(default=5, ge=1, le=20)
+        candidate_k: int = Field(default=20, ge=5, le=200)
+        configurations: list[str] = ["bm25", "dense", "hybrid"]
+        enable_reranker: bool = False
+
     @app.get("/")
     def get_dashboard_home():
         index_path = dashboard_dir / "index.html"
@@ -404,6 +421,34 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.get("/evaluations/multi-task/latest")
     def get_multi_task_benchmark():
         return service.get_multi_task_benchmark()
+
+    @app.post("/evaluations/v54/dataset")
+    def import_evaluation_v54_dataset(request: EvaluationDatasetV54Request):
+        return service.import_evaluation_v54_dataset(request.dataset_path)
+
+    @app.get("/evaluations/v54/status")
+    def get_evaluation_v54_status():
+        return service.get_evaluation_v54_status()
+
+    @app.get("/evaluations/v54/annotations")
+    def list_evaluation_v54_annotations(offset: int = 0, limit: int = 50):
+        return service.list_evaluation_v54_annotations(offset=offset, limit=limit)
+
+    @app.put("/evaluations/v54/annotations/{case_id}")
+    def save_evaluation_v54_review(case_id: str, request: EvaluationReviewV54Request):
+        return service.save_evaluation_v54_review(case_id, _request_payload(request))
+
+    @app.post("/evaluations/v54/retrieval")
+    def run_evaluation_v54_retrieval(request: EvaluationRetrievalV54Request):
+        return service.run_evaluation_v54_retrieval(**_request_payload(request))
+
+    @app.post("/evaluations/v54/context")
+    def run_evaluation_v54_context():
+        return service.run_evaluation_v54_context()
+
+    @app.get("/evaluations/v54/latest")
+    def get_evaluation_v54_latest():
+        return service.get_evaluation_v54_latest()
 
     @app.post("/research-agent/ask")
     def ask_research_agent(request: ResearchAgentAskRequest):

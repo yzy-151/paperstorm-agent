@@ -481,6 +481,34 @@ def _retrieval_limitations(trust_level, test_case_count):
     return limitations
 
 
+def sanitize_v54_report(report: Dict) -> Dict:
+    """移除不应进入网页汇总或版本库的私有字段。"""
+
+    blocked = {
+        "dataset_path",
+        "zotero_root",
+        "pdf_path",
+        "path",
+        "excerpt",
+        "evidence",
+        "reviewer_notes",
+        "per_case",
+    }
+
+    def clean(value):
+        if isinstance(value, dict):
+            return {
+                str(key): clean(item)
+                for key, item in value.items()
+                if str(key).lower() not in blocked
+            }
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        return value
+
+    return clean(deepcopy(report or {}))
+
+
 def validate_review(review: Dict) -> Dict:
     """校验并规范化一条人工审核记录。"""
 

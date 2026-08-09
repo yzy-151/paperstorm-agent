@@ -784,6 +784,172 @@ class PaperStormTaskService:
         root = self.root_dir / "evaluations" / "retrieval_runtime_latest"
         return _read_json(root / "retrieval_runtime_benchmark.json", {})
 
+    def import_evaluation_v54_dataset(self, dataset_path: str):
+        from .paperstorm_eval_v54 import AnnotationStore
+
+        source = Path(dataset_path)
+        if not source.exists():
+            raise ValueError("找不到 v5.4 候选数据集：{0}".format(source))
+        dataset = json.loads(source.read_text(encoding="utf-8"))
+        if not dataset.get("cases") or not dataset.get("corpus"):
+            raise ValueError("v5.4 数据集必须同时包含 cases 和 corpus")
+        root = self._evaluation_v54_root()
+        target = root / "candidate_dataset.json"
+        target.write_text(
+            json.dumps(dataset, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        progress = AnnotationStore(root, dataset).progress()
+        return dict(progress, configured=True)
+
+    def get_evaluation_v54_status(self):
+        from .paperstorm_eval_v54 import AnnotationStore
+
+        dataset = self._evaluation_v54_dataset(required=False)
+        if not dataset:
+            return {
+                "configured": False,
+                "trust_level": "candidate",
+                "candidate_count": 0,
+                "reviewed_count": 0,
+                "valid_reviewed_test_count": 0,
+                "frozen_test_allowed": False,
+                "message": "尚未导入 v5.4 候选数据集。",
+            }
+        return dict(AnnotationStore(self._evaluation_v54_root(), dataset).progress(), configured=True)
+
+    def list_evaluation_v54_annotations(self, offset: int = 0, limit: int = 50):
+        from .paperstorm_eval_v54 import AnnotationStore
+
+        dataset = self._evaluation_v54_dataset()
+        store = AnnotationStore(self._evaluation_v54_root(), dataset)
+        cases = store.list_cases()
+        offset = max(0, int(offset))
+        limit = max(1, min(200, int(limit)))
+        return {
+            "cases": cases[offset : offset + limit],
+            "offset": offset,
+            "limit": limit,
+            "total": len(cases),
+            "progress": store.progress(),
+        }
+
+    def save_evaluation_v54_review(self, case_id: str, review: Dict):
+        from .paperstorm_eval_v54 import AnnotationStore
+
+        dataset = self._evaluation_v54_dataset()
+        payload = dict(review or {}, case_id=case_id)
+        return AnnotationStore(self._evaluation_v54_root(), dataset).save_review(payload)
+
+    def run_evaluation_v54_context(self):
+        from .paperstorm_eval_v54 import AnnotationStore, evaluate_context_scenarios
+
+        dataset = self._evaluation_v54_dataset()
+        store = AnnotationStore(self._evaluation_v54_root(), dataset)
+        reviewed = store.export_reviewed_dataset()["cases"]
+        cases = reviewed or store.list_cases()[: min(20, len(dataset.get("cases") or []))]
+        report = evaluate_context_scenarios(cases)
+        report["trust"] = store.progress()
+        self._write_evaluation_v54_report("context", report)
+        return report
+
+    def run_evaluation_v54_retrieval(
+        self,
+        embedding: str = "hash",
+        top_k: int = 5,
+        configurations: Optional[List[str]] = None,
+        candidate_k: int = 20,
+        enable_reranker: bool = False,
+    ):
+        from .paperstorm_eval_v54 import (
+            AnnotationStore,
+            ranked_document_ids,
+            run_retrieval_benchmark,
+        )
+        from .paperstorm_retrieval_runtime import _dense_provider
+        from .paperstorm_retrieval_v41 import CrossEncoderReranker, HybridPaperIndex
+
+        dataset = self._evaluation_v54_dataset()
+        store = AnnotationStore(self._evaluation_v54_root(), dataset)
+        evaluated_dataset = dict(dataset, cases=store.list_cases())
+        provider = _dense_provider(embedding)
+        index = HybridPaperIndex(dataset.get("corpus") or [], provider)
+        requested = list(configurations or ["bm25", "dense", "hybrid"])
+        skipped = {}
+        reranker = None
+        if enable_reranker and "hybrid_rerank" not in requested:
+            requested.append("hybrid_rerank")
+        if "hybrid_rerank" in requested:
+            try:
+                reranker = CrossEncoderReranker()
+            except Exception as error:
+                requested.remove("hybrid_rerank")
+                skipped["hybrid_rerank"] = str(error)
+        if not requested:
+            raise ValueError("没有可运行的检索配置")
+
+        def search(case, mode, retrieve_k):
+            started = time.perf_counter()
+            chunks = index.search(
+                case.get("query") or "",
+                mode=mode,
+                top_k=retrieve_k,
+                candidate_k=max(int(candidate_k), retrieve_k),
+                reranker=reranker if mode == "hybrid_rerank" else None,
+            )
+            return {
+                "ranked_document_ids": ranked_document_ids(chunks),
+                "latency_ms": (time.perf_counter() - started) * 1000.0,
+            }
+
+        progress = store.progress()
+        report = run_retrieval_benchmark(
+            evaluated_dataset,
+            search_fn=search,
+            configurations=requested,
+            top_k=top_k,
+            trust_level=progress["trust_level"],
+        )
+        report["models"] = {
+            "embedding": str(getattr(provider, "name", embedding)),
+            "reranker": str(getattr(reranker, "model_name", "")) if reranker else None,
+        }
+        report["skipped_configurations"] = skipped
+        report["trust"] = progress
+        self._write_evaluation_v54_report("retrieval", report)
+        return report
+
+    def get_evaluation_v54_latest(self):
+        from .paperstorm_eval_v54 import sanitize_v54_report
+
+        root = self._evaluation_v54_root()
+        return sanitize_v54_report(
+            {
+                "project": "PaperStorm v5.4 Benchmark Console",
+                "status": self.get_evaluation_v54_status(),
+                "retrieval": _read_json(root / "retrieval_report.json", {}),
+                "context": _read_json(root / "context_report.json", {}),
+            }
+        )
+
+    def _evaluation_v54_root(self):
+        root = self.root_dir / "evaluations" / "v54"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _evaluation_v54_dataset(self, required: bool = True):
+        dataset = _read_json(
+            self._evaluation_v54_root() / "candidate_dataset.json", {}
+        )
+        if required and not dataset:
+            raise ValueError("尚未导入 v5.4 候选数据集")
+        return dataset
+
+    def _write_evaluation_v54_report(self, name: str, report: Dict):
+        path = self._evaluation_v54_root() / "{0}_report.json".format(name)
+        path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
     def _langgraph_runtime_v44(self):
         from .paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
 
