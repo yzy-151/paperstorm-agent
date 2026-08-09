@@ -1,0 +1,48 @@
+{
+  "project": "PaperStorm Real-Paper Retrieval Evaluation v5.2",
+  "protocol": "document_holdout_dev_selection_frozen_test",
+  "code_commit": "121f4d60b39140d508f9413785582804067d7045",
+  "corpus": {
+    "documents": 40,
+    "evaluated_documents": 23,
+    "chunks": 868,
+    "sha256": "e3401799ef05e0665cc3b00f0ffef84695289147df0aea5027d82e4a9a494983"
+  },
+  "dataset": {
+    "annotation_status": "auto_candidate",
+    "human_review_complete": false,
+    "query_type": "cross_lingual_semantic",
+    "total_cases": 46,
+    "dev_cases": 34,
+    "test_cases": 12,
+    "sha256": "d1563d79f43eb51323b32dfedbd12fe06d1e79eb5f5734282c5363850a58d88e"
+  },
+  "models": {
+    "embedding": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "reranker": null
+  },
+  "selection": {
+    "split": "dev",
+    "selected_config": "dense",
+    "bm25_recall_at_5": 0.058824,
+    "dense_recall_at_5": 0.352941,
+    "hybrid_recall_at_5": 0.352941
+  },
+  "frozen_test": {
+    "top_k": 5,
+    "bm25_recall_at_5": 0.0,
+    "dense_recall_at_5": 0.416667,
+    "dense_mrr": 0.298611,
+    "dense_ndcg_at_5": 0.246299,
+    "dense_recall_95pct_bootstrap_ci": [0.166667, 0.666667],
+    "bootstrap_samples": 2000,
+    "bm25_p95_latency_ms": 225.9849,
+    "dense_p95_latency_ms": 226.9993
+  },
+  "limitations": [
+    "Small frozen test split (n=12) produces a wide confidence interval.",
+    "Queries are auditable automatic candidates, not expert-reviewed QA labels.",
+    "Latency is a single-machine CPU reference, not an online SLA.",
+    "Cross-Encoder reranking was excluded after model initialization failed."
+  ]
+}
