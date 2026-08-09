@@ -1,163 +1,171 @@
-# PaperStorm v5.4 Real RAG and Context Evaluation Design
+# PaperStorm v5.4 真实 RAG 与上下文工程评测设计
 
-## 1. Goal
+## 1. 建设目标
 
-Build an interview-defensible evaluation system over real Zotero papers. The release must distinguish automatic annotation candidates from human-reviewed labels, evaluate retrieval and reranking without test leakage, measure context compression against realistic research conversations, and explain every metric in the developer dashboard.
+基于真实 Zotero 论文构建一套能够在面试中经得起追问的评测系统。新版本必须严格区分自动生成的标注候选与人工审核标签；在不泄漏测试集的前提下评估召回与重排；使用贴近论文调研任务的长对话评估上下文压缩；并在开发者控制台中清楚解释每项指标。
 
-The release version is `5.4.0`. GitHub publishing is outside this task.
+本次发布版本为 `5.4.0`，本任务不包含推送 GitHub。
 
-## 2. Current Baseline and Problems
+## 2. 当前基线与问题
 
-PaperStorm v5.2 introduced document-disjoint dev/test splitting, corpus and dataset hashes, bootstrap confidence intervals, and a real cross-lingual Zotero pilot. Its frozen test has 12 automatic candidate queries. Dense retrieval reaches Recall@5 `0.4167`, MRR `0.2986`, and nDCG@5 `0.2463`, with Recall@5 95% CI `[0.1667, 0.6667]`.
+PaperStorm v5.2 已实现按论文隔离开发集与测试集、语料和数据集哈希、Bootstrap 置信区间，以及基于真实 Zotero 论文的跨语言小规模实验。当前冻结测试集只有 12 条自动生成的问题候选。Dense 检索的 Recall@5 为 `0.4167`、MRR 为 `0.2986`、nDCG@5 为 `0.2463`，Recall@5 的 95% 置信区间为 `[0.1667, 0.6667]`。
 
-These results demonstrate evaluation discipline but do not establish mature RAG quality:
+这些结果能够证明项目具备基本的评测规范，但还不能证明 RAG 系统已经成熟：
 
-- all 46 queries still require human review;
-- the frozen split is too small for a narrow confidence interval;
-- the release result has no active reranker;
-- the earlier v4.1 weak-label Cross-Encoder experiment degraded nDCG and added seconds of latency;
-- the v4.2 context benchmark is one deterministic constructed conversation, not a real-paper answer-retention study;
-- the dashboard exposes several raw reports without a unified trust status or plain-language metric definitions.
+- 46 条问题候选均未完成人工审核；
+- 冻结测试集过小，置信区间很宽；
+- v5.2 正式实验没有启用重排模型；
+- v4.1 的弱标注实验中，Cross-Encoder 降低了 nDCG，并引入数秒级延迟；
+- v4.2 上下文评测只包含一个确定性构造场景，不能证明真实论文问答中的信息保持能力；
+- 当前网页展示了多份原始报告，但没有统一说明数据可信状态、指标定义和适用边界。
 
-## 3. Scope
+## 3. 工作范围
 
-### 3.1 Included
+### 3.1 本版本包含
 
-- A versioned annotation schema and browser annotation workbench.
-- Import, incremental save, validation, and export for human review records.
-- Dev-only retrieval configuration selection and a frozen-test evaluation gate.
-- BM25, multilingual dense retrieval, RRF hybrid retrieval, and optional multilingual Cross-Encoder reranking.
-- Retrieval metrics with denominators, confidence intervals, latency, deltas, and failure taxonomy.
-- A real-paper context-compression benchmark with full-history and fixed-window baselines.
-- A benchmark API and an understandable developer console.
-- Documentation that separates measured facts, pilot results, contract tests, and future targets.
+- 版本化的标注数据结构和浏览器标注工作台；
+- 人工审核记录的导入、增量保存、校验与导出；
+- 只允许在开发集上选配置，并设置冻结测试集评测门禁；
+- BM25、多语言 Dense、RRF Hybrid 和可选的多语言 Cross-Encoder 重排；
+- 带样本量、置信区间、延迟、相对变化和失败分类的检索指标；
+- 使用真实论文证据构造的上下文压缩评测，以及完整历史和固定窗口基线；
+- Benchmark 服务 API 和可理解的开发者控制台；
+- 严格区分实测结果、小规模实验、机制契约测试和未来目标的项目文档。
 
-### 3.2 Excluded
+### 3.2 本版本不包含
 
-- Claiming expert annotation before the user completes review.
-- Publishing private PDF text, Zotero paths, or full review artifacts to Git.
-- Using the frozen test to tune models, thresholds, fusion weights, or candidate depth.
-- Treating LLM-as-judge scores as ground truth.
-- Replacing the evaluation core with Ragas, DeepEval, or a hosted platform in v5.4.
-- Pushing to GitHub in this task.
+- 在用户完成审核前宣称数据已经过专家标注；
+- 向 Git 提交私有 PDF 正文、Zotero 本地路径或完整审核记录；
+- 使用冻结测试集调整模型、阈值、融合权重或候选数量；
+- 将 LLM 裁判分数当作真实标签；
+- 在 v5.4 中用 Ragas、DeepEval 或托管评测平台替换现有评测核心；
+- 在本任务中推送 GitHub。
 
-## 4. Data and Annotation Contract
+## 4. 数据与人工标注契约
 
-Each case has a stable `case_id`, split, query, source document metadata, page and evidence excerpt, candidate relevant document IDs, hard negatives, hashes, and review fields.
+每条用例包含稳定的 `case_id`、数据划分、查询、来源论文元数据、页码、证据摘要、候选相关论文 ID、困难负样本、内容哈希和审核字段。
 
-Human review records contain:
+人工审核记录包含：
 
-- `query_validity`: `valid`, `invalid`, or `needs_edit`;
-- `edited_query`: optional natural user-style replacement;
-- `relevant_document_ids`: one or more relevant documents;
-- `evidence_sufficiency`: `sufficient`, `partial`, or `insufficient`;
-- `reviewer_notes` and `reviewed_at`;
-- `review_status`: `reviewed` only when required fields pass validation.
+- `query_validity`：取值为 `valid`、`invalid` 或 `needs_edit`；
+- `edited_query`：可选的、更自然的用户式问题；
+- `relevant_document_ids`：一个或多个相关论文 ID；
+- `evidence_sufficiency`：取值为 `sufficient`、`partial` 或 `insufficient`；
+- `reviewer_notes` 和 `reviewed_at`；
+- `review_status`：只有所有必填字段通过校验后才能设为 `reviewed`。
 
-Automatic candidates remain usable for development diagnostics but not for externally stated frozen-test quality. The dashboard labels a dataset as:
+自动候选可以用于开发阶段排查，但不能用于对外宣称冻结测试集质量。网页按照以下规则显示数据状态：
 
-- `candidate`: no human-reviewed cases;
-- `pilot`: at least one reviewed case but fewer than 50 reviewed frozen-test queries;
-- `release_ready`: at least 50 valid reviewed frozen-test queries and at least 10 queries in every reported domain.
+- `候选数据`：没有任何人工审核用例；
+- `小规模实验`：至少有一条已审核用例，但有效冻结测试问题不足 50 条；
+- `可发布`：至少有 50 条有效的人工审核冻结测试问题，并且每个对外报告的领域不少于 10 条。
 
-Review progress is stored under `results/`, which remains gitignored. A sanitized aggregate report may be committed, but it must contain no private paths, excerpts, or query-level private data.
+审核进度保存在已被 Git 忽略的 `results/` 目录中。允许提交脱敏后的聚合报告，但其中不能包含私有路径、论文摘要片段或逐问题私有数据。
 
-## 5. Retrieval and Reranking Evaluation
+## 5. 检索与重排评测
 
-### 5.1 Protocol
+### 5.1 实验协议
 
-Documents, not chunks, are the split unit. All chunks from a paper belong to one split. Configuration search runs on dev only. The frozen test is evaluated only when the annotation gate permits it, and every frozen run records the dataset hash, corpus hash, code commit, model identifiers, parameters, and timestamp.
+数据划分单位是论文而不是 Chunk，同一篇论文的所有 Chunk 必须属于同一个集合。所有配置搜索只在开发集进行。只有人工标注门禁满足要求时，才能运行可对外使用的冻结测试评测。
 
-Candidate configurations are:
+每次冻结评测都必须记录数据集哈希、语料哈希、代码提交、模型标识、参数和运行时间。
 
-- BM25;
-- multilingual dense retrieval;
-- BM25 plus dense retrieval fused with weighted RRF;
-- hybrid candidates reranked by a multilingual Cross-Encoder.
+候选检索配置包括：
 
-Dev search may compare `candidate_k`, RRF weights, rank constant, and reranker model. Selection order is nDCG@5, MRR, Recall@5, then P95 latency. Test metrics never participate in selection.
+- BM25；
+- 多语言 Dense 检索；
+- 使用加权 RRF 融合 BM25 与 Dense 的 Hybrid 检索；
+- 使用多语言 Cross-Encoder 对 Hybrid 候选进行二阶段重排。
 
-### 5.2 Metrics
+开发集可以比较 `candidate_k`、RRF 权重、排名常数和重排模型。配置选择优先级依次为 nDCG@5、MRR、Recall@5 和 P95 延迟。测试集指标不得参与配置选择。
 
-The report includes:
+### 5.2 评测指标
 
-- Recall@5 and Recall@10;
-- Precision@5;
-- MRR;
-- nDCG@5;
-- P50 and P95 latency;
-- 95% bootstrap confidence intervals;
-- paired per-query deltas against BM25 and the selected non-reranked configuration;
-- win, tie, and loss counts for reranking;
-- failures classified as lexical mismatch, cross-language mismatch, chunking miss, candidate-generation miss, rerank demotion, ambiguous label, or annotation defect.
+报告包含：
 
-A reranker is enabled by default only if it improves dev nDCG@5, does not reduce dev Recall@5 beyond a declared tolerance, and stays inside the configured latency budget. A negative result is reported as a valid engineering finding.
+- Recall@5 和 Recall@10；
+- Precision@5；
+- MRR；
+- nDCG@5；
+- P50 和 P95 延迟；
+- 95% Bootstrap 置信区间；
+- 相对于 BM25 和入选非重排配置的逐问题配对差值；
+- 重排的胜、平、负用例数量；
+- 失败分类：词法不匹配、跨语言不匹配、切块遗漏、候选召回失败、重排降级、标签歧义和标注缺陷。
 
-## 6. Real-Paper Context Evaluation
+只有同时满足以下条件时，才默认启用重排器：开发集 nDCG@5 得到提升；Recall@5 的下降不超过明确设定的容忍值；延迟不超过配置预算。重排没有提升同样是有效的工程结论，不能隐藏负结果。
 
-### 6.1 Scenarios
+## 6. 真实论文上下文工程评测
 
-Reviewed Zotero cases are converted into multi-turn research conversations containing user goals, constraints, retrieval calls, evidence artifacts, interim decisions, corrections, and follow-up questions. No source PDF content is committed.
+### 6.1 评测场景
 
-Three strategies are compared on the same scenario:
+将已审核的 Zotero 用例转换为多轮调研对话。对话中包含用户目标、约束、检索调用、证据 Artifact、中间决策、纠错和后续追问。任何来源 PDF 正文都不得提交到 Git。
 
-- `full_history`: reference condition, bounded only by the benchmark model limit;
-- `fixed_window`: recent-message truncation baseline;
-- `structured_compaction`: PaperStorm's structured state summary, recent-turn preservation, artifact references, and reversible event store inspired by Claude Code and Hermes-style context management.
+在同一个场景中比较三种策略：
 
-### 6.2 Metrics
+- `full_history`：完整历史参考组，只受评测模型最大上下文限制；
+- `fixed_window`：仅保留最近消息的截断基线；
+- `structured_compaction`：PaperStorm 的结构化状态摘要、近期消息保留、Artifact 引用和可恢复事件存储。该方案借鉴 Claude Code 与 Hermes 的上下文管理思想。
 
-Deterministic probes measure token reduction, constraint retention, entity retention, source-reference retention, tool-call pairing, restore exactness, and repeated-compaction drift. Reviewed retrieval probes measure whether the same relevant documents remain reachable after compaction. Answer probes measure required-fact recall and citation support against reviewed evidence. Optional LLM judge output is secondary and visibly identified as model-judged.
+### 6.2 评测指标
 
-The report must not claim that compression improves answer quality unless the reviewed answer probes support it. The main advantage may instead be lower token use at equivalent retention.
+确定性探针测量 Token 减少率、约束保留率、实体保留率、来源引用保留率、工具调用配对率、精确恢复能力和重复压缩漂移。
 
-## 7. Backend Boundaries
+人工审核的检索探针用于判断压缩后是否仍能召回相同的相关论文。回答探针依据人工审核的证据，测量必要事实召回率和引用支持率。可选的 LLM 裁判只能作为次级指标，并必须明确标记为“模型评判”。
 
-The v5.4 evaluation package has four focused responsibilities:
+除非人工审核的回答探针能够证明，否则报告不能宣称压缩提升了回答质量。压缩的主要优势也可能只是“在保持相同信息质量的情况下减少 Token”。
 
-- annotation store and validation;
-- retrieval experiment orchestration and statistics;
-- context scenario generation and evaluation;
-- dashboard-safe report projection.
+## 7. 后端模块边界
 
-The service exposes endpoints to load candidate cases, save a review, report progress, run a dev experiment, run an eligible frozen evaluation, run context evaluation, and load the latest sanitized benchmark summary. Long-running actions return explicit status and error information instead of blocking the UI without feedback.
+v5.4 评测模块拆分为四项职责：
 
-## 8. Dashboard Design
+- 标注存储与数据校验；
+- 检索实验编排与统计计算；
+- 上下文场景生成与评测；
+- 面向网页展示的安全报告投影。
 
-The developer console contains four sections:
+服务端提供以下能力：加载候选用例、保存审核结果、查询审核进度、运行开发集实验、运行满足门禁的冻结评测、运行上下文评测，以及读取最新的脱敏 Benchmark 摘要。
 
-1. **Trust status**: dataset state, reviewed count, frozen-test eligibility, hashes, sample sizes, and limitations.
-2. **Retrieval comparison**: compact method table, selected configuration, confidence interval, latency, relative delta, and rerank win/tie/loss.
-3. **Context engineering**: strategy comparison for token use, retention, answer support, and restore behavior.
-4. **Annotation workbench**: one case at a time with query, paper, page, excerpt, hard negatives, review controls, save state, progress, and export.
+长时间任务必须返回明确的运行状态与错误信息，不能让网页在没有反馈的情况下阻塞。
 
-Every metric shows a Chinese name, definition, direction, denominator, and evidence type. Colors express state rather than decoration: green for a passed gate, amber for pilot or uncertainty, red for invalid or failed, and neutral for unavailable. Raw JSON remains available in a collapsible diagnostics area.
+## 8. 网页控制台设计
 
-## 9. Error Handling and Privacy
+开发者控制台包含四个区域：
 
-- Missing Zotero roots, PDFs, model dependencies, or model caches produce actionable errors.
-- Reranker initialization failure skips only that configuration and records the reason.
-- Invalid or incomplete reviews cannot enter the frozen release set.
-- Dataset hash changes invalidate prior frozen results.
-- Private paths and excerpts are removed by the dashboard-safe projection.
-- Paid or remote LLM evaluation remains opt-in.
+1. **可信度状态**：显示数据状态、已审核数量、是否允许冻结测试、哈希、样本量和已知局限；
+2. **检索效果对比**：显示紧凑的方法对比表、入选配置、置信区间、延迟、相对变化和重排胜平负；
+3. **上下文工程**：对比三种策略的 Token 使用、信息保留、回答支持和恢复行为；
+4. **标注工作台**：逐条显示问题、论文、页码、证据、困难负样本、审核控件、保存状态、进度和导出功能。
 
-## 10. Testing and Acceptance
+每项指标都必须显示中文名称、定义、优化方向、样本量和证据类型。颜色仅用于表达状态：绿色代表门禁通过，黄色代表小规模实验或不确定，红色代表无效或失败，中性色代表暂无数据。原始 JSON 只保留在可折叠的诊断区域。
 
-Unit tests cover annotation validation, progress states, document-disjoint splits, dev-only selection, frozen gating, metrics, paired deltas, context strategy comparison, sanitization, service endpoints, and dashboard rendering contracts.
+## 9. 异常处理与隐私保护
 
-Acceptance requires:
+- Zotero 根目录、PDF、模型依赖或模型缓存缺失时，返回可操作的错误信息；
+- 重排模型初始化失败时，只跳过该配置并记录原因，不中断其他实验；
+- 不完整或无效的审核记录不能进入冻结发布集；
+- 数据集哈希变化后，旧冻结结果自动失效；
+- 网页安全报告必须移除私有路径和论文证据原文；
+- 付费或远程 LLM 评测保持显式开启，默认不调用。
 
-- all existing offline tests plus new v5.4 tests pass;
-- the real Zotero pipeline completes locally without modifying Zotero;
-- an unreviewed dataset is visibly blocked from release claims;
-- a small reviewed pilot can run end to end;
-- the dashboard clearly distinguishes automatic, human-reviewed, deterministic, and model-judged evidence;
-- package and visible dashboard versions read `5.4.0` / `v5.4`;
-- no GitHub push occurs.
+## 10. 测试与验收标准
 
-## 11. Interpretation for Interviews
+单元测试覆盖标注校验、审核进度状态、按论文隔离划分、只在开发集选配置、冻结评测门禁、指标统计、配对差值、上下文策略对比、报告脱敏、服务 API 和网页渲染契约。
 
-The defensible contribution is the evaluation architecture and the measured trade-off, not a guaranteed high score. The project demonstrates document-level split discipline, frozen-test governance, human review workflow, hybrid retrieval, conditional reranking, confidence intervals, failure analysis, token-budgeted context assembly, structured compaction, artifactization, restoration, and observability.
+版本验收要求：
 
-Until human review reaches the release gate, all real-paper numbers must be introduced as a pilot. After review, only the sanitized frozen report may be used in the resume.
+- 所有现有离线测试和新增 v5.4 测试通过；
+- 真实 Zotero 评测链路能够在本地完成，并且不修改 Zotero 数据；
+- 未审核数据必须在网页和报告中明确阻止“可发布”结论；
+- 少量已审核数据能够完整跑通小规模实验；
+- 网页清楚区分自动候选、人工审核、确定性测试和模型评判四类证据；
+- Python 包版本和网页可见版本分别显示 `5.4.0` 与 `v5.4`；
+- 本任务不执行 GitHub 推送。
+
+## 11. 面试表述边界
+
+这个版本最有价值的成果是可信评测架构和经过测量的工程权衡，而不是承诺一个很高的分数。
+
+项目可以体现按论文隔离数据、防止测试泄漏、冻结测试治理、人工审核工作流、Hybrid 检索、条件式重排、置信区间、失败分析、Token 预算上下文装配、结构化压缩、Artifact 化、状态恢复与可观测性。
+
+在人工审核达到“可发布”门禁之前，所有真实论文指标必须称为“小规模实验”。审核完成后，只有脱敏的冻结测试报告可以用于简历。
