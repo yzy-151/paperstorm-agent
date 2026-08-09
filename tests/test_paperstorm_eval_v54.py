@@ -52,6 +52,154 @@ class AnnotationContractV54Test(unittest.TestCase):
         self.assertEqual(progress["reviewed_count"], 0)
         self.assertFalse(progress["frozen_test_allowed"])
 
+
+class RetrievalMetricsV54Test(unittest.TestCase):
+    def test_document_metrics_report_recall_precision_mrr_and_ndcg(self):
+        from knowledge_storm.paperstorm_eval_v54 import retrieval_metrics
+
+        metrics = retrieval_metrics(
+            ranked_document_ids=["noise", "doc-a", "doc-b", "extra", "other"],
+            relevant_document_ids=["doc-a", "doc-b"],
+            top_k=5,
+        )
+
+        self.assertEqual(metrics["recall_at_5"], 1.0)
+        self.assertEqual(metrics["recall_at_10"], 1.0)
+        self.assertEqual(metrics["precision_at_5"], 0.4)
+        self.assertEqual(metrics["mrr"], 0.5)
+        self.assertGreater(metrics["ndcg_at_5"], 0.6)
+        self.assertLess(metrics["ndcg_at_5"], 1.0)
+
+    def test_duplicate_chunks_from_one_document_do_not_inflate_metrics(self):
+        from knowledge_storm.paperstorm_eval_v54 import ranked_document_ids
+
+        chunks = [
+            {"document_id": "doc-a", "chunk_id": "a-1"},
+            {"document_id": "doc-a", "chunk_id": "a-2"},
+            {"document_id": "doc-b", "chunk_id": "b-1"},
+        ]
+
+        self.assertEqual(ranked_document_ids(chunks), ["doc-a", "doc-b"])
+
+    def test_selection_uses_dev_only_with_latency_as_last_tiebreaker(self):
+        from knowledge_storm.paperstorm_eval_v54 import select_dev_configuration
+
+        reports = {
+            "dense": {
+                "dev": {"ndcg_at_5": 0.4, "mrr": 0.5, "recall_at_5": 0.6, "p95_latency_ms": 10},
+                "test": {"ndcg_at_5": 0.99},
+            },
+            "hybrid": {
+                "dev": {"ndcg_at_5": 0.6, "mrr": 0.4, "recall_at_5": 0.5, "p95_latency_ms": 100},
+                "test": {"ndcg_at_5": 0.01},
+            },
+        }
+
+        self.assertEqual(select_dev_configuration(reports), "hybrid")
+
+    def test_paired_delta_counts_wins_ties_and_losses(self):
+        from knowledge_storm.paperstorm_eval_v54 import paired_score_delta
+
+        delta = paired_score_delta(
+            baseline_scores=[0.2, 0.0, 0.5],
+            candidate_scores=[0.4, 0.0, 0.3],
+        )
+
+        self.assertEqual(delta["wins"], 1)
+        self.assertEqual(delta["ties"], 1)
+        self.assertEqual(delta["losses"], 1)
+        self.assertEqual(delta["mean_delta"], 0.0)
+
+    def test_metric_summary_has_denominators_latency_and_confidence_intervals(self):
+        from knowledge_storm.paperstorm_eval_v54 import summarize_retrieval_cases
+
+        per_case = [
+            {"recall_at_5": 1.0, "recall_at_10": 1.0, "precision_at_5": 0.2, "mrr": 1.0, "ndcg_at_5": 1.0, "latency_ms": 10.0},
+            {"recall_at_5": 0.0, "recall_at_10": 1.0, "precision_at_5": 0.0, "mrr": 0.0, "ndcg_at_5": 0.0, "latency_ms": 30.0},
+        ]
+
+        summary = summarize_retrieval_cases(per_case, bootstrap_samples=200, seed=7)
+
+        self.assertEqual(summary["case_count"], 2)
+        self.assertEqual(summary["recall_at_5"], 0.5)
+        self.assertEqual(summary["recall_at_10"], 1.0)
+        self.assertEqual(summary["p50_latency_ms"], 20.0)
+        self.assertEqual(summary["p95_latency_ms"], 30.0)
+        self.assertEqual(summary["confidence_intervals"]["recall_at_5"]["n"], 2)
+
+    def test_reranker_gate_rejects_quality_or_latency_regression(self):
+        from knowledge_storm.paperstorm_eval_v54 import reranker_gate
+
+        baseline = {"ndcg_at_5": 0.5, "recall_at_5": 0.6, "p95_latency_ms": 100}
+        self.assertTrue(
+            reranker_gate(
+                baseline,
+                {"ndcg_at_5": 0.6, "recall_at_5": 0.59, "p95_latency_ms": 180},
+                max_recall_drop=0.02,
+                latency_budget_ms=200,
+            )["enabled"]
+        )
+        self.assertEqual(
+            reranker_gate(
+                baseline,
+                {"ndcg_at_5": 0.49, "recall_at_5": 0.6, "p95_latency_ms": 180},
+                max_recall_drop=0.02,
+                latency_budget_ms=200,
+            )["reason"],
+            "nDCG@5 未提升",
+        )
+        self.assertEqual(
+            reranker_gate(
+                baseline,
+                {"ndcg_at_5": 0.6, "recall_at_5": 0.59, "p95_latency_ms": 250},
+                max_recall_drop=0.02,
+                latency_budget_ms=200,
+            )["reason"],
+            "P95 延迟超出预算",
+        )
+
+    def test_benchmark_selects_on_dev_and_reports_test_as_pilot(self):
+        from knowledge_storm.paperstorm_eval_v54 import run_retrieval_benchmark
+
+        dataset = _dataset(
+            [
+                _case(1, split="dev"),
+                _case(2, split="dev"),
+                _case(3, split="test"),
+            ]
+        )
+        rankings = {
+            ("case-1", "bm25"): ["noise", "doc-1"],
+            ("case-2", "bm25"): ["noise", "doc-2"],
+            ("case-3", "bm25"): ["doc-3"],
+            ("case-1", "dense"): ["doc-1"],
+            ("case-2", "dense"): ["doc-2"],
+            ("case-3", "dense"): ["noise"],
+        }
+
+        def search(case, mode, _retrieve_k):
+            return {
+                "ranked_document_ids": rankings[(case["case_id"], mode)],
+                "latency_ms": 10.0 if mode == "bm25" else 20.0,
+            }
+
+        report = run_retrieval_benchmark(
+            dataset,
+            search_fn=search,
+            configurations=["bm25", "dense"],
+            top_k=5,
+            trust_level="pilot",
+            bootstrap_samples=100,
+        )
+
+        self.assertEqual(report["selected_configuration"], "dense")
+        self.assertEqual(report["selection_split"], "dev")
+        self.assertEqual(report["final_reporting_split"], "test")
+        self.assertEqual(report["evidence_status"], "pilot")
+        self.assertFalse(report["release_claim_allowed"])
+        self.assertEqual(report["test"]["dense"]["recall_at_5"], 0.0)
+        self.assertEqual(report["test"]["bm25"]["recall_at_5"], 1.0)
+        self.assertEqual(report["paired_test_delta"]["losses"], 1)
     def test_valid_review_requires_relevant_documents(self):
         from knowledge_storm.paperstorm_eval_v54 import validate_review
 
