@@ -33,7 +33,9 @@ def _router_cache_size() -> int:
 
 
 @functools.lru_cache(maxsize=_router_cache_size())
-def _cached_router_completion(model_name: str, prompt: str, api_key: str, api_base: str) -> str:
+def _cached_router_completion(
+    model_name: str, prompt: str, api_key: str, api_base: str
+) -> str:
     """LRU-cached router completion.
 
     The cache key is the full prompt plus model/config, so identical messages
@@ -105,19 +107,15 @@ def build_chat_llm_callable(
     """Return a prompt->text callable that generates casual chat replies.
 
     Policy:
-        - PAPERSTORM_CHAT_LLM=1 forces on, =0 forces off.
-        - Otherwise auto: enabled whenever a provider API key is configured,
-          so local demos with keys get real conversational replies; offline
-          environments fall back to the deterministic local template.
+        - PAPERSTORM_CHAT_LLM=1 enables the provider, =0 disables it.
+        - An unset flag is offline by default. Callers in ``paperstorm`` mode
+          must opt in with ``enabled=True``. Merely having a key in the shell
+          must never make tests or fake demos call a paid API.
     """
     if enabled is None:
         flag = str(os.getenv("PAPERSTORM_CHAT_LLM", "")).strip().lower()
-        if flag in {"0", "false", "off", "no"}:
-            return None
-        if flag in {"1", "true", "yes", "on"}:
-            enabled = True
-        # otherwise enabled stays None -> auto: build when a key is configured
-    if enabled is False:
+        enabled = flag in {"1", "true", "yes", "on"}
+    if not enabled:
         return None
     config = _resolve_provider_config()
     if config is None:
@@ -152,16 +150,13 @@ def build_judge_llm_callable(
     Frontier agents (Claude Code / Hermes) do not rely on keyword-overlap
     thresholds: the model itself reads the question plus retrieved evidence and
     decides whether it can answer. This callable powers that step; it is
-    enabled by default whenever an API key is configured (PAPERSTORM_JUDGE_LLM=0
-    disables, falling back to the deterministic local grader).
+    explicitly enabled by a real runtime or PAPERSTORM_JUDGE_LLM=1. An unset
+    flag falls back to the deterministic local grader.
     """
     if enabled is None:
         flag = str(os.getenv("PAPERSTORM_JUDGE_LLM", "")).strip().lower()
-        if flag in {"0", "false", "off", "no"}:
-            return None
-        if flag in {"1", "true", "yes", "on"}:
-            enabled = True
-    if enabled is False:
+        enabled = flag in {"1", "true", "yes", "on"}
+    if not enabled:
         return None
     config = _resolve_provider_config()
     if config is None:
@@ -218,4 +213,6 @@ def build_intent_router(
     if llm_router is not None:
         return PaperStormIntentRouter(llm_router=llm_router)
     real_mode = str(run_mode or "").strip().lower() == "paperstorm"
-    return PaperStormIntentRouter(llm_router=build_router_llm_callable(enabled=real_mode))
+    return PaperStormIntentRouter(
+        llm_router=build_router_llm_callable(enabled=real_mode)
+    )

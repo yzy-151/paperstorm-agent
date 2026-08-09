@@ -122,7 +122,9 @@ class ProductionControlPlaneV45:
                 or user_id in resource["allowed_user_ids"]
             )
         )
-        reason = "resource policy matched" if allowed else "tenant or user policy denied"
+        reason = (
+            "resource policy matched" if allowed else "tenant or user policy denied"
+        )
         event = {
             "event_id": uuid.uuid4().hex,
             "tenant_id": tenant_id,
@@ -195,7 +197,9 @@ class ProductionControlPlaneV45:
                     break
                 if row["fingerprint"] != fingerprint:
                     connection.rollback()
-                    raise ValueError("Idempotency key was reused with a different payload.")
+                    raise ValueError(
+                        "Idempotency key was reused with a different payload."
+                    )
                 if row["status"] == "succeeded":
                     connection.commit()
                     return {
@@ -262,7 +266,15 @@ class ProductionControlPlaneV45:
                     expires_at=excluded.expires_at, created_at=excluded.created_at,
                     last_access_at=excluded.last_access_at
                 """,
-                (namespace, key, _json(value), _json(tags or []), expires_at, _now(), _now()),
+                (
+                    namespace,
+                    key,
+                    _json(value),
+                    _json(tags or []),
+                    expires_at,
+                    _now(),
+                    _now(),
+                ),
             )
         return {"namespace": namespace, "key": key, "expires_at": expires_at}
 
@@ -294,9 +306,13 @@ class ProductionControlPlaneV45:
             "key": key,
         }
 
-    def invalidate_cache(self, tag: Optional[str] = None, namespace: Optional[str] = None):
+    def invalidate_cache(
+        self, tag: Optional[str] = None, namespace: Optional[str] = None
+    ):
         with self._connect() as connection:
-            rows = connection.execute("SELECT namespace, cache_key, tags FROM cache_entries").fetchall()
+            rows = connection.execute(
+                "SELECT namespace, cache_key, tags FROM cache_entries"
+            ).fetchall()
             selected = []
             for row in rows:
                 if namespace and row["namespace"] != namespace:
@@ -312,7 +328,9 @@ class ProductionControlPlaneV45:
 
     def cache_metrics(self):
         with self._connect() as connection:
-            rows = connection.execute("SELECT metric, value FROM cache_stats").fetchall()
+            rows = connection.execute(
+                "SELECT metric, value FROM cache_stats"
+            ).fetchall()
         stats = {row["metric"]: int(row["value"]) for row in rows}
         total = stats.get("hits", 0) + stats.get("misses", 0)
         return {
@@ -358,7 +376,9 @@ class ProductionControlPlaneV45:
                         _now(),
                     ),
                 )
-                row = connection.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+                row = connection.execute(
+                    "SELECT * FROM jobs WHERE job_id=?", (job_id,)
+                ).fetchone()
         return _job_row(row)
 
     def run_worker_tick(self, handlers: Dict):
@@ -461,7 +481,9 @@ class ProductionControlPlaneV45:
             "component": payload.get("component") or "agent",
             "operation": payload.get("operation") or "unknown",
             "status": payload.get("status") or "success",
-            "started_at": payload.get("started_at") or payload.get("timestamp") or _now(),
+            "started_at": payload.get("started_at")
+            or payload.get("timestamp")
+            or _now(),
             "ended_at": payload.get("ended_at") or payload.get("timestamp") or _now(),
             "duration_ms": float(payload.get("duration_ms") or 0),
             "token_count": int(payload.get("token_count") or 0),
@@ -478,10 +500,18 @@ class ProductionControlPlaneV45:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    span["span_id"], span["trace_id"], span["parent_span_id"],
-                    span["component"], span["operation"], span["status"],
-                    span["started_at"], span["ended_at"], span["duration_ms"],
-                    span["token_count"], span["cost_usd"], _json(span["attributes"]),
+                    span["span_id"],
+                    span["trace_id"],
+                    span["parent_span_id"],
+                    span["component"],
+                    span["operation"],
+                    span["status"],
+                    span["started_at"],
+                    span["ended_at"],
+                    span["duration_ms"],
+                    span["token_count"],
+                    span["cost_usd"],
+                    _json(span["attributes"]),
                 ),
             )
         return span
@@ -492,12 +522,21 @@ class ProductionControlPlaneV45:
                 "SELECT * FROM spans WHERE trace_id=? ORDER BY started_at, rowid",
                 (trace_id,),
             ).fetchall()
-        return [dict(row, attributes=json.loads(row["attributes"] or "{}")) for row in rows]
+        return [
+            dict(row, attributes=json.loads(row["attributes"] or "{}")) for row in rows
+        ]
 
     def status(self):
         with self._connect() as connection:
             counts = {}
-            for table in ["resources", "audit_events", "idempotency", "cache_entries", "jobs", "spans"]:
+            for table in [
+                "resources",
+                "audit_events",
+                "idempotency",
+                "cache_entries",
+                "jobs",
+                "spans",
+            ]:
                 counts[table] = connection.execute(
                     "SELECT COUNT(*) AS count FROM {0}".format(table)
                 ).fetchone()["count"]
@@ -538,12 +577,16 @@ class ProductionControlPlaneV45:
             row = connection.execute(
                 "SELECT * FROM circuit_breakers WHERE operation_name=?", (name,)
             ).fetchone()
-        return dict(row) if row else {
-            "operation_name": name,
-            "state": "closed",
-            "failure_count": 0,
-            "opened_at": 0,
-        }
+        return (
+            dict(row)
+            if row
+            else {
+                "operation_name": name,
+                "state": "closed",
+                "failure_count": 0,
+                "opened_at": 0,
+            }
+        )
 
     def _set_circuit(self, name, state, failure_count, opened_at):
         with self._connect() as connection:
@@ -641,8 +684,11 @@ class PaperStormProductionRuntimeV45:
                 intent_router = self.intent_router or build_intent_router(
                     run_mode=payload.get("run_mode", "fake")
                 )
-                chat_llm = self.chat_llm or build_chat_llm_callable()
-                evidence_judge = self.evidence_judge or build_judge_llm_callable()
+                real_mode = payload.get("run_mode", "fake") == "paperstorm"
+                chat_llm = self.chat_llm or build_chat_llm_callable(enabled=real_mode)
+                evidence_judge = self.evidence_judge or build_judge_llm_callable(
+                    enabled=real_mode
+                )
                 runtime = self.graph_runtime_class(
                     self.root_dir / "langgraph_v44",
                     self.task_service,
@@ -726,7 +772,9 @@ class PaperStormProductionRuntimeV45:
 
 
 class _TraceSpanV45(AbstractContextManager):
-    def __init__(self, control, trace_id, component, operation, parent_span_id, attributes):
+    def __init__(
+        self, control, trace_id, component, operation, parent_span_id, attributes
+    ):
         self.control = control
         self.trace_id = trace_id
         self.component = component
@@ -752,15 +800,15 @@ class _TraceSpanV45(AbstractContextManager):
                 "started_at": self.started_at,
                 "ended_at": _now(),
                 "duration_ms": (time.perf_counter() - self.started) * 1000,
-                "attributes": dict(
-                    self.attributes, error=repr(exc) if exc else ""
-                ),
+                "attributes": dict(self.attributes, error=repr(exc) if exc else ""),
             }
         )
         return False
 
 
-def _resource_payload(tenant_id, resource_type, resource_id, owner, allowed, metadata, version):
+def _resource_payload(
+    tenant_id, resource_type, resource_id, owner, allowed, metadata, version
+):
     return {
         "tenant_id": str(tenant_id or "local"),
         "resource_type": str(resource_type),

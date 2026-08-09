@@ -15,7 +15,9 @@ class _FakeEmbeddingProvider:
             lowered = str(text).lower()
             vectors.append(
                 [
-                    float("passive intermodulation" in lowered or "无源互调" in lowered),
+                    float(
+                        "passive intermodulation" in lowered or "无源互调" in lowered
+                    ),
                     float("dram" in lowered or "processing-in-memory" in lowered),
                     float("cancellation" in lowered or "抵消" in lowered),
                 ]
@@ -37,6 +39,19 @@ class PaperStormRetrievalV41Test(unittest.TestCase):
         self.assertIn("2f1-f2", tokens)
         self.assertIn("pim-3", tokens)
 
+    def test_query_tokenizer_removes_question_boilerplate_but_keeps_domain_terms(self):
+        from knowledge_storm.paperstorm_retrieval_v41 import retrieval_query_tokens
+
+        tokens = retrieval_query_tokens(
+            "相关研究中，micro-size 与 high-speed 的作用或关系是什么？"
+        )
+
+        self.assertIn("micro-size", tokens)
+        self.assertIn("high-speed", tokens)
+        self.assertNotIn("相关", tokens)
+        self.assertNotIn("作用", tokens)
+        self.assertNotIn("关系", tokens)
+
     def test_rrf_fuses_rankings_without_mixing_raw_score_scales(self):
         from knowledge_storm.paperstorm_retrieval_v41 import reciprocal_rank_fusion
 
@@ -56,9 +71,18 @@ class PaperStormRetrievalV41Test(unittest.TestCase):
         from knowledge_storm.paperstorm_retrieval_v41 import HybridPaperIndex
 
         chunks = [
-            {"chunk_id": "pim", "content": "Passive intermodulation is RF nonlinear distortion."},
-            {"chunk_id": "dram", "content": "Processing-in-memory reduces DRAM movement."},
-            {"chunk_id": "cancel", "content": "Neural cancellation suppresses 无源互调 interference."},
+            {
+                "chunk_id": "pim",
+                "content": "Passive intermodulation is RF nonlinear distortion.",
+            },
+            {
+                "chunk_id": "dram",
+                "content": "Processing-in-memory reduces DRAM movement.",
+            },
+            {
+                "chunk_id": "cancel",
+                "content": "Neural cancellation suppresses 无源互调 interference.",
+            },
         ]
         index = HybridPaperIndex(chunks, embedding_provider=_FakeEmbeddingProvider())
 
@@ -136,7 +160,9 @@ class PaperStormRetrievalV41Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "index.json"
             index.save(path)
-            loaded = HybridPaperIndex.load(path, embedding_provider=_FakeEmbeddingProvider())
+            loaded = HybridPaperIndex.load(
+                path, embedding_provider=_FakeEmbeddingProvider()
+            )
 
             class WrongProvider(_FakeEmbeddingProvider):
                 name = "wrong-model"
@@ -156,13 +182,17 @@ class PaperStormRetrievalV41Test(unittest.TestCase):
                 dataset,
                 output_dir=temp_dir,
                 embedding_provider=_FakeEmbeddingProvider(),
-                reranker_score_fn=lambda pairs: [float("无源互调" in doc) for _, doc in pairs],
+                reranker_score_fn=lambda pairs: [
+                    float("无源互调" in doc) for _, doc in pairs
+                ],
                 modes=["bm25", "dense", "hybrid", "hybrid_rerank"],
                 chunk_strategies=["ordinary", "contextual"],
                 top_k=5,
             )
             saved = json.loads(
-                (Path(temp_dir) / "rag_eval_v41_ablation.json").read_text(encoding="utf-8")
+                (Path(temp_dir) / "rag_eval_v41_ablation.json").read_text(
+                    encoding="utf-8"
+                )
             )
 
         self.assertEqual(len(report["experiments"]), 8)
@@ -229,7 +259,9 @@ class PaperStormRetrievalV41Test(unittest.TestCase):
         self.assertEqual(dataset["metadata"]["provenance"], "local-zotero")
         self.assertTrue(dataset["metadata"]["domain_review_required"])
         self.assertEqual(dataset["cases"][0]["relevant_chunk_ids"], ["paper-a::p1::c1"])
-        self.assertEqual(dataset["cases"][0]["allowed_citation_ids"], ["paper-a::p1::c1"])
+        self.assertEqual(
+            dataset["cases"][0]["allowed_citation_ids"], ["paper-a::p1::c1"]
+        )
 
     def test_service_and_api_expose_v41_ablation_smoke_run(self):
         from fastapi.testclient import TestClient

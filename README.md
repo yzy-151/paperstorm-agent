@@ -52,10 +52,10 @@ STORM Workflow -> PaperStorm Runtime -> Service/Dashboard
 
 ## 核心亮点
 
-1. **真实提升有 benchmark 佐证**：从 legacy 检索（词法重叠 + hash 向量）切换到
-   V4.1（BM25 + Dense + RRF）后，100 条可审计 seed 集 Recall@K 从 `0.3625` 提升到
-   `0.775`（+113.8%，hash 向量）/ `0.9875`（真实向量）；Context 压缩节省 `66.11%`
-   且保留率/恢复率 100%；Memory 写入/召回契约 100%，泄漏/重复 0。
+1. **真实语料 benchmark 优先**：v5.2 从本地 Zotero 读取 40 篇英文论文、868 个
+   chunk，构造 46 条中文释义检索 query，按论文划分 34 dev / 12 frozen test；只用
+   dev 选择检索配置。Dense 在 test 上 Recall@5=`0.4167`（95% bootstrap CI
+   `[0.1667, 0.6667]`），BM25=`0`。这是自动候选标注的小样本 pilot，不冒充专家集。
 2. **实现在前、Benchmark 在后**：v4.2/v4.3/v4.4/v4.5 都是先实现并接入真实聊天链路，
   再配契约 Benchmark，不是空壳。
 3. **网页端可演示**：聊天模式默认即走完整 LangGraph + 治理链路；开发者控制台可
@@ -104,8 +104,8 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app --port 8002
 | `PAPERSTORM_RETRIEVAL_MODE` | `hybrid`（默认）/ `bm25` / `dense` / `hybrid_rerank` |
 | `PAPERSTORM_RETRIEVAL_INDEX_CACHE_SIZE` | 运行时检索索引 LRU 容量（默认 16） |
 | `PAPERSTORM_ROUTER_CACHE_SIZE` | 意图路由 LLM 响应 LRU 容量（默认 512） |
-| `PAPERSTORM_CHAT_LLM` | 聊天回复 LLM：`1` 强制开 / `0` 关闭 / 空=有 key 自动开 |
-| `PAPERSTORM_JUDGE_LLM` | 证据裁判 LLM：`1` 强制开 / `0` 关闭 / 空=有 key 自动开 |
+| `PAPERSTORM_CHAT_LLM` | 聊天回复 LLM：`1` 显式开启 / `0` 关闭；paperstorm 模式自动开启 |
+| `PAPERSTORM_JUDGE_LLM` | 证据裁判 LLM：`1` 显式开启 / `0` 关闭；paperstorm 模式自动开启 |
 | `PAPERSTORM_ZOTERO_ROOT` | Zotero 数据目录，用于真实论文评测 |
 | `PAPERSTORM_MODEL_CACHE` | sentence-transformers 模型缓存目录 |
 
@@ -201,7 +201,7 @@ LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突（聊天/系�
 检索或 clarify，反之亦然），解析失败/超时自动回退规则。
 
 **回复策略是"生成优先、答不了才检索"**：聊天类消息默认直接由 LLM 生成自然回复
-（配置了 API key 即自动启用，`PAPERSTORM_CHAT_LLM=0` 关闭，离线回退到本地模板）；
+（paperstorm 模式且配置 API key 时启用；fake/测试模式保持离线并回退到本地模板）；
 只有当 LLM 明确表示需要检索（输出 `__NEED_RESEARCH__` 标记）或消息明显是调研请求时，
 才升级到知识检索 / 深度调研，避免"聊什么都是固定话术"。
 
@@ -218,11 +218,28 @@ LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突（聊天/系�
 - 意图路由 LLM：prompt 级 LRU（默认 512）。
 - 治理缓存：SQLite TTL + tag 失效（数据变更驱动，非 LRU）。
 
-## Benchmark：功能实现前后对比
+## Benchmark：证据等级与功能对比
 
-所有数值可一键复现，见"如何复现"。
+所有数值可复现，见“如何复现”。v5.2 按证据等级报告，避免把 synthetic、弱标注和
+真实冻结测试混成一个“综合提升”。完整实验审计见
+[docs/PAPERSTORM_V52_EVALUATION.md](docs/PAPERSTORM_V52_EVALUATION.md)。
 
-### 检索（100 条可审计 seed 集，80 条检索用例）
+### 主结果：真实论文跨语言检索 pilot（v5.2）
+
+- 语料：40 篇本地 Zotero 英文 PDF，868 chunks；其中 23 篇形成 46 条无重复中文 query。
+- 协议：按 `document_id` 切分，34 dev / 12 frozen test；BM25 / Dense / Hybrid 只在
+  dev 上选型，test 不参与调参；2,000 次 bootstrap 计算 95% CI。
+- 模型：`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`；Top-K=5。
+
+| frozen test | Recall@5 | MRR | nDCG@5 | P95 单 query 延迟 |
+| --- | ---: | ---: | ---: | ---: |
+| BM25 | 0.0000 | 0.0000 | 0.0000 | 约 226ms |
+| Dense（dev 选出） | 0.4167 | 0.2986 | 0.2463 | 约 246ms |
+
+Recall@5 的 95% CI 为 `[0.1667, 0.6667]`。结论是跨语言语义向量明显优于纯词法
+匹配，但样本仍小、query 为自动候选且未完成领域专家审核，**不能宣称生产质量达标**。
+
+### Smoke：synthetic seed（100 条，非主结果）
 
 | 指标 | legacy（实现前） | V4.1（实现后，hash） | V4.1（实现后，真实向量） |
 | --- | ---: | ---: | ---: |
@@ -231,7 +248,8 @@ LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突（聊天/系�
 | nDCG@K | 0.3006 | 0.6075 | 0.8986 |
 
 legacy 在中文查询上按"整段 CJK run"切词导致召回失败，V4.1 的 unigram/bigram
-分词 + BM25 + RRF 是主要提升来源。
+分词 + BM25 + RRF 是主要提升来源。该集合与实现规则高度同分布，仅用于回归和消融，
+不应把 `0.9875` 单独写进简历作为真实业务效果。
 
 ### 检索（Zotero 真实论文，6 个任务组，337 条弱标注用例）
 
@@ -247,6 +265,17 @@ NOMA 功率分配 / 非线性与数字预失真 / 神经网络。
 接近饱和，V4.1 的优势主要出现在中文/释义型查询（见 seed 集）；这也解释了为什么
 真实向量是质量默认、hash 是速度选项。诚实结论：**检索提升要分场景度量，不能一句
 "V4.1 全面更好"带过**。
+
+### 契约 benchmark（小样本，验证机制而非线上效果）
+
+以下指标原先容易被误读为大规模实验。v5.2 明确分母与适用边界：
+
+- Context：1 个构造的 8-message 场景，844→286 tokens（节省 66.11%），验证约束、
+  工具配对与 restore；不代表真实长会话平均节省率。
+- Memory：4 个写入/冲突/过期/namespace 契约案例，同一检索 query 重放 20 次；
+  `100%/0 泄漏` 是确定性契约结果，不是线上用户集统计。
+- LangGraph：5 条固定路径，幂等、checkpoint 恢复和 retry 各 1 个故障注入案例。
+- Production：单进程 SQLite 热路径 100 请求；不包含真实 LLM、arXiv 网络和多机并发。
 
 ### Context：实现前（固定截断）vs 实现后（ContextEngine）
 
@@ -287,6 +316,13 @@ python -m knowledge_storm.paperstorm_retrieval_runtime --output-dir results/retr
 python -m knowledge_storm.paperstorm_multi_task_benchmark \
   --zotero-root $env:PAPERSTORM_ZOTERO_ROOT \
   --output-dir results/multi_task --embedding real
+
+# v5.2 主评测：中文 query → 英文真实论文，dev 选型 + frozen test
+python -m knowledge_storm.paperstorm_real_eval_v52 \
+  --zotero-root $env:PAPERSTORM_ZOTERO_ROOT \
+  --output-dir results/paperstorm_real_eval_v52 \
+  --embedding real --max-papers 40 --max-pages 5 --max-cases 60 \
+  --cross-lingual-only --modes bm25 dense hybrid
 
 # Context / Memory 前后对比
 python -m knowledge_storm.paperstorm_context_benchmark_v42 --help   # 或通过网页按钮
@@ -332,7 +368,8 @@ docs/                               # 操作手册 / 简历材料 / 借鉴来源
 | v3.2 Enterprise Knowledge Base Agent | 本地知识库 | `EnterpriseKnowledgeBaseService` |
 | v4.0 → v4.5 | 评测基线、混合检索、可恢复 Context、可治理 Memory、LangGraph、生产治理 | 本文档主线 |
 | **v5.0 Cyclone（气旋）** | 生成优先聊天（LLM 回复）、LLM 证据裁判、主题锚点相关性判定、中文知识库答案、Zotero 一键建库、开发者控制台模块地图 | 当前版本 |
-| **v5.1** | 本地知识库措辞统一、聊天/问答措辞统一、README 重构与新增界面截图 | 当前版本 |
+| **v5.1** | 本地知识库措辞统一、聊天/问答措辞统一、README 重构与新增界面截图 | 历史版本 |
+| **v5.2 Evaluation Integrity** | 真实论文文档级 holdout、冻结 test、bootstrap CI、可审核清单、离线 CI 与显式 LLM 开关 | 当前版本 |
 
 
 ## License

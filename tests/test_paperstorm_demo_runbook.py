@@ -23,21 +23,15 @@ class PaperStormDemoRunbookTest(unittest.TestCase):
         self.assertEqual(args.port, 8765)
         self.assertTrue(args.reload)
 
-    def test_readme_and_plans_include_v11_demo_runbook(self):
+    def test_readme_documents_current_demo_runbook(self):
         root = Path(__file__).resolve().parents[1]
         readme = (root / "README.md").read_text(encoding="utf-8")
-        version_plan = (root / "docs" / "VERSION_PLAN.md").read_text(encoding="utf-8")
-        resume_plan = (root / "docs" / "RESUME_INTERVIEW_PLAN.md").read_text(
-            encoding="utf-8"
-        )
 
-        self.assertIn("v1.1 Demo Runbook", readme)
-        self.assertIn("start_paperstorm_service.py", readme)
-        self.assertIn("submit -> queued -> running -> succeeded", readme)
-        self.assertIn("v1.1：本地演示链路打磨", version_plan)
-        self.assertIn("状态：已完成第一阶段", version_plan)
-        self.assertIn("v1.1 面试讲法", resume_plan)
-        self.assertIn("演示不是只给静态截图", resume_plan)
+        self.assertIn("快速开始", readme)
+        self.assertIn("paperstorm_service_api:app", readme)
+        self.assertIn("http://127.0.0.1:8002", readme)
+        self.assertIn("聊天问答模式", readme)
+        self.assertIn("调研写文章模式", readme)
 
 
 if __name__ == "__main__":

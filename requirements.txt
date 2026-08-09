@@ -16,3 +16,6 @@ ddgs
 pypdf
 rank-bm25
 cryptography
+fastapi>=0.110,<1.0
+uvicorn>=0.29,<1.0
+httpx>=0.27,<1.0

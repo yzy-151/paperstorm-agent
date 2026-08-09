@@ -204,7 +204,9 @@ class PaperStormTaskService:
         return {
             "task_id": task_id,
             "path": str(path) if path else "",
-            "content": path.read_text(encoding="utf-8", errors="replace") if path else "",
+            "content": (
+                path.read_text(encoding="utf-8", errors="replace") if path else ""
+            ),
         }
 
     def get_scorecard(self, task_id: str):
@@ -233,7 +235,9 @@ class PaperStormTaskService:
 
         def case_runner(case):
             started = time.perf_counter()
-            candidates = index.search(case["query"], top_k=max(20, top_k * 4), rerank=False)
+            candidates = index.search(
+                case["query"], top_k=max(20, top_k * 4), rerank=False
+            )
             retrieved = retriever.retrieve(case["query"], top_k=top_k)
             selected = retrieved.get("chunks") or []
             if case.get("expected_behavior") == "abstain":
@@ -266,7 +270,9 @@ class PaperStormTaskService:
         )
 
     def get_rag_evaluation_v4(self):
-        path = self.root_dir / "evaluations" / "rag_v4_latest" / "rag_eval_v4_report.json"
+        path = (
+            self.root_dir / "evaluations" / "rag_v4_latest" / "rag_eval_v4_report.json"
+        )
         return _read_json(path, {})
 
     def run_rag_evaluation_v41(self, top_k: int = 5, backend: str = "deterministic"):
@@ -286,7 +292,9 @@ class PaperStormTaskService:
                 for query, document in pairs:
                     query_terms = set(multilingual_tokenize(query))
                     document_terms = set(multilingual_tokenize(document))
-                    scores.append(len(query_terms & document_terms) / max(1, len(query_terms)))
+                    scores.append(
+                        len(query_terms & document_terms) / max(1, len(query_terms))
+                    )
                 return scores
 
         elif backend == "real":
@@ -353,7 +361,9 @@ class PaperStormTaskService:
         answer = kb.answer_question(
             question,
             top_k=top_k,
-            answer_generator=build_chat_llm_callable(),
+            answer_generator=build_chat_llm_callable(
+                enabled=state.get("run_mode") == "paperstorm"
+            ),
         )
         write_qa_artifact(output_dir, answer)
         return answer
@@ -415,9 +425,7 @@ class PaperStormTaskService:
             max_papers=max_papers,
         )
         if not papers:
-            raise ValueError(
-                "Zotero 中没有匹配的 PDF 论文：请检查目录与检索词"
-            )
+            raise ValueError("Zotero 中没有匹配的 PDF 论文：请检查目录与检索词")
         result = self.create_enterprise_knowledge_base(
             name=name,
             source_paths=[item["path"] for item in papers],
@@ -655,7 +663,9 @@ class PaperStormTaskService:
             namespace=namespace, memory_id=memory_id, content=content, **updates
         )
 
-    def delete_memory(self, namespace: str, memory_id: str, reason: str = "user_request"):
+    def delete_memory(
+        self, namespace: str, memory_id: str, reason: str = "user_request"
+    ):
         return self._memory_service_v43().delete(namespace, memory_id, reason=reason)
 
     def export_memories(self, namespace: str):
@@ -667,9 +677,7 @@ class PaperStormTaskService:
     def run_memory_benchmark_v43(self):
         from .paperstorm_memory_benchmark_v43 import run_memory_benchmark
 
-        return run_memory_benchmark(
-            self.root_dir / "evaluations" / "memory_v43_latest"
-        )
+        return run_memory_benchmark(self.root_dir / "evaluations" / "memory_v43_latest")
 
     def get_memory_benchmark_v43(self):
         root = self.root_dir / "evaluations" / "memory_v43_latest"
@@ -701,9 +709,7 @@ class PaperStormTaskService:
         )
         return self._production_runtime_v45().get_thread_history(thread_id, limit=limit)
 
-    def get_production_trace(
-        self, trace_id: str, tenant_id: str, user_id: str
-    ):
+    def get_production_trace(self, trace_id: str, tenant_id: str, user_id: str):
         self._production_control_v45().authorize(
             tenant_id, user_id, "trace", trace_id, "read"
         )
@@ -753,9 +759,7 @@ class PaperStormTaskService:
 
         root = zotero_root or os.getenv("PAPERSTORM_ZOTERO_ROOT", "")
         if not root:
-            raise ValueError(
-                "zotero_root is required (or set PAPERSTORM_ZOTERO_ROOT)"
-            )
+            raise ValueError("zotero_root is required (or set PAPERSTORM_ZOTERO_ROOT)")
         return run_multi_task_benchmark(
             root,
             self.root_dir / "evaluations" / "multi_task_latest",
@@ -842,7 +846,9 @@ class PaperStormTaskService:
             },
             {
                 "title": "Neural methods for {0}".format(topic),
-                "description": "Neural network approaches for {0} modeling and suppression.".format(topic),
+                "description": "Neural network approaches for {0} modeling and suppression.".format(
+                    topic
+                ),
                 "url": "https://example.com/topic-1",
                 "snippets": ["Neural modeling and cancellation for {0}.".format(topic)],
             },
@@ -941,7 +947,8 @@ class PaperStormTaskService:
             },
         ]
         (output_dir / "paperstorm_trace.jsonl").write_text(
-            "\n".join(json.dumps(event, ensure_ascii=False) for event in trace_events) + "\n",
+            "\n".join(json.dumps(event, ensure_ascii=False) for event in trace_events)
+            + "\n",
             encoding="utf-8",
         )
         case = EvalCase(

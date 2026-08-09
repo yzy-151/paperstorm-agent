@@ -16,6 +16,22 @@ def multilingual_tokenize(text: str) -> List[str]:
     return tokens
 
 
+_QUERY_STOP_TOKENS = set(
+    multilingual_tokenize(
+        "相关研究中 作用 关系 是什么 哪些论文 场景 解决问题 同时讨论 请问 介绍 的 与 和"
+    )
+)
+
+
+def retrieval_query_tokens(text: str) -> List[str]:
+    """Tokenize a query while dropping question boilerplate from BM25."""
+    return [
+        token
+        for token in multilingual_tokenize(text)
+        if token not in _QUERY_STOP_TOKENS
+    ]
+
+
 def reciprocal_rank_fusion(
     rankings: Sequence[Sequence[Dict]],
     rank_constant: int = 60,
@@ -113,9 +129,14 @@ class CrossEncoderReranker:
                 cache_folder=self.cache_folder,
                 device=self.device,
             )
-        return [float(value) for value in self._model.predict(pairs, show_progress_bar=False)]
+        return [
+            float(value)
+            for value in self._model.predict(pairs, show_progress_bar=False)
+        ]
 
-    def rerank(self, query: str, candidates: Sequence[Dict], top_k: Optional[int] = None):
+    def rerank(
+        self, query: str, candidates: Sequence[Dict], top_k: Optional[int] = None
+    ):
         candidates = [dict(item) for item in candidates]
         pairs = [
             (query, str(item.get("retrieval_content") or item.get("content") or ""))
@@ -125,7 +146,10 @@ class CrossEncoderReranker:
         for item, score in zip(candidates, scores):
             item["rerank_score"] = round(float(score), 8)
         candidates.sort(
-            key=lambda item: (-item.get("rerank_score", float("-inf")), item.get("chunk_id", ""))
+            key=lambda item: (
+                -item.get("rerank_score", float("-inf")),
+                item.get("chunk_id", ""),
+            )
         )
         return candidates[:top_k] if top_k is not None else candidates
 
@@ -135,10 +159,16 @@ class HybridPaperIndex:
 
     schema_version = "paperstorm-hybrid-index-v4.1"
 
-    def __init__(self, chunks: Iterable[Dict], embedding_provider, embeddings=None, manifest=None):
-        self.chunks = [self._normalize_chunk(item, index) for index, item in enumerate(chunks)]
+    def __init__(
+        self, chunks: Iterable[Dict], embedding_provider, embeddings=None, manifest=None
+    ):
+        self.chunks = [
+            self._normalize_chunk(item, index) for index, item in enumerate(chunks)
+        ]
         self.embedding_provider = embedding_provider
-        self._tokens = [multilingual_tokenize(self._search_text(item)) for item in self.chunks]
+        self._tokens = [
+            multilingual_tokenize(self._search_text(item)) for item in self.chunks
+        ]
         try:
             from rank_bm25 import BM25Okapi
         except ImportError as exc:
@@ -179,7 +209,9 @@ class HybridPaperIndex:
         elif mode == "dense":
             selected = dense
         else:
-            selected = reciprocal_rank_fusion([bm25, dense], rank_constant=rank_constant)
+            selected = reciprocal_rank_fusion(
+                [bm25, dense], rank_constant=rank_constant
+            )
             selected = selected[:candidate_k]
         if mode == "hybrid_rerank":
             if reranker is None:
@@ -286,7 +318,8 @@ class HybridPaperIndex:
                 documents.append(
                     {
                         "document_id": "retrieval-{0}".format(index),
-                        "title": result.get("title") or "Retrieved source {0}".format(index),
+                        "title": result.get("title")
+                        or "Retrieved source {0}".format(index),
                         "text": text,
                         "source_type": result.get("source_type") or "retrieval",
                         "url": result.get("url") or "",
@@ -304,9 +337,11 @@ class HybridPaperIndex:
         )
 
     def _bm25_search(self, query: str, top_k: int):
-        scores = self._bm25.get_scores(multilingual_tokenize(query))
+        scores = self._bm25.get_scores(retrieval_query_tokens(query))
         ranked = []
-        for index in sorted(range(len(scores)), key=lambda value: (-scores[value], value))[:top_k]:
+        for index in sorted(
+            range(len(scores)), key=lambda value: (-scores[value], value)
+        )[:top_k]:
             item = dict(self.chunks[index])
             item["bm25_score"] = round(float(scores[index]), 8)
             ranked.append(item)
@@ -316,7 +351,9 @@ class HybridPaperIndex:
         query_vector = self.embedding_provider.embed_query(query)
         scores = [_cosine(query_vector, vector) for vector in self.embeddings]
         ranked = []
-        for index in sorted(range(len(scores)), key=lambda value: (-scores[value], value))[:top_k]:
+        for index in sorted(
+            range(len(scores)), key=lambda value: (-scores[value], value)
+        )[:top_k]:
             item = dict(self.chunks[index])
             item["dense_score"] = round(float(scores[index]), 8)
             ranked.append(item)
@@ -327,7 +364,11 @@ class HybridPaperIndex:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
-                {"manifest": self.manifest, "chunks": self.chunks, "embeddings": self.embeddings},
+                {
+                    "manifest": self.manifest,
+                    "chunks": self.chunks,
+                    "embeddings": self.embeddings,
+                },
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -374,7 +415,9 @@ class HybridPaperIndex:
 
     @staticmethod
     def _search_text(item):
-        return "{0}\n{1}".format(item.get("title", ""), item.get("retrieval_content", ""))
+        return "{0}\n{1}".format(
+            item.get("title", ""), item.get("retrieval_content", "")
+        )
 
 
 def _cosine(left, right):

@@ -15,18 +15,17 @@ with open("requirements.txt", encoding="utf-8") as f:
 
 
 setup(
-    name="knowledge-storm",
-    version="1.1.1",
-    author="Yijia Shao, Yucheng Jiang",
-    author_email="shaoyj@stanford.edu, yuchengj@stanford.edu",
-    description="STORM: A language model-powered knowledge curation engine.",
+    name="paperstorm-agent",
+    version="5.2.0",
+    author="PaperStorm contributors; Stanford OVAL contributors",
+    description="PaperStorm Agent: a production-oriented research and RAG agent built on Stanford STORM.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/stanford-oval/storm",
+    url="https://github.com/yzy-151/paperstorm-agent",
     license="MIT License",
     packages=find_packages(),
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
