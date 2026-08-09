@@ -299,5 +299,44 @@ class RetrievalMetricsV54Test(unittest.TestCase):
         self.assertEqual(progress["trust_level"], "candidate")
 
 
+class ContextEvaluationV54Test(unittest.TestCase):
+    def test_context_report_compares_three_strategies_with_denominators(self):
+        from knowledge_storm.paperstorm_eval_v54 import evaluate_context_scenarios
+
+        case = _case(1, split="test", domain="rf")
+        case["query"] = "无源互调为什么需要神经网络抑制？"
+        case["metadata"]["query_terms"] = ["无源互调", "神经网络", "抑制"]
+        case["evidence"]["excerpt"] = (
+            "passive intermodulation cancellation uses a neural network to model nonlinear distortion "
+            * 30
+        )
+        case["review"] = _valid_review("case-1", "doc-1")
+
+        report = evaluate_context_scenarios([case], total_tokens=360)
+
+        self.assertEqual(
+            set(report["strategies"]),
+            {"full_history", "fixed_window", "structured_compaction"},
+        )
+        for metrics in report["strategies"].values():
+            self.assertEqual(metrics["scenario_count"], 1)
+            self.assertIn("input_tokens", metrics)
+            self.assertIn("constraint_retention_rate", metrics)
+            self.assertIn("source_retention_rate", metrics)
+        structured = report["strategies"]["structured_compaction"]
+        self.assertGreater(structured["token_reduction_rate"], 0.0)
+        self.assertEqual(structured["restore_exact_rate"], 1.0)
+        self.assertEqual(structured["artifact_reference_rate"], 1.0)
+        self.assertEqual(report["evidence_type"], "deterministic_real_paper_probe")
+
+    def test_context_report_does_not_claim_answer_quality_without_human_probes(self):
+        from knowledge_storm.paperstorm_eval_v54 import evaluate_context_scenarios
+
+        report = evaluate_context_scenarios([_case()])
+
+        self.assertFalse(report["answer_quality_claim_allowed"])
+        self.assertIn("不能证明回答质量提升", " ".join(report["limitations"]))
+
+
 if __name__ == "__main__":
     unittest.main()

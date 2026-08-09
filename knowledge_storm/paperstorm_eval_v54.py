@@ -8,6 +8,7 @@ import math
 import os
 import random
 import statistics
+import tempfile
 from collections import Counter
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -243,6 +244,209 @@ def run_retrieval_benchmark(
         "paired_test_delta": paired_score_delta(baseline_scores, selected_scores),
         "limitations": _retrieval_limitations(trust_level, len(test_cases)),
     }
+
+
+def evaluate_context_scenarios(
+    cases: Iterable[Dict], total_tokens: int = 420, recent_message_count: int = 3
+) -> Dict:
+    """在同一真实论文场景上比较三种上下文策略。"""
+
+    from .paperstorm_context_v42 import (
+        ContextEngine,
+        ContextEngineConfig,
+        ContextEventStore,
+    )
+
+    cases = list(cases or [])
+    strategy_rows = {
+        "full_history": [],
+        "fixed_window": [],
+        "structured_compaction": [],
+    }
+    for case in cases:
+        messages, constraints, entities, source_document_id = _context_scenario(case)
+        config = ContextEngineConfig(
+            total_tokens=max(160, int(total_tokens)),
+            output_reserve_tokens=max(48, int(total_tokens * 0.2)),
+            recent_message_count=max(1, int(recent_message_count)),
+            tool_inline_token_limit=24,
+        )
+        meter_engine = ContextEngine(config=config)
+        full_tokens = meter_engine.estimate(messages)["input_tokens"]
+        strategy_rows["full_history"].append(
+            _context_strategy_metrics(
+                messages,
+                full_tokens,
+                constraints,
+                entities,
+                source_document_id,
+                restore_exact=True,
+                artifact_references=False,
+                repeated_retention=1.0,
+            )
+        )
+        fixed = messages[-max(1, recent_message_count) :]
+        strategy_rows["fixed_window"].append(
+            _context_strategy_metrics(
+                fixed,
+                full_tokens,
+                constraints,
+                entities,
+                source_document_id,
+                restore_exact=False,
+                artifact_references=False,
+                repeated_retention=0.0,
+            )
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ContextEventStore(Path(temp_dir) / "context_events.jsonl")
+            for message in messages:
+                store.append_message(message)
+            engine = ContextEngine(config=config, store=store)
+            compacted = engine.compact(
+                messages, expected_constraints=constraints, force=True
+            )
+            restored = engine.restore(compacted["compaction_id"])
+            repeated = ContextEngine(config=config).compact(
+                compacted["messages"], expected_constraints=constraints, force=True
+            )
+        restored_exact = [item.get("content") for item in restored["messages"]] == [
+            item.get("content") for item in messages
+        ]
+        repeated_text = "\n".join(
+            [repeated.get("summary_text") or ""]
+            + [str(item.get("content") or "") for item in repeated.get("messages") or []]
+        ).lower()
+        repeated_terms = constraints + entities
+        repeated_retention = _term_retention(repeated_text, repeated_terms)
+        strategy_rows["structured_compaction"].append(
+            _context_strategy_metrics(
+                compacted["messages"],
+                full_tokens,
+                constraints,
+                entities,
+                source_document_id,
+                restore_exact=restored_exact,
+                artifact_references=bool(compacted.get("artifact_refs")),
+                repeated_retention=repeated_retention,
+                summary_text=compacted.get("summary_text") or "",
+            )
+        )
+
+    answer_probes = [case.get("answer_probe") for case in cases if case.get("answer_probe")]
+    return {
+        "project": "PaperStorm v5.4 真实论文上下文工程评测",
+        "evidence_type": "deterministic_real_paper_probe",
+        "scenario_count": len(cases),
+        "strategies": {
+            name: _aggregate_context_rows(rows) for name, rows in strategy_rows.items()
+        },
+        "answer_quality_claim_allowed": bool(cases)
+        and len(answer_probes) == len(cases)
+        and all(probe.get("human_reviewed") for probe in answer_probes),
+        "limitations": [
+            "确定性探针可以证明信息保留与 Token 权衡，不能证明回答质量提升。",
+            "回答级质量需要人工审核的事实与引用标签，LLM 裁判只能作为次级证据。",
+        ],
+    }
+
+
+def _context_scenario(case):
+    metadata = case.get("metadata") or {}
+    evidence = case.get("evidence") or {}
+    query = str(case.get("query") or "请解释论文的核心方法。")
+    source_document_id = str(metadata.get("source_document_id") or "unknown-document")
+    source_title = str(metadata.get("source_title") or "Unknown paper")
+    excerpt = str(evidence.get("excerpt") or "论文证据尚未提供。")
+    entities = _unique_strings(metadata.get("query_terms") or [])
+    constraints = ["中文", "引用"]
+    messages = [
+        {"id": "system", "role": "system", "content": "必须使用中文回答并保留论文引用。"},
+        {"id": "goal", "role": "user", "content": query},
+        {"id": "plan", "role": "assistant", "content": "决定先检索相关论文，再依据证据回答。"},
+        {
+            "id": "tool-call",
+            "role": "assistant",
+            "content": "call zotero_search",
+            "tool_call_id": "zotero-v54",
+        },
+        {
+            "id": "tool-output",
+            "role": "tool",
+            "name": "zotero_search",
+            "tool_call_id": "zotero-v54",
+            "content": "document_id={0}\ntitle={1}\nevidence={2}".format(
+                source_document_id, source_title, excerpt
+            ),
+        },
+        {
+            "id": "decision",
+            "role": "assistant",
+            "content": "已找到来源论文，决定只使用可追溯证据。",
+        },
+        {"id": "correction", "role": "user", "content": "不要脱离论文，也不要省略引用。"},
+        {"id": "follow-up", "role": "user", "content": "继续说明它与原问题的关系。"},
+        {"id": "working", "role": "assistant", "content": "正在组织答案，下一步核对来源。"},
+    ]
+    return messages, constraints, entities, source_document_id
+
+
+def _context_strategy_metrics(
+    messages,
+    full_tokens,
+    constraints,
+    entities,
+    source_document_id,
+    restore_exact,
+    artifact_references,
+    repeated_retention,
+    summary_text="",
+):
+    from .paperstorm_context_v42 import estimate_tokens
+
+    rendered = "\n".join(
+        [summary_text] + [str(item.get("content") or "") for item in messages]
+    ).lower()
+    input_tokens = sum(estimate_tokens(str(item.get("content") or "")) + 4 for item in messages)
+    source_retained = source_document_id.lower() in rendered or artifact_references
+    return {
+        "input_tokens": input_tokens,
+        "token_reduction_rate": round(max(0, full_tokens - input_tokens) / max(1, full_tokens), 6),
+        "constraint_retention_rate": _term_retention(rendered, constraints),
+        "entity_retention_rate": _term_retention(rendered, entities),
+        "source_retention_rate": float(source_retained),
+        "restore_exact_rate": float(bool(restore_exact)),
+        "artifact_reference_rate": float(bool(artifact_references)),
+        "repeated_compaction_retention_rate": float(repeated_retention),
+    }
+
+
+def _aggregate_context_rows(rows):
+    metric_names = [
+        "input_tokens",
+        "token_reduction_rate",
+        "constraint_retention_rate",
+        "entity_retention_rate",
+        "source_retention_rate",
+        "restore_exact_rate",
+        "artifact_reference_rate",
+        "repeated_compaction_retention_rate",
+    ]
+    output = {"scenario_count": len(rows)}
+    for name in metric_names:
+        values = [float(row.get(name) or 0.0) for row in rows]
+        output[name] = round(statistics.mean(values), 6) if values else 0.0
+    return output
+
+
+def _term_retention(text, terms):
+    terms = _unique_strings(terms)
+    if not terms:
+        return 1.0
+    lowered = str(text or "").lower()
+    return round(
+        len([term for term in terms if term.lower() in lowered]) / len(terms), 6
+    )
 
 
 def _evaluate_retrieval_cases(cases, configuration, search_fn, top_k):
