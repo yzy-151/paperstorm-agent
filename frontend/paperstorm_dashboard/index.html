@@ -3,703 +3,151 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PaperStorm Agent Dashboard</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2338d6bd'/%3E%3Cpath d='M9 23V10h11v3h-7v2h6v3h-6v5z' fill='%2303100e'/%3E%3C/svg%3E" />
+    <title>PaperStorm Agent Dashboard | Research Agent</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2338d6bd'/%3E%3Cpath d='M9 23V10h11v3h-7v2h6v3h-6v5z' fill='%2303100e'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body data-mode="research">
     <header class="app-header">
-      <div>
-        <p class="eyebrow">PaperStorm Agent Dashboard</p>
-        <h1>论文调研 Agent 执行链路</h1>
-        <p class="header-subtitle">面向论文检索、RAG 生成、运行追踪与多 Agent 协作的本地演示控制台</p>
+      <div class="brand-block">
+        <p class="eyebrow">PaperStorm Research Agent</p>
+        <h1>把论文检索变成可追溯的答案</h1>
+        <p>调研、问答、Memory、Context 与公开评测，共用一条可观察执行链路。</p>
       </div>
       <div class="header-actions">
-        <span id="data-source-status">
-          <span class="status-dot idle" id="runtime-status-dot" aria-hidden="true"></span>
-          <span id="runtime-status-text">sample data</span>
-        </span>
-        <div class="header-meta">
-          <span>release</span>
-          <strong id="project-version">v5.1</strong>
-        </div>
-        <button id="show-developer-mode" type="button">开发者控制台</button>
+        <span class="service-pill" id="service-state"><i class="status-dot"></i><span>连接中</span></span>
+        <span class="release-pill"><small>release</small><strong>v5.6</strong></span>
+        <button class="secondary-button" id="show-developer-mode" type="button">开发者控制台</button>
       </div>
     </header>
 
-    <section class="toolbar developer-mode-panel" aria-label="service data loader">
-      <label>
-        服务地址
-        <input id="service-url" placeholder="默认使用当前页面地址" />
-      </label>
-      <label>
-        任务 ID
-        <input id="service-task-id" placeholder="输入 task_id" />
-      </label>
-      <button id="load-service-task" type="button">加载真实任务</button>
-      <button id="load-sample-data" type="button">加载样例数据</button>
-    </section>
+    <main class="app-shell">
+      <nav class="mode-switch product-only" aria-label="PaperStorm modes">
+        <button class="mode-tab active" id="show-research-mode" type="button">论文调研</button>
+        <button class="mode-tab" id="show-chat-mode" type="button">智能问答</button>
+      </nav>
 
-    <main class="dashboard-grid">
-      <section class="panel wide developer-mode-panel" id="developer-console-index">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Developer Console Map</p>
-            <h2>开发者控制台模块地图</h2>
-          </div>
-          <span class="soft-badge">点击卡片跳转到对应模块</span>
+      <section class="research-view product-only" id="research-view">
+        <div class="demo-strip">
+          <div><span>NO-KEY DEMO</span><strong>一键运行完整调研链路</strong><p>创建任务、检索证据、生成大纲、写作并展示评估。</p></div>
+          <button id="start-research-demo" type="button">运行正式样例</button>
         </div>
-        <p class="panel-copy">控制台按"评测对比 / 运行时与链路调试"分组；每个模块标题下方的说明就是它测什么、看什么。所有 Benchmark 都可一键运行并重复复现。</p>
-        <div class="dev-module-grid">
-          <a class="dev-module-card" href="#rag-eval-v4-panel"><strong>RAG v4.0 评测</strong><span>100 条 seed：检索/答案/引用/拒答/失败归因</span></a>
-          <a class="dev-module-card" href="#rag-eval-v41-panel"><strong>RAG v4.1 消融</strong><span>8 组分块×检索模式：Recall/MRR/nDCG/P95</span></a>
-          <a class="dev-module-card" href="#retrieval-runtime-panel"><strong>检索前后对比</strong><span>legacy vs V4.1：接入后提升多少</span></a>
-          <a class="dev-module-card" href="#context-v42-panel"><strong>Context v4.2</strong><span>压缩节省率 + 保留/恢复契约</span></a>
-          <a class="dev-module-card" href="#memory-v43-panel"><strong>Memory v4.3</strong><span>写入/召回契约、泄漏/重复/过期</span></a>
-          <a class="dev-module-card" href="#runtime-v44-panel"><strong>LangGraph v4.4</strong><span>路径/幂等/checkpoint/重试/span</span></a>
-          <a class="dev-module-card" href="#production-v45-panel"><strong>Production v4.5</strong><span>ACL/幂等/缓存/作业/熔断/SLO</span></a>
-          <a class="dev-module-card" href="#trace-panel"><strong>Runtime Trace</strong><span>任务运行事件时间线</span></a>
-          <a class="dev-module-card" href="#sse-panel"><strong>SSE 事件流</strong><span>服务端实时事件通道</span></a>
-          <a class="dev-module-card" href="#multi-agent-panel"><strong>Multi-Agent</strong><span>检索结果保留/过滤决策</span></a>
-          <a class="dev-module-card" href="#process-panel"><strong>过程细节</strong><span>outline/reflection/检索/对话</span></a>
-          <a class="dev-module-card" href="#pipeline-worker-panel"><strong>Pipeline Worker</strong><span>worker 配置与运行状态</span></a>
-          <a class="dev-module-card" href="#stress-panel"><strong>稳定性压测</strong><span>并发任务成功率与延迟</span></a>
-          <a class="dev-module-card" href="#chat-mode-panel"><strong>聊天内部调试</strong><span>上下文/记忆/图状态/Checkpoint</span></a>
-        </div>
-      </section>
 
-      <section class="panel wide" id="mode-switcher">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Product Mode</p>
-            <h2>两种使用模式</h2>
+        <section class="surface research-composer">
+          <div class="section-heading"><div><span>RESEARCH WORKSPACE</span><h2>开始一次论文调研</h2></div><b>research → evidence → article</b></div>
+          <div class="form-row research-fields">
+            <label class="grow">调研主题<input id="task-topic" value="无源互调的神经网络抑制方法" /></label>
+            <label>数据源<select id="task-retriever"><option value="arxiv">arXiv 论文</option><option value="local-pdf">本地 PDF</option></select></label>
+            <label>语言<select id="task-output-language"><option value="zh">中文</option><option value="original">原文</option></select></label>
+            <button id="start-research-workflow" type="button">开始调研</button>
           </div>
-          <span class="soft-badge">research workflow / chat agent</span>
-        </div>
-        <div class="mode-tabs" role="tablist" aria-label="PaperStorm modes">
-          <button id="show-research-mode" class="mode-tab active" type="button">调研写文章</button>
-          <button id="show-chat-mode" class="mode-tab" type="button">聊天问答</button>
-        </div>
-      </section>
-
-      <section class="panel wide product-mode-panel" id="usage-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">How to Operate</p>
-            <h2>操作说明</h2>
-          </div>
-          <span class="soft-badge">本地 fake 调试优先，真实 API 再切 paperstorm</span>
-        </div>
-        <div class="help-grid">
-          <div class="help-card">
-            <strong>提交任务</strong>
-            <p>创建一个 queued 任务，只写入任务状态，不真正调用论文检索或 LLM。</p>
-          </div>
-          <div class="help-card">
-            <strong>运行选中任务</strong>
-            <p>执行当前 Task ID。fake 模式快速生成示例结果；paperstorm 模式调用真实检索和模型。</p>
-          </div>
-          <div class="help-card">
-            <strong>轮询选中任务</strong>
-            <p>主动读取任务最新状态、文章、分数、trace 和过程文件，用来确认是否执行完成。</p>
-          </div>
-          <div class="help-card">
-            <strong>刷新任务列表</strong>
-            <p>拉取服务端所有任务。选择某一条后，Task ID 会回填到顶部输入框。</p>
-          </div>
-          <div class="help-card">
-            <strong>加载真实任务</strong>
-            <p>根据 Task ID 读取完整 dashboard bundle，适合恢复历史运行结果。</p>
-          </div>
-          <div class="help-card">
-            <strong>Benchmark</strong>
-            <p>RAG Eval 运行 100 条可审计种子问题，分别显示 Recall、MRR、nDCG、引用、拒答和失败阶段；稳定性压测用于说明 Runtime 可靠性。</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel wide research-mode-panel product-mode-panel" id="create-task-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Control Plane</p>
-            <h2>任务控制台</h2>
-          </div>
-          <span class="soft-badge">fake / real pipeline</span>
-        </div>
-        <div class="control-grid">
-          <label>
-            调研主题
-            <input id="task-topic" value="pim 神经网络抑制" />
-          </label>
-          <label>
-            运行模式
-            <select id="task-run-mode">
-              <option value="fake">fake</option>
-              <option value="paperstorm">paperstorm</option>
-            </select>
-          </label>
-          <label>
-            检索器
-            <select id="task-retriever">
-              <option value="arxiv">arxiv</option>
-              <option value="local-pdf">local-pdf</option>
-            </select>
-          </label>
-          <label>
-            输出语言
-            <select id="task-output-language">
-              <option value="zh">zh</option>
-              <option value="original">original</option>
-            </select>
-          </label>
-          <label>
-            期望关键词
-            <input id="task-expected-keyword" value="passive intermodulation" />
-          </label>
-          <label>
-            排除关键词
-            <input id="task-forbidden-keyword" value="DRAM" />
-          </label>
-          <div class="button-row">
-            <button id="submit-task" type="button">提交任务</button>
-            <button id="run-selected-task" type="button">运行选中任务</button>
-            <button id="poll-selected-task" type="button">轮询选中任务</button>
-            <button id="refresh-task-list" type="button">刷新任务列表</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel wide" id="enterprise-kb-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Enterprise Knowledge Base</p>
-            <h2>本地文档知识库</h2>
-          </div>
-          <span class="soft-badge">独立文档库：上传/导入 → 索引 → 问答 → 引用</span>
-        </div>
-        <p class="panel-copy">这是独立于论文调研的文档知识库：上传本地文档或从 Zotero 一键导入，然后基于你的文档问答并给出引用；创建/查询走 v4.5 ACL。聊天模式里的知识库问答则面向当前调研任务，两者是不同入口。</p>
-        <div class="chat-layout">
-          <div class="chat-controls">
-            <label>
-              知识库名称
-              <input id="enterprise-kb-name" value="PIM 本地知识库" />
-            </label>
-            <label>
-              本地文档路径
-              <textarea id="enterprise-kb-source-paths" rows="4" placeholder="每行一个 .txt / .pdf 路径"></textarea>
-            </label>
-            <label>
-              KB ID
-              <input id="enterprise-kb-id" placeholder="建库后自动填入" />
-            </label>
-            <div class="button-row">
-              <button id="create-enterprise-kb" type="button">创建知识库</button>
-              <button id="list-enterprise-kb" type="button">刷新知识库</button>
+          <details>
+            <summary>高级运行设置</summary>
+            <div class="form-row advanced-row">
+              <label>运行方式<select id="task-run-mode"><option value="fake">本地可复现演示</option><option value="paperstorm">真实检索与 LLM</option></select></label>
+              <label>期望关键词<input id="task-expected-keyword" value="passive intermodulation" /></label>
+              <label>排除关键词<input id="task-forbidden-keyword" value="DRAM" /></label>
             </div>
+          </details>
+          <div class="research-progress" id="research-progress">
+            <div data-stage="created"><i>1</i><span>创建任务</span></div>
+            <div data-stage="retrieval"><i>2</i><span>检索证据</span></div>
+            <div data-stage="outline"><i>3</i><span>生成大纲</span></div>
+            <div data-stage="writing"><i>4</i><span>撰写文章</span></div>
+            <div data-stage="completed"><i>5</i><span>完成</span></div>
           </div>
-          <div class="chat-transcript">
-            <label>
-              知识库问题
-              <textarea id="enterprise-kb-question" rows="3">PIM 是什么？</textarea>
-            </label>
-            <button id="ask-enterprise-kb" type="button">知识库问答</button>
-            <div class="chat-message assistant" id="enterprise-kb-answer">等待知识库问答。</div>
-          </div>
-        </div>
-        <div class="zotero-import">
-          <div class="zotero-import-head">
-            <strong>从 Zotero 一键导入（不用手动填路径）</strong>
-            <span>服务端默认按顺序读取：填写目录 → PAPERSTORM_ZOTERO_ROOT → 项目根目录 local_zotero_root.txt → ~/Zotero。留空即用默认。</span>
-          </div>
-          <div class="zotero-import-row">
-            <label>
-              检索词（空格/逗号分隔，留空=全部论文）
-              <input id="zotero-kb-terms" placeholder="pim 无源互调 intermodulation" />
-            </label>
-            <label>
-              最多论文数
-              <input id="zotero-kb-max-papers" type="number" min="1" max="100" value="8" />
-            </label>
-            <label>
-              Zotero 数据目录（留空=服务端默认）
-              <input id="zotero-kb-root" placeholder="例如 D:\FILEEEEEEEEEEE\zotero" />
-            </label>
-            <button id="create-zotero-kb" type="button">从 Zotero 导入建库</button>
-          </div>
-        </div>
-        <div class="qa-debug-grid developer-surface">
-          <section class="debug-card">
-            <h3>KB Manifest</h3>
-            <pre id="enterprise-kb-manifest"></pre>
-          </section>
-          <section class="debug-card">
-            <h3>KB Retrieval</h3>
-            <pre id="enterprise-kb-retrieval"></pre>
-          </section>
-        </div>
-        <div id="enterprise-kb-citations" class="stack"></div>
+          <p class="activity-line" id="research-current-activity">填写主题后开始调研。</p>
+        </section>
+
+        <section class="surface hidden" id="research-score-section">
+          <div class="section-heading"><div><span>RUN EVALUATION</span><h2>本次运行评分</h2></div><b id="research-task-id">未运行</b></div>
+          <div class="metric-grid" id="scorecard"></div>
+        </section>
+
+        <section class="surface" id="research-result-workspace">
+          <div class="section-heading"><div><span>RESEARCH RESULT</span><h2>调研文章</h2></div><b>evidence grounded</b></div>
+          <article class="article" id="article-content">完成调研后，文章将在这里展示。</article>
+        </section>
       </section>
 
-      <section class="panel wide chat-mode-panel" id="chat-mode-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Conversational Research Agent</p>
-            <h2>聊天问答模式</h2>
-          </div>
-          <span class="soft-badge">chat -> memory -> evidence -> auto research</span>
+      <section class="chat-view product-only hidden" id="chat-view">
+        <aside class="surface chat-settings">
+          <div class="section-heading"><div><span>CONVERSATION</span><h2>研究问答</h2></div></div>
+          <p>普通聊天直接回答；技术问题复用已有证据，证据不足时自动调研。</p>
+          <label>运行方式<select id="chat-run-mode"><option value="fake">fake（本地演示）</option><option value="paperstorm">paperstorm（真实 API）</option></select></label>
+          <label>检索器<select id="chat-retriever"><option value="arxiv">arXiv</option><option value="local-pdf">本地 PDF</option></select></label>
+          <button id="create-chat" type="button">新建聊天</button>
+          <dl class="session-meta"><dt>会话</dt><dd id="chat-session-id">尚未创建</dd><dt>Context</dt><dd id="chat-context-summary">等待消息</dd></dl>
+        </aside>
+        <section class="surface chat-workspace">
+          <div class="chat-messages" id="chat-messages"><div class="message assistant"><strong>PaperStorm</strong><p>我是带论文检索、上下文压缩和长期记忆的 Research Chat Agent。</p></div></div>
+          <form class="chat-composer" id="chat-form">
+            <textarea id="chat-input" rows="3" placeholder="直接提问，例如：PIM 是什么，神经网络如何抑制它？"></textarea>
+            <button id="send-chat" type="submit">发送</button>
+          </form>
+        </section>
+      </section>
+
+      <section class="developer-view hidden" id="developer-view">
+        <div class="developer-header">
+          <div><span>BENCHMARK CONTROL PLANE</span><h2>公开评测工作台</h2><p>只展示可解释、可复现的 v5.5/v5.6 证据；旧 synthetic 分数不再作为发布入口。</p></div>
+          <div class="developer-actions"><label>服务地址<input id="service-url" placeholder="当前页面地址" /></label><button class="secondary-button" id="leave-developer-mode" type="button">返回产品</button></div>
         </div>
-        <p class="panel-copy">直接输入即可：普通聊天不会触发检索；技术问题会优先复用已有调研任务，证据不足时自动启动深度调研；说“请记住：...”可保存跨会话记忆。会话控制、上下文压缩、记忆管理、图状态与各类面板属于开发者控制台。</p>
-        <div class="chat-shell">
-          <aside class="chat-sidebar developer-surface">
-            <label>
-              Chat Session ID
-              <input id="chat-session-id" placeholder="新建后自动填入" />
-            </label>
-            <label>
-              Context Token Limit
-              <input id="chat-context-token-limit" type="number" min="128" value="4096" />
-            </label>
-            <label>
-              User ID / Memory Namespace
-              <input id="chat-user-id" value="local-user" />
-            </label>
-            <label>
-              Tenant ID
-              <input id="chat-tenant-id" value="local" />
-            </label>
-            <label class="checkbox-line">
-              <input id="chat-memory-enabled" type="checkbox" checked />
-              启用跨会话长期记忆
-            </label>
-            <button id="create-chat-session" type="button">新建聊天</button>
-            <button id="refresh-chat-context" type="button">刷新上下文状态</button>
-            <button id="refresh-chat-graph" type="button">刷新图状态与 Checkpoint</button>
-            <button id="compact-chat-context" type="button">强制压缩</button>
-            <label>
-              Compaction ID
-              <input id="chat-compaction-id" placeholder="压缩后自动填入" />
-            </label>
-            <button id="restore-chat-context" type="button">恢复原始视图</button>
-            <label>
-              Memory Search
-              <input id="chat-memory-query" value="PIM 偏好" />
-            </label>
-            <button id="search-chat-memory" type="button">查询长期记忆</button>
-            <button id="export-chat-memory" type="button">导出记忆与审计记录</button>
-            <label>
-              Memory ID
-              <input id="chat-memory-id" placeholder="删除指定记忆" />
-            </label>
-            <button id="delete-chat-memory" class="danger-button" type="button">软删除记忆</button>
-            <div class="chat-hint">
-              <strong>执行逻辑</strong>
-              <p>直接提问即可。已有任务足够时复用知识库；证据不足或没有任务时自动触发调研，再带引用回答。</p>
-            </div>
-          </aside>
-          <section class="chat-main">
-            <div class="chat-session-bar">
-              <span>会话：<span id="chat-session-id-label">尚未创建</span></span>
-              <label class="session-select">
-                运行模式
-                <select id="chat-run-mode">
-                  <option value="fake">fake（本地演示）</option>
-                  <option value="paperstorm">paperstorm（真实检索+LLM）</option>
-                </select>
-              </label>
-              <label class="session-select">
-                检索器
-                <select id="chat-retriever">
-                  <option value="arxiv">arxiv</option>
-                  <option value="local-pdf">local-pdf</option>
-                </select>
-              </label>
-              <button id="new-chat-button" type="button">新建聊天</button>
-            </div>
-            <div id="chat-message-list" class="chat-message-list">
-              <div class="chat-message assistant">
-                <strong>PaperStorm</strong>
-                <p>我是带论文检索、上下文压缩和记忆面板的 Research Chat Agent。你可以直接问问题。</p>
+
+        <section class="surface" id="benchmark-readiness">
+          <div class="section-heading"><div><span>ENVIRONMENT READINESS</span><h2>运行环境</h2></div><button class="icon-button" id="refresh-benchmark-catalog" type="button" title="刷新">↻</button></div>
+          <div class="readiness-grid">
+            <div><small>服务</small><strong id="ready-service">检查中</strong><span id="ready-service-detail">连接 API</span></div>
+            <div><small>Benchmark Root</small><strong id="ready-root">未发现</strong><span id="ready-root-detail">等待服务返回</span></div>
+            <div><small>数据集</small><strong id="ready-datasets">0 / 6</strong><span>按本机缓存自动发现</span></div>
+            <div><small>Python</small><strong id="ready-python">未知</strong><span id="ready-model-cache">模型缓存未发现</span></div>
+          </div>
+        </section>
+
+        <section class="surface">
+          <div class="section-heading"><div><span>PUBLIC EVIDENCE</span><h2>Benchmark 目录</h2></div><b>v5.5 / v5.6</b></div>
+          <div class="benchmark-catalog" id="benchmark-catalog"><p class="empty-state">正在加载 Benchmark Registry...</p></div>
+        </section>
+
+        <section class="surface benchmark-run-workspace" id="benchmark-run-workspace">
+          <div class="section-heading"><div><span>RUN WORKSPACE</span><h2 id="benchmark-selected-name">选择一个 Benchmark</h2></div><span class="run-status idle" id="benchmark-run-status">idle</span></div>
+          <div class="run-layout">
+            <div class="run-config">
+              <p id="benchmark-selected-description">从上方目录选择任务，查看数据、成本和复现参数。</p>
+              <div class="form-row">
+                <label>运行档位<select id="benchmark-profile"><option value="smoke">Smoke：快速验证链路</option><option value="quality">Quality：正式实验</option></select></label>
+                <label class="paid-confirm hidden" id="paid-confirm-row"><input id="benchmark-allow-paid" type="checkbox" /> 我确认该实验会调用付费 LLM</label>
               </div>
+              <div class="input-manifest" id="benchmark-input-manifest"></div>
+              <div class="command-box"><div><span>REPRODUCIBLE COMMAND</span><button class="text-button" id="copy-benchmark-command" type="button">复制</button></div><code id="benchmark-command-preview">选择 Benchmark 后生成</code></div>
+              <div class="button-row"><button id="start-benchmark-run" type="button" disabled>开始运行</button><button class="danger-button" id="cancel-benchmark-run" type="button" disabled>停止</button></div>
             </div>
-            <div class="chat-input-row">
-              <textarea id="chat-message-input" rows="3">PIM 是什么，神经网络如何抑制它？</textarea>
-              <button id="send-chat-message" type="button">发送</button>
+            <div class="run-observer">
+              <div class="run-progress"><i id="benchmark-progress-dot"></i><div><strong id="benchmark-progress-title">尚未运行</strong><p id="benchmark-progress-detail">运行后这里显示 PID、耗时与产物路径。</p></div></div>
+              <pre class="benchmark-log-tail" id="benchmark-log-tail">Benchmark 日志将在这里实时刷新。</pre>
             </div>
-          </section>
-          <aside class="chat-debug developer-surface">
-            <section class="debug-card">
-              <h3>Router Decision</h3>
-              <pre id="chat-router-decision"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>Tool Decision</h3>
-              <pre id="chat-tool-decision"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>Rewritten Query</h3>
-              <pre id="chat-rewritten-query"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>Context Window</h3>
-              <pre id="chat-context-window"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>Compressed Context</h3>
-              <pre id="chat-compressed-context"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>Context Meter</h3>
-              <div class="context-meter" id="context-meter">
-                <div class="context-meter-track"><span id="context-meter-fill"></span></div>
-                <pre id="chat-context-meter"></pre>
-              </div>
-            </section>
-            <section class="debug-card">
-              <h3>Compaction Events</h3>
-              <pre id="chat-context-events"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>Memory Context</h3>
-              <pre id="chat-memory-context"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>Long-Term Memory Recall</h3>
-              <pre id="chat-long-term-memory"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>Memory Write Decision</h3>
-              <pre id="chat-memory-write"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>LangGraph Run</h3>
-              <pre id="chat-graph-run"></pre>
-            </section>
-            <section class="debug-card">
-              <h3>Checkpoint History</h3>
-              <pre id="chat-checkpoint-history"></pre>
-            </section>
-          </aside>
-        </div>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="research-qa-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Research QA Agent</p>
-            <h2>文献检索问答</h2>
           </div>
-          <span class="soft-badge">ask -> check evidence -> retrieve/answer</span>
-        </div>
-        <p class="panel-copy">围绕当前调研任务提问；没有 task_id 时会自动创建 fake 调研任务后回答。引用会直接展示，路由决策与证据评分属于开发者控制台。</p>
-        <div class="chat-layout">
-          <div class="chat-controls">
-            <label>
-              问题
-              <textarea id="research-question" rows="3">PIM 是什么，神经网络如何抑制它？</textarea>
-            </label>
-            <button id="ask-research-agent" type="button">发送问题</button>
+        </section>
+
+        <section class="surface">
+          <div class="section-heading"><div><span>EVIDENCE REPORT</span><h2>结果与边界</h2></div><b id="benchmark-evidence-tier">尚未选择</b></div>
+          <div class="metric-grid benchmark-result-metrics" id="benchmark-result-metrics"></div>
+          <div class="evidence-grid"><div><h3>实验说明</h3><ul id="benchmark-limitations"><li>选择 Benchmark 后显示证据等级与限制。</li></ul></div><div><h3>产物</h3><div id="benchmark-artifacts" class="artifact-list">尚无运行产物。</div></div></div>
+          <details><summary>原始报告 JSON</summary><pre id="benchmark-raw-result">{}</pre></details>
+        </section>
+
+        <section class="surface runtime-diagnostics">
+          <div class="section-heading"><div><span>LIVE RUNTIME</span><h2>执行链路诊断</h2></div><button class="secondary-button" id="refresh-runtime-diagnostics" type="button">刷新</button></div>
+          <div class="diagnostic-grid">
+            <div><h3>服务与治理</h3><pre id="runtime-production-status">等待刷新。</pre></div>
+            <div><h3>最近调研任务</h3><pre id="runtime-task-status">等待刷新。</pre></div>
+            <div><h3>Runtime Trace</h3><pre id="runtime-trace-status">选择或运行调研任务后显示。</pre></div>
           </div>
-          <div class="chat-transcript">
-            <div class="chat-message user">
-              <strong>你可以问</strong>
-              <p>围绕当前 task_id 提问；如果没有 task_id，Agent 会自动创建 fake 调研任务后回答。</p>
-            </div>
-            <div class="chat-message assistant" id="research-answer">等待提问。</div>
-          </div>
-        </div>
-        <div id="research-citations" class="stack"></div>
-        <div class="qa-debug-grid developer-surface">
-          <section class="debug-card">
-            <h3>Decision</h3>
-            <pre id="research-decision"></pre>
-          </section>
-          <section class="debug-card">
-            <h3>Evidence Sufficiency</h3>
-            <pre id="research-sufficiency"></pre>
-          </section>
-        </div>
-      </section>
-
-      <section class="panel product-mode-panel" id="task-panel">
-        <h2>任务状态</h2>
-        <div id="task-list" class="stack"></div>
-      </section>
-
-      <section class="panel product-mode-panel" id="task-error-panel">
-        <h2>失败信息</h2>
-        <div id="task-error" class="stack"></div>
-      </section>
-
-      <section class="panel product-mode-panel" id="scorecard-panel">
-        <h2>评估分数</h2>
-        <div id="scorecard" class="metric-grid"></div>
-      </section>
-
-      <div class="dev-section-header" id="dev-section-eval">
-        <h3>评测与 Benchmark</h3>
-        <p>全部可一键复现：每个模块下方都写了"测什么"和"结果怎么看"。</p>
-      </div>
-
-      <section class="panel wide developer-mode-panel" id="rag-eval-v4-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Evaluation Workbench</p>
-            <h2>RAG v4.0 评测与坏例归因</h2>
-          </div>
-          <span class="soft-badge">100 seed cases / retrieval / answer / citation</span>
-        </div>
-        <div class="button-row">
-          <button id="run-rag-eval-v4" type="button">运行 v4.0 基线</button>
-          <button id="load-rag-eval-v4" type="button">加载最近报告</button>
-        </div>
-        <p class="panel-copy">测什么：100 条可审计 seed 的 pass rate、Recall@K、MRR、nDCG、必需词召回、引用 Precision/Recall、拒答准确率与失败阶段归因（retrieval/rerank/compression/generation/citation）。内置集合含 20 个受控事实的四种问法加 20 个无答案问题，属于种子集而非人工审核的 Golden Set。</p>
-        <div id="rag-eval-v4-metrics" class="metric-grid"></div>
-        <div class="qa-debug-grid">
-          <section class="debug-card">
-            <h3>Failure Counts</h3>
-            <pre id="rag-eval-v4-failures"></pre>
-          </section>
-          <section class="debug-card">
-            <h3>Dataset Metadata</h3>
-            <pre id="rag-eval-v4-dataset"></pre>
-          </section>
-        </div>
-        <h3>Bad Cases</h3>
-        <div id="rag-eval-v4-bad-cases" class="stack"></div>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="rag-eval-v41-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Retrieval Ablation</p>
-            <h2>RAG v4.1 Hybrid Retrieval 消融</h2>
-          </div>
-          <span class="soft-badge">BM25 / Dense / RRF / Cross-Encoder / Contextual Chunk</span>
-        </div>
-        <div class="button-row">
-          <button id="run-rag-eval-v41" type="button">运行八组 Smoke 实验</button>
-          <button id="load-rag-eval-v41" type="button">加载最近 V4.1 报告</button>
-        </div>
-        <p class="panel-copy">测什么：ordinary/contextual 分块 × BM25/Dense/Hybrid/Hybrid+Rerank 共 8 组的 Recall@K/MRR/nDCG/P95，找出最优检索配置。网页按钮用确定性 Embedding 快速检查链路；真实多语种与 Zotero 论文实验请运行 V4.1 CLI。</p>
-        <div class="table-scroll">
-          <table class="eval-table">
-            <thead>
-              <tr><th>实验</th><th>Recall@K</th><th>MRR</th><th>nDCG@K</th><th>P95 ms</th></tr>
-            </thead>
-            <tbody id="rag-eval-v41-table"></tbody>
-          </table>
-        </div>
-        <div class="qa-debug-grid">
-          <section class="debug-card">
-            <h3>最优配置</h3>
-            <pre id="rag-eval-v41-best"></pre>
-          </section>
-          <section class="debug-card">
-            <h3>实验边界</h3>
-            <pre id="rag-eval-v41-notes"></pre>
-          </section>
-        </div>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="context-v42-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Context Engine Evaluation</p>
-            <h2>Context v4.2 可恢复压缩 Benchmark</h2>
-          </div>
-          <span class="soft-badge">append-only / token budget / artifact / restore</span>
-        </div>
-        <div class="button-row">
-          <button id="run-context-v42-benchmark" type="button">运行 Context Benchmark</button>
-        </div>
-        <p class="panel-copy">测什么：token 节省率、约束/实体/待办保留率、工具调用配对、按 compaction_id 精确恢复、重复压缩保留。已接入聊天链路（真实 ContextEngine 每轮执行）；摘要是派生视图，原始 JSONL 永不被覆盖。</p>
-        <div id="context-v42-metrics" class="metric-grid"></div>
-        <pre id="context-v42-summary"></pre>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="memory-v43-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Long-Term Memory Evaluation</p>
-            <h2>Memory v4.3 治理与跨会话 Benchmark</h2>
-          </div>
-          <span class="soft-badge">policy / namespace ACL / conflict / hybrid recall / delete</span>
-        </div>
-        <div class="button-row">
-          <button id="run-memory-v43-benchmark" type="button">运行 Memory Benchmark</button>
-        </div>
-        <p class="panel-copy">测什么：写入精度、Recall@K、过期事实误用、跨 namespace 泄漏、重复率、启用/禁用开关与延迟吞吐。已接入聊天链路（LongTermMemoryService 负责跨会话写入/召回/治理）。</p>
-        <div id="memory-v43-metrics" class="metric-grid"></div>
-        <pre id="memory-v43-summary"></pre>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="runtime-v44-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Agent Runtime Evaluation</p>
-            <h2>Runtime v4.4 LangGraph Benchmark</h2>
-          </div>
-          <span class="soft-badge">state graph / checkpoint / retry / idempotency / isolation</span>
-        </div>
-        <div class="button-row">
-          <button id="run-runtime-v44-benchmark" type="button">运行 Runtime Benchmark</button>
-          <button id="load-runtime-v44-benchmark" type="button">加载最近报告</button>
-        </div>
-        <p class="panel-copy">测什么：路径准确率、SQLite checkpoint 恢复、瞬时失败重试、请求幂等、跨用户记忆隔离、trace span 覆盖和 STORM 工具产物契约（期望全部 1.0、泄漏 0）。</p>
-        <div id="runtime-v44-metrics" class="metric-grid"></div>
-        <pre id="runtime-v44-summary"></pre>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="production-v45-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Production Governance Workbench</p>
-            <h2>Production v4.5 治理与 SLO Benchmark</h2>
-          </div>
-          <span class="soft-badge">ACL / WAL / idempotency / cache / jobs / circuit / spans</span>
-        </div>
-        <div class="button-row">
-          <button id="run-production-v45-benchmark" type="button">运行 Production Benchmark</button>
-          <button id="load-production-v45-benchmark" type="button">加载最近报告</button>
-          <button id="load-production-v45-status" type="button">刷新控制面状态</button>
-          <button id="load-production-v45-trace" type="button">加载当前 Trace</button>
-        </div>
-        <label>
-          Trace ID
-          <input id="production-v45-trace-id" placeholder="聊天后自动填入" />
-        </label>
-        <p class="panel-copy">测什么：本地 SQLite WAL 治理热路径的 P50/P95/P99、QPS、错误率、降级率、缓存命中、ACL 隔离、作业恢复和 span 覆盖（契约指标期望错误率/泄漏 0、幂等/恢复/span 1.0）。真实 LLM/网络压测需在部署环境另行执行。</p>
-        <div id="production-v45-metrics" class="metric-grid"></div>
-        <div class="qa-debug-grid">
-          <section class="debug-card">
-            <h3>Control Plane</h3>
-            <pre id="production-v45-status"></pre>
-          </section>
-          <section class="debug-card">
-            <h3>SLO / Degradation</h3>
-            <pre id="production-v45-summary"></pre>
-          </section>
-          <section class="debug-card">
-            <h3>OpenTelemetry-style Spans</h3>
-            <pre id="production-v45-trace"></pre>
-          </section>
-        </div>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="retrieval-runtime-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Runtime Integration Comparison</p>
-            <h2>Runtime 接入状态与检索对比</h2>
-          </div>
-          <span class="soft-badge">v4.1 BM25 + Dense + RRF vs legacy</span>
-        </div>
-        <div class="metric-grid" id="runtime-integration-status">
-          <div class="metric"><div class="label">检索 v4.1</div><div class="value">已接入</div></div>
-          <div class="metric"><div class="label">Context v4.2</div><div class="value">已接入</div></div>
-          <div class="metric"><div class="label">Memory v4.3</div><div class="value">已接入</div></div>
-          <div class="metric"><div class="label">LangGraph v4.4</div><div class="value">已接入</div></div>
-          <div class="metric"><div class="label">Production v4.5</div><div class="value">已接入</div></div>
-          <div class="metric"><div class="label">意图路由</div><div class="value">LLM + 规则兜底</div></div>
-        </div>
-        <div class="button-row">
-          <button id="run-retrieval-runtime" type="button">运行检索对比 Benchmark</button>
-          <button id="load-retrieval-runtime" type="button">加载最近报告</button>
-        </div>
-        <p class="panel-copy">测什么：同一 100 条 seed 集上 legacy（词法重叠 + hash 向量）与 V4.1（BM25 + Dense + RRF）的 Recall@K/MRR/nDCG/延迟对比，证明接入后提升多少；接入状态卡片同步展示各模块是否已接入聊天链路。</p>
-        <div class="table-scroll">
-          <table class="eval-table">
-            <thead>
-              <tr><th>指标</th><th>legacy</th><th>V4.1</th><th>差值</th></tr>
-            </thead>
-            <tbody id="retrieval-runtime-table"></tbody>
-          </table>
-        </div>
-        <div class="qa-debug-grid">
-          <section class="debug-card">
-            <h3>报告摘要</h3>
-            <pre id="retrieval-runtime-summary">尚未运行对比。点击“运行检索对比 Benchmark”生成 legacy vs V4.1 报告；或设置 PAPERSTORM_RETRIEVAL_EMBEDDING=real 后再跑真实向量对比。</pre>
-          </section>
-        </div>
-      </section>
-
-      <section class="panel wide product-mode-panel" id="article-panel">
-        <h2>调研文章</h2>
-        <article id="article-content" class="article"></article>
-      </section>
-
-      <section class="panel developer-mode-panel" id="qa-panel">
-        <h2>任务知识库问答（只读产物）</h2>
-        <p class="panel-copy">看什么：当前调研任务的知识库问答产物（只读展示）。交互式问答请用聊天模式（面向当前任务）或本地文档知识库（面向你自己的文档）。</p>
-        <div id="qa-answer" class="stack"></div>
-      </section>
-
-      <div class="dev-section-header" id="dev-section-runtime">
-        <h3>运行时与链路调试</h3>
-        <p>看链路怎么跑、为什么这么跑：Trace / SSE / Multi-Agent / 过程细节 / Worker / 压测，以及聊天内部的状态与记忆调试。</p>
-      </div>
-
-      <section class="panel developer-mode-panel" id="trace-panel">
-        <h2>Runtime Trace</h2>
-        <p class="panel-copy">看什么：任务从提交到完成的运行事件时间线（工具调用、状态流转、错误），用于定位一次调研卡在哪一步。</p>
-        <ol id="trace-list" class="timeline"></ol>
-      </section>
-
-      <section class="panel developer-mode-panel" id="sse-panel">
-        <h2>SSE 事件流</h2>
-        <p class="panel-copy">看什么：服务端实时事件（连接、心跳、任务状态），确认前端与服务的实时通道是否连通。</p>
-        <ol id="sse-event-list" class="timeline"></ol>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="multi-agent-panel">
-        <h2>Multi-Agent 编排</h2>
-        <p class="panel-copy">看什么：调研检索结果的 Multi-Agent 保留/过滤决策——哪些结果被保留、哪些被过滤及原因。</p>
-        <div id="multi-agent" class="stack"></div>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="process-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker">Process Introspection</p>
-            <h2>过程细节</h2>
-          </div>
-          <span class="soft-badge">outline / reflection / conversation / search</span>
-        </div>
-        <p class="panel-copy">看什么：单次调研的过程产物——outline、reflection/总结、计划与检索、访谈式对话记录。</p>
-        <div class="process-grid">
-          <section class="process-card">
-            <h3>Outline</h3>
-            <pre id="outline-content"></pre>
-          </section>
-          <section class="process-card">
-            <h3>Reflection / Summary</h3>
-            <pre id="reflection-content"></pre>
-          </section>
-          <section class="process-card">
-            <h3>Plan / Search</h3>
-            <pre id="plan-content"></pre>
-          </section>
-          <section class="process-card">
-            <h3>Conversation</h3>
-            <pre id="conversation-content"></pre>
-          </section>
-        </div>
-      </section>
-
-      <section class="panel developer-mode-panel" id="pipeline-worker-panel">
-        <h2>Pipeline Worker</h2>
-        <p class="panel-copy">看什么：Pipeline Worker 的 runner、运行模式、检索器、LLM 配置与当前状态。</p>
-        <div id="pipeline-worker" class="metric-grid"></div>
-      </section>
-
-      <section class="panel wide developer-mode-panel" id="stress-panel">
-        <h2>稳定性压测</h2>
-        <p class="panel-copy">看什么：并发任务压测统计——总任务数、成功/失败、失败率与延迟分位。</p>
-        <div id="stress-report" class="metric-grid"></div>
+        </section>
       </section>
     </main>
 
-    <script src="sample_data.js"></script>
+    <div class="toast hidden" id="toast" role="status"></div>
     <script src="app.js"></script>
   </body>
 </html>

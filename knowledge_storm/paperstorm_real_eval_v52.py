@@ -604,8 +604,34 @@ def _candidate_queries(terms):
                 terms[0], terms[1], terms[2]
             )
         )
+        queries.extend(
+            [
+                "在 {0} 场景中，{1} 如何用于解决 {2} 问题？".format(
+                    terms[0], terms[1], terms[2]
+                ),
+                "哪些实验或证据说明 {1} 能改善 {0} 的 {2} 效果？".format(
+                    terms[0], terms[1], terms[2]
+                ),
+                "针对 {0} 的 {2}，有哪些使用 {1} 的方法可以比较？".format(
+                    terms[0], terms[1], terms[2]
+                ),
+            ]
+        )
     else:
-        queries.append("哪些论文同时讨论 {0} 和 {1}？".format(terms[0], terms[1]))
+        queries.extend(
+            [
+                "哪些论文同时讨论 {0} 和 {1}？".format(terms[0], terms[1]),
+                "{0} 场景中如何使用 {1} 解决核心问题？".format(
+                    terms[0], terms[1]
+                ),
+                "哪些实验或证据说明 {1} 能改善 {0}？".format(
+                    terms[0], terms[1]
+                ),
+                "围绕 {0}，有哪些涉及 {1} 的方法可以比较？".format(
+                    terms[0], terms[1]
+                ),
+            ]
+        )
     return queries
 
 

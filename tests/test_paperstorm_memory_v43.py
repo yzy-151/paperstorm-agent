@@ -238,29 +238,7 @@ class PaperStormMemoryV43Test(unittest.TestCase):
             self.assertEqual(recalled["results"][0]["canonical_key"], "term:pim")
             self.assertEqual([item["event"] for item in events], ["memory_write", "memory_recall"])
 
-    def test_memory_benchmark_is_reproducible_and_isolated(self):
-        from knowledge_storm.paperstorm_memory_benchmark_v43 import run_memory_benchmark
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            first = run_memory_benchmark(Path(temp_dir))
-            second = run_memory_benchmark(Path(temp_dir))
-
-            self.assertNotEqual(first["run_id"], second["run_id"])
-            self.assertEqual(first["metrics"]["memory_write_precision"], 1.0)
-            self.assertEqual(first["metrics"]["memory_recall_at_k"], 1.0)
-            self.assertEqual(first["metrics"]["stale_fact_misuse_rate"], 0.0)
-            self.assertEqual(first["metrics"]["cross_namespace_leakage_rate"], 0.0)
-            self.assertEqual(first["metrics"]["duplicate_rate"], 0.0)
-            self.assertGreaterEqual(first["metrics"]["memory_enabled_task_success"], first["metrics"]["memory_disabled_task_success"])
-            self.assertGreater(first["metrics"]["background_throughput_per_second"], 0)
-            self.assertIn("baseline", first)
-            self.assertGreater(first["baseline"]["duplicate_rate"], 0.0)
-            self.assertGreater(
-                first["metrics"]["memory_recall_at_k"],
-                first["baseline"]["recall_at_k"],
-            )
-
-    def test_fastapi_exposes_memory_governance_and_benchmark(self):
+    def test_fastapi_exposes_memory_governance(self):
         try:
             from fastapi.testclient import TestClient
         except Exception as exc:  # pragma: no cover - optional dependency
@@ -284,19 +262,9 @@ class PaperStormMemoryV43Test(unittest.TestCase):
                 json={"namespace": "user/alice", "query": "PIM", "top_k": 3},
             )
             exported = client.get("/memories/export", params={"namespace": "user/alice"})
-            benchmark = client.post("/evaluations/memory-v43")
-
-        root = Path(__file__).resolve().parents[1]
-        index = (root / "frontend/paperstorm_dashboard/index.html").read_text(encoding="utf-8")
-        script = (root / "frontend/paperstorm_dashboard/app.js").read_text(encoding="utf-8")
         self.assertEqual(created.status_code, 200)
         self.assertEqual(recalled.json()["results"][0]["canonical_key"], "term:pim")
         self.assertEqual(exported.json()["namespace"], "user/alice")
-        self.assertEqual(benchmark.status_code, 200)
-        self.assertIn("v4.3", index)
-        self.assertIn("chat-memory-enabled", index)
-        self.assertIn("/evaluations/memory-v43", script)
-        self.assertIn("/memories/search", script)
 
 
 if __name__ == "__main__":

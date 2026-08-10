@@ -34,3 +34,7 @@ docs/RESUME_INTERVIEW_PLAN.md
 docs/OPERATION_GUIDE.md
 docs/archive/
 docs/dual-agent-projects-resume.md
+
+# 本地 Agent 配置与内部开发计划，不上传 GitHub
+.claude/
+docs/superpowers/

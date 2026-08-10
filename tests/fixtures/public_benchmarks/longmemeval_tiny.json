@@ -1,0 +1,41 @@
+[
+  {
+    "question_id": "q-update",
+    "question_type": "knowledge_update",
+    "question": "用户现在偏好哪种回答语言？",
+    "answer": "中文",
+    "answer_session_ids": ["s2"],
+    "haystack_sessions": [
+      {
+        "session_id": "s1",
+        "date": "2026-01-01",
+        "content": [
+          {"role": "user", "content": "我偏好英文回答。"},
+          {"role": "assistant", "content": "已记录。"}
+        ]
+      },
+      {
+        "session_id": "s2",
+        "date": "2026-02-01",
+        "content": [
+          {"role": "user", "content": "以后请改为中文回答。"},
+          {"role": "assistant", "content": "好的。"}
+        ]
+      }
+    ]
+  },
+  {
+    "question_id": "q-abstain",
+    "question_type": "abstention",
+    "question": "用户最喜欢哪支足球队？",
+    "answer": "无法从对话中确定",
+    "answer_session_ids": [],
+    "haystack_sessions": [
+      {
+        "session_id": "s3",
+        "date": "2026-03-01",
+        "content": [{"role": "user", "content": "我今天在调试 PaperStorm。"}]
+      }
+    ]
+  }
+]

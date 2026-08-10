@@ -31,7 +31,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="5.4")
+    app = FastAPI(title="PaperStorm Agent Service", version="5.6")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -206,22 +206,6 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     class ProductionBenchmarkRequest(BaseModel):
         request_count: int = Field(default=100, ge=10, le=10000)
 
-    class RAGEvaluationV4Request(BaseModel):
-        top_k: int = Field(default=5, ge=1, le=20)
-
-    class RAGEvaluationV41Request(BaseModel):
-        top_k: int = Field(default=5, ge=1, le=20)
-        backend: str = "deterministic"
-
-    class RetrievalRuntimeBenchmarkRequest(BaseModel):
-        top_k: int = Field(default=5, ge=1, le=20)
-        embedding: str = "auto"
-
-    class MultiTaskBenchmarkRequest(BaseModel):
-        top_k: int = Field(default=5, ge=1, le=20)
-        embedding: str = "hash"
-        zotero_root: Optional[str] = None
-
     class EvaluationDatasetV54Request(BaseModel):
         dataset_path: str
 
@@ -238,6 +222,11 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         candidate_k: int = Field(default=20, ge=5, le=200)
         configurations: list[str] = ["bm25", "dense", "hybrid"]
         enable_reranker: bool = False
+
+    class BenchmarkRunRequest(BaseModel):
+        benchmark_id: str
+        profile: str = "smoke"
+        allow_paid_llm: bool = False
 
     @app.get("/")
     def get_dashboard_home():
@@ -261,6 +250,26 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.get("/sample_data.json")
     def get_dashboard_sample_data_json():
         return _dashboard_file_response(dashboard_dir, "sample_data.json")
+
+    @app.get("/benchmarks/catalog")
+    def get_benchmark_catalog():
+        return service.get_benchmark_catalog()
+
+    @app.post("/benchmarks/runs")
+    def start_benchmark_run(request: BenchmarkRunRequest):
+        return service.start_benchmark_run(
+            benchmark_id=request.benchmark_id,
+            profile=request.profile,
+            allow_paid_llm=request.allow_paid_llm,
+        )
+
+    @app.get("/benchmarks/runs/{run_id}")
+    def get_benchmark_run(run_id: str):
+        return service.get_benchmark_run(run_id)
+
+    @app.post("/benchmarks/runs/{run_id}/cancel")
+    def cancel_benchmark_run(run_id: str):
+        return service.cancel_benchmark_run(run_id)
 
     @app.get("/events")
     def stream_events(task_id: Optional[str] = None, once: bool = False):
@@ -378,50 +387,6 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     def run_production_worker_tick():
         return service.run_production_worker_tick()
 
-    @app.post("/evaluations/rag-v4")
-    def run_rag_evaluation_v4(request: RAGEvaluationV4Request):
-        return service.run_rag_evaluation_v4(
-            top_k=request.top_k,
-        )
-
-    @app.get("/evaluations/rag-v4/latest")
-    def get_rag_evaluation_v4():
-        return service.get_rag_evaluation_v4()
-
-    @app.post("/evaluations/rag-v41")
-    def run_rag_evaluation_v41(request: RAGEvaluationV41Request):
-        return service.run_rag_evaluation_v41(
-            top_k=request.top_k,
-            backend=request.backend,
-        )
-
-    @app.get("/evaluations/rag-v41/latest")
-    def get_rag_evaluation_v41():
-        return service.get_rag_evaluation_v41()
-
-    @app.post("/evaluations/retrieval-runtime")
-    def run_retrieval_runtime_benchmark(request: RetrievalRuntimeBenchmarkRequest):
-        return service.run_retrieval_runtime_benchmark(
-            embedding=request.embedding,
-            top_k=request.top_k,
-        )
-
-    @app.get("/evaluations/retrieval-runtime/latest")
-    def get_retrieval_runtime_benchmark():
-        return service.get_retrieval_runtime_benchmark()
-
-    @app.post("/evaluations/multi-task")
-    def run_multi_task_benchmark(request: MultiTaskBenchmarkRequest):
-        return service.run_multi_task_benchmark(
-            embedding=request.embedding,
-            top_k=request.top_k,
-            zotero_root=request.zotero_root,
-        )
-
-    @app.get("/evaluations/multi-task/latest")
-    def get_multi_task_benchmark():
-        return service.get_multi_task_benchmark()
-
     @app.post("/evaluations/v54/dataset")
     def import_evaluation_v54_dataset(request: EvaluationDatasetV54Request):
         return service.import_evaluation_v54_dataset(request.dataset_path)
@@ -506,14 +471,6 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
             thread_id, limit=limit, tenant_id=tenant_id, user_id=user_id
         )
 
-    @app.post("/evaluations/context-v42")
-    def run_context_benchmark_v42():
-        return service.run_context_benchmark_v42()
-
-    @app.get("/evaluations/context-v42/latest")
-    def get_context_benchmark_v42():
-        return service.get_context_benchmark_v42()
-
     @app.post("/memories")
     def create_memory(request: MemoryCreateRequest):
         return service.create_memory(**_request_payload(request))
@@ -545,14 +502,6 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.post("/memories/settings")
     def update_memory_settings(request: MemorySettingRequest):
         return service.set_memory_enabled(request.namespace, request.enabled)
-
-    @app.post("/evaluations/memory-v43")
-    def run_memory_benchmark_v43():
-        return service.run_memory_benchmark_v43()
-
-    @app.get("/evaluations/memory-v43/latest")
-    def get_memory_benchmark_v43():
-        return service.get_memory_benchmark_v43()
 
     @app.post("/evaluations/runtime-v44")
     def run_langgraph_benchmark_v44():
@@ -607,7 +556,4 @@ def _request_payload(request):
     return request.dict()
 
 
-try:
-    app = create_app()
-except RuntimeError:
-    app = None
+app = create_app()

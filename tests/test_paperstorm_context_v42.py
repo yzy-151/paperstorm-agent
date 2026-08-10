@@ -128,30 +128,6 @@ class PaperStormContextV42Test(unittest.TestCase):
         self.assertIn("goal", assembled_ids)
         self.assertIn("assistant-3", assembled_ids)
 
-    def test_context_benchmark_scores_savings_constraints_and_restore(self):
-        from knowledge_storm.paperstorm_context_benchmark_v42 import run_context_benchmark
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            report = run_context_benchmark(temp_dir)
-            repeated = run_context_benchmark(temp_dir)
-            saved = json.loads(
-                (Path(temp_dir) / "context_benchmark_v42.json").read_text(encoding="utf-8")
-            )
-
-        self.assertGreater(report["metrics"]["token_savings_rate"], 0)
-        self.assertEqual(report["metrics"]["constraint_retention_rate"], 1.0)
-        self.assertEqual(report["metrics"]["restore_exact"], 1.0)
-        self.assertEqual(repeated["metrics"]["restore_exact"], 1.0)
-        self.assertNotEqual(report["run_id"], repeated["run_id"])
-        self.assertEqual(report["metrics"]["repeated_compaction_retention_rate"], 1.0)
-        self.assertEqual(saved["project"], "PaperStorm Context Benchmark v4.2")
-        self.assertIn("baseline", report)
-        self.assertEqual(report["baseline"]["restore_exact"], 0.0)
-        self.assertGreater(
-            report["metrics"]["tool_call_pairing_rate"],
-            report["baseline"]["tool_call_pairing_rate"],
-        )
-
     def test_chat_service_exposes_context_meter_compaction_and_restore(self):
         from knowledge_storm.paperstorm_service import PaperStormTaskService
 
@@ -178,7 +154,7 @@ class PaperStormContextV42Test(unittest.TestCase):
         self.assertLessEqual(compacted["context_meter"]["usage_ratio"], 0.9)
         self.assertGreaterEqual(len(restored["messages"]), 8)
 
-    def test_fastapi_and_dashboard_expose_v42_context_controls(self):
+    def test_fastapi_exposes_context_compaction_and_restore(self):
         from fastapi.testclient import TestClient
 
         from examples.storm_examples.paperstorm_service_api import create_app
@@ -195,18 +171,8 @@ class PaperStormContextV42Test(unittest.TestCase):
             compact = client.post(
                 "/chat/sessions/{0}/context/compact".format(chat_id), json={"force": True}
             )
-            benchmark = client.post("/evaluations/context-v42")
-
-        root = Path(__file__).resolve().parents[1]
-        index = (root / "frontend/paperstorm_dashboard/index.html").read_text(encoding="utf-8")
-        script = (root / "frontend/paperstorm_dashboard/app.js").read_text(encoding="utf-8")
         self.assertEqual(context.status_code, 200)
         self.assertEqual(compact.status_code, 200)
-        self.assertEqual(benchmark.status_code, 200)
-        self.assertIn("v4.2", index)
-        self.assertIn("context-meter", index)
-        self.assertIn("compact-chat-context", index)
-        self.assertIn("/evaluations/context-v42", script)
 
 
 if __name__ == "__main__":

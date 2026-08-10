@@ -5,10 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .paperstorm_context_v42 import ContextEngine, ContextEngineConfig, ContextEventStore
+from .paperstorm_context_v56 import ContextEngine, ContextEngineConfig, ContextEventStore
 from .paperstorm_intent_router import PaperStormIntentRouter
 from .paperstorm_memory import PaperStormMemoryStore
-from .paperstorm_memory_v43 import LongTermMemoryService
+from .paperstorm_memory_v56 import LongTermMemoryService
 
 
 class PaperStormChatAgent:
@@ -309,7 +309,7 @@ class PaperStormChatAgent:
         )
 
     def _long_term_memory(self):
-        return LongTermMemoryService(Path(self.task_service.root_dir) / "memory_service_v43")
+        return LongTermMemoryService(Path(self.task_service.root_dir) / "memory_service_v56")
 
     def _run_conversation_graph(self, session: Dict, user_message: Dict, context_window):
         return self.task_service.invoke_conversation_graph(

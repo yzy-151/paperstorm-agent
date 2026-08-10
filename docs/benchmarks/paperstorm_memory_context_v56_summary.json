@@ -1,0 +1,49 @@
+{
+  "version": "5.6.0",
+  "benchmark": "LongMemEval-S",
+  "dataset_version": "cleaned-2025-09",
+  "case_count": 500,
+  "top_k": 5,
+  "evidence_tier": "public-official-retrieval-only",
+  "modes": {
+    "recent_window": {
+      "recall_at_5": 0.1358
+    },
+    "v56_hash": {
+      "recall_at_5": 0.481267,
+      "p50_latency_ms": 146.757,
+      "p95_latency_ms": 202.643
+    },
+    "v56_minilm_cpu": {
+      "embedding": "sentence-transformers/all-MiniLM-L6-v2",
+      "recall_at_5": 0.793,
+      "p50_latency_ms": 1586.114,
+      "p95_latency_ms": 1857.286
+    }
+  },
+  "longbench": {
+    "adapter_and_offline_protocol": "passed",
+    "formal_public_run": "blocked_external_network",
+    "reason": "official download ended prematurely; truncated JSON was rejected"
+  },
+  "qasper_context": {
+    "dataset_version": "qasper-official-v0.3 test",
+    "case_count": 1309,
+    "retrieval_mode": "hybrid_rerank",
+    "model_context_tokens": 8192,
+    "output_reserve_tokens": 1536,
+    "retrieved_evidence_retention": 0.999847,
+    "gold_evidence_recall_before_context": 0.618648,
+    "gold_evidence_recall_after_context": 0.618648,
+    "mean_context_to_full_document_ratio": 0.16657,
+    "p50_context_tokens": 554,
+    "over_budget_rate": 0.0,
+    "validation_pass_rate": 1.0,
+    "evidence_tier": "public-official-context-diagnostic"
+  },
+  "limitations": [
+    "LongMemEval result is retrieval-only and is not end-to-end answer accuracy.",
+    "Latency is single-process Windows CPU warm-query time and includes on-demand session embedding.",
+    "LongBench formal paired task score is not claimed."
+  ]
+}

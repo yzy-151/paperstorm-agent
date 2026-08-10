@@ -175,7 +175,9 @@ class ContextEngine:
             summary = (
                 self.summarizer(middle_view)
                 if self.summarizer is not None
-                else _structured_summary(messages, middle_view, artifact_refs)
+                else _structured_summary(
+                    preserved + middle_view, middle_view, artifact_refs
+                )
             )
             summary = _normalize_summary(summary, messages)
             expected_constraints = expected_constraints or []

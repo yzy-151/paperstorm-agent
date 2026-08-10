@@ -1,0 +1,76 @@
+{
+  "project": "PaperStorm v5.5",
+  "evidence_tier": "public_official",
+  "protocol": {
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "bootstrap_samples": 5000,
+    "seed": 55,
+    "latency_scope": "warm query after cold index construction",
+    "hardware_scope": "single-machine CPU reference"
+  },
+  "scifact_test": {
+    "source": "BEIR official SciFact",
+    "document_count": 5183,
+    "case_count": 300,
+    "top_k": 10,
+    "archive_md5_verified": "5f7d1de60b170fc8027bb7898e2efca1",
+    "corpus_sha256": "54e2468b7b03e164cd2a0d87bafe248e00e991cde4f5eab0d5122f540f6731a9",
+    "methods": {
+      "bm25": {"recall": 0.759167, "mrr": 0.606921, "ndcg": 0.639533, "p95_ms": 42.2295},
+      "dense": {"recall": 0.785667, "mrr": 0.607145, "ndcg": 0.649225, "p95_ms": 20.5376},
+      "hybrid": {"recall": 0.811444, "mrr": 0.629782, "ndcg": 0.668713, "p95_ms": 67.7748},
+      "hybrid_rerank": {"recall": 0.837889, "mrr": 0.665861, "ndcg": 0.700134, "p95_ms": 2733.4805}
+    }
+  },
+  "qasper_test": {
+    "source": "AllenAI QASPER official test",
+    "task": "paper-scoped evidence paragraph retrieval",
+    "paragraph_count": 19914,
+    "case_count": 1309,
+    "top_k": 5,
+    "dataset_fingerprint": "462b1c1545733a5e",
+    "corpus_sha256": "a48f71cfc64807cfd665e4f521c31cc8db6a0402464085bb60c278b55fde5c72",
+    "methods": {
+      "bm25": {"recall": 0.427937, "mrr": 0.371365, "ndcg": 0.339642, "p95_ms": 0.3391},
+      "dense": {"recall": 0.477107, "mrr": 0.452674, "ndcg": 0.402570, "p95_ms": 14.5165},
+      "hybrid": {"recall": 0.505659, "mrr": 0.459524, "ndcg": 0.415529, "p95_ms": 15.3228},
+      "hybrid_rerank": {"recall": 0.618648, "mrr": 0.580176, "ndcg": 0.532692, "p95_ms": 1316.6630}
+    }
+  },
+  "qasper_answer_generation": {
+    "source": "AllenAI QASPER v0.3 official evaluator",
+    "retrieval": "paper-scoped hybrid_rerank top-5",
+    "generation_model": "deepseek/deepseek-chat",
+    "prompt_version": "qasper-grounded-json-v2",
+    "validation": {
+      "case_count": 1005,
+      "successful_predictions": 1005,
+      "answer_f1": 0.47216,
+      "exact_match": 0.242786,
+      "evidence_f1_local_before_text_only_alignment": 0.502545,
+      "total_tokens": 972608
+    },
+    "test": {
+      "case_count": 1451,
+      "successful_predictions": 1451,
+      "answer_f1": 0.5441468958749875,
+      "exact_match": 0.32736,
+      "evidence_f1_text_only": 0.5814043201421425,
+      "missing_predictions": 0,
+      "total_tokens": 1371303,
+      "answer_f1_by_type": {
+        "extractive": 0.5689906211148631,
+        "abstractive": 0.26506812372535,
+        "boolean": 0.7571428571428571,
+        "none": 0.717391304347826
+      }
+    }
+  },
+  "limitations": [
+    "QASPER retrieval and answer generation are reported separately; generated-answer F1 does not prove faithfulness.",
+    "Per-query latency excludes model loading and index construction and is machine-specific.",
+    "Metrics are validated by deterministic hand-calculated fixtures; the optional BEIR evaluator was not installed in the experiment environment.",
+    "The test splits must not be reused for future parameter tuning."
+  ]
+}

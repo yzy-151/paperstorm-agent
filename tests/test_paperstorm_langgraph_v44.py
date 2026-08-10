@@ -444,22 +444,6 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             self.assertEqual(spec["checkpoint"]["backend"], "sqlite")
             self.assertEqual(spec["retry"]["max_attempts"], 2)
 
-    def test_dashboard_exposes_graph_debugger_and_runtime_benchmark(self):
-        root = Path(__file__).resolve().parents[1]
-        index = (root / "frontend/paperstorm_dashboard/index.html").read_text(
-            encoding="utf-8"
-        )
-        script = (root / "frontend/paperstorm_dashboard/app.js").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("v4.4", index)
-        self.assertIn("chat-graph-run", index)
-        self.assertIn("chat-checkpoint-history", index)
-        self.assertIn("runtime-v44-metrics", index)
-        self.assertIn("/conversation-graph/threads/", script)
-        self.assertIn("/evaluations/runtime-v44", script)
-
 
 if __name__ == "__main__":
     unittest.main()

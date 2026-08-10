@@ -263,39 +263,6 @@ class PaperStormRetrievalV41Test(unittest.TestCase):
             dataset["cases"][0]["allowed_citation_ids"], ["paper-a::p1::c1"]
         )
 
-    def test_service_and_api_expose_v41_ablation_smoke_run(self):
-        from fastapi.testclient import TestClient
-
-        from examples.storm_examples.paperstorm_service_api import create_app
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            client = TestClient(create_app(service_root=Path(temp_dir)))
-            response = client.post(
-                "/evaluations/rag-v41",
-                json={"top_k": 5, "backend": "deterministic"},
-            )
-            latest = client.get("/evaluations/rag-v41/latest")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()["experiments"]), 8)
-        self.assertEqual(latest.status_code, 200)
-        self.assertEqual(latest.json()["project"], "PaperStorm Retrieval Ablation v4.1")
-
-    def test_dashboard_exposes_v41_ablation_comparison(self):
-        root = Path(__file__).resolve().parents[1]
-        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(
-            encoding="utf-8"
-        )
-        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("v4.1", index)
-        self.assertIn("rag-eval-v41-panel", index)
-        self.assertIn("rag-eval-v41-table", index)
-        self.assertIn("/evaluations/rag-v41", script)
-        self.assertIn("renderRAGEvaluationV41", script)
-
 
 if __name__ == "__main__":
     unittest.main()

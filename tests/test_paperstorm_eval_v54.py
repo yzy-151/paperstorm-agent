@@ -97,6 +97,24 @@ class RetrievalMetricsV54Test(unittest.TestCase):
 
         self.assertEqual(select_dev_configuration(reports), "hybrid")
 
+    def test_deployable_selection_rejects_slow_reranker_despite_quality_gain(self):
+        from knowledge_storm.paperstorm_eval_v54 import select_deployable_configuration
+
+        reports = {
+            "dense": {"ndcg_at_5": 0.35, "mrr": 0.31, "recall_at_5": 0.44, "p95_latency_ms": 243},
+            "hybrid": {"ndcg_at_5": 0.28, "mrr": 0.25, "recall_at_5": 0.38, "p95_latency_ms": 239},
+            "hybrid_rerank": {"ndcg_at_5": 0.45, "mrr": 0.44, "recall_at_5": 0.5, "p95_latency_ms": 3272},
+        }
+
+        selection = select_deployable_configuration(
+            reports, latency_budget_ms=500, max_recall_drop=0.02
+        )
+
+        self.assertEqual(selection["quality_best"], "hybrid_rerank")
+        self.assertEqual(selection["selected"], "dense")
+        self.assertFalse(selection["reranker_gate"]["enabled"])
+        self.assertEqual(selection["reranker_gate"]["reason"], "P95 延迟超出预算")
+
     def test_paired_delta_counts_wins_ties_and_losses(self):
         from knowledge_storm.paperstorm_eval_v54 import paired_score_delta
 
@@ -158,7 +176,7 @@ class RetrievalMetricsV54Test(unittest.TestCase):
             "P95 延迟超出预算",
         )
 
-    def test_benchmark_selects_on_dev_and_reports_test_as_pilot(self):
+    def test_benchmark_selects_on_dev_without_reading_frozen_test_as_pilot(self):
         from knowledge_storm.paperstorm_eval_v54 import run_retrieval_benchmark
 
         dataset = _dataset(
@@ -194,12 +212,32 @@ class RetrievalMetricsV54Test(unittest.TestCase):
 
         self.assertEqual(report["selected_configuration"], "dense")
         self.assertEqual(report["selection_split"], "dev")
-        self.assertEqual(report["final_reporting_split"], "test")
+        self.assertIsNone(report["final_reporting_split"])
         self.assertEqual(report["evidence_status"], "pilot")
         self.assertFalse(report["release_claim_allowed"])
-        self.assertEqual(report["test"]["dense"]["recall_at_5"], 0.0)
-        self.assertEqual(report["test"]["bm25"]["recall_at_5"], 1.0)
-        self.assertEqual(report["paired_test_delta"]["losses"], 1)
+        self.assertEqual(report["test"], {})
+        self.assertIsNone(report["paired_test_delta"])
+
+    def test_release_ready_benchmark_reports_frozen_test(self):
+        from knowledge_storm.paperstorm_eval_v54 import run_retrieval_benchmark
+
+        dataset = _dataset([_case(1, split="dev"), _case(2, split="test")])
+
+        def search(case, mode, _retrieve_k):
+            ranked = [case["metadata"]["source_document_id"]]
+            return {"ranked_document_ids": ranked, "latency_ms": 10.0}
+
+        report = run_retrieval_benchmark(
+            dataset,
+            search_fn=search,
+            configurations=["bm25", "dense"],
+            trust_level="release_ready",
+            bootstrap_samples=100,
+        )
+
+        self.assertEqual(report["final_reporting_split"], "test")
+        self.assertEqual(report["test"]["dense"]["recall_at_5"], 1.0)
+        self.assertTrue(report["release_claim_allowed"])
     def test_valid_review_requires_relevant_documents(self):
         from knowledge_storm.paperstorm_eval_v54 import validate_review
 
@@ -300,6 +338,88 @@ class RetrievalMetricsV54Test(unittest.TestCase):
 
 
 class ContextEvaluationV54Test(unittest.TestCase):
+    def test_structured_summary_never_reinlines_artifactized_tool_output(self):
+        from knowledge_storm.paperstorm_context_v42 import ContextEngine, ContextEngineConfig
+
+        long_output = "must be completed without error passive intermodulation evidence " * 250
+        messages = [
+            {"id": "system", "role": "system", "content": "必须中文回答。"},
+            {"id": "goal", "role": "user", "content": "解释无源互调。"},
+            {"id": "call", "role": "assistant", "content": "call search", "tool_call_id": "c1"},
+            {"id": "tool", "role": "tool", "content": long_output, "tool_call_id": "c1"},
+            {"id": "decision", "role": "assistant", "content": "决定依据论文回答。"},
+            {"id": "follow", "role": "user", "content": "继续。"},
+            {"id": "working", "role": "assistant", "content": "正在组织答案。"},
+        ]
+        engine = ContextEngine(
+            ContextEngineConfig(
+                total_tokens=360,
+                output_reserve_tokens=72,
+                recent_message_count=3,
+                tool_inline_token_limit=24,
+            )
+        )
+
+        result = engine.compact(messages, expected_constraints=["中文"], force=True)
+
+        self.assertEqual(len(result["artifact_refs"]), 1)
+        self.assertNotIn(long_output[:200], result["summary_text"])
+        self.assertLess(result["after_tokens"], result["before_tokens"] * 0.5)
+
+    def test_v52_corpus_is_normalized_to_source_document_ids(self):
+        from knowledge_storm.paperstorm_eval_v54 import normalize_v54_corpus
+
+        dataset = {
+            "corpus": [
+                {
+                    "document_id": "doc-1::p1::c1",
+                    "source_document_id": "doc-1",
+                    "chunk_ids": ["doc-1::p1::c1"],
+                    "title": "Paper 1",
+                    "text": "paper evidence",
+                    "metadata": {"context": "Page 1 paper evidence"},
+                }
+            ]
+        }
+
+        chunks = normalize_v54_corpus(dataset)
+
+        self.assertEqual(chunks[0]["chunk_id"], "doc-1::p1::c1")
+        self.assertEqual(chunks[0]["document_id"], "doc-1")
+        self.assertEqual(chunks[0]["content"], "paper evidence")
+        self.assertEqual(chunks[0]["retrieval_content"], "Page 1 paper evidence")
+
+    def test_context_cases_use_multiple_real_chunks_from_same_paper(self):
+        from knowledge_storm.paperstorm_eval_v54 import (
+            enrich_context_cases,
+            evaluate_context_scenarios,
+        )
+
+        case = _case(1)
+        chunks = [
+            {
+                "chunk_id": f"doc-1-c{index}",
+                "document_id": "doc-1",
+                "content": (f"real evidence section {index} " * 80),
+                "retrieval_content": (f"real evidence section {index} " * 80),
+                "metadata": {"page_number": index},
+            }
+            for index in range(1, 5)
+        ]
+
+        enriched = enrich_context_cases([case], chunks)
+        report = evaluate_context_scenarios(enriched, total_tokens=360)
+
+        self.assertIn("real evidence section 4", enriched[0]["context_evidence"])
+        self.assertGreater(
+            report["strategies"]["structured_compaction"]["token_reduction_rate"],
+            0.4,
+        )
+        self.assertEqual(
+            report["strategies"]["structured_compaction"]["source_retention_rate"],
+            1.0,
+        )
+
     def test_context_report_compares_three_strategies_with_denominators(self):
         from knowledge_storm.paperstorm_eval_v54 import evaluate_context_scenarios
 

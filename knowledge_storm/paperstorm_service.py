@@ -15,6 +15,8 @@ class PaperStormTaskService:
     """File-backed service core for PaperStorm task APIs."""
 
     def __init__(self, root_dir, max_concurrent_tasks: int = 1, pipeline_runner=None):
+        from .paperstorm_benchmarks import BenchmarkRunManager
+
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.tasks_dir = self.root_dir / "tasks"
@@ -23,6 +25,28 @@ class PaperStormTaskService:
         self.results_dir.mkdir(exist_ok=True)
         self.max_concurrent_tasks = max(1, int(max_concurrent_tasks))
         self.pipeline_runner = pipeline_runner
+        self.benchmark_runs = BenchmarkRunManager(self.root_dir)
+
+    def get_benchmark_catalog(self):
+        return self.benchmark_runs.catalog()
+
+    def start_benchmark_run(
+        self,
+        benchmark_id: str,
+        profile: str = "smoke",
+        allow_paid_llm: bool = False,
+    ):
+        return self.benchmark_runs.start(
+            benchmark_id,
+            profile=profile,
+            allow_paid_llm=allow_paid_llm,
+        )
+
+    def get_benchmark_run(self, run_id: str):
+        return self.benchmark_runs.get(run_id)
+
+    def cancel_benchmark_run(self, run_id: str):
+        return self.benchmark_runs.cancel(run_id)
 
     def submit_research_task(
         self,
@@ -213,112 +237,6 @@ class PaperStormTaskService:
         state = self._read_state(task_id)
         return _read_json(Path(state["output_dir"]) / "scorecard.json", {})
 
-    def run_rag_evaluation_v4(self, dataset_path: Optional[str] = None, top_k: int = 5):
-        from .paperstorm_eval_v4 import load_dataset, run_evaluation, run_seed_baseline
-
-        output_dir = self.root_dir / "evaluations" / "rag_v4_latest"
-        if not dataset_path:
-            return run_seed_baseline(output_dir=output_dir, top_k=top_k)
-
-        dataset = load_dataset(dataset_path)
-        if not dataset.get("corpus"):
-            raise ValueError("A runnable custom dataset must include a corpus array.")
-
-        from .paperstorm_rag import ContextCompressionRetriever, PaperStormRAGIndex
-
-        index = PaperStormRAGIndex.from_documents(
-            dataset["corpus"],
-            chunk_size=2000,
-            chunk_overlap=0,
-        )
-        retriever = ContextCompressionRetriever(index, max_context_chars=2400)
-
-        def case_runner(case):
-            started = time.perf_counter()
-            candidates = index.search(
-                case["query"], top_k=max(20, top_k * 4), rerank=False
-            )
-            retrieved = retriever.retrieve(case["query"], top_k=top_k)
-            selected = retrieved.get("chunks") or []
-            if case.get("expected_behavior") == "abstain":
-                selected = []
-            answer = (
-                selected[0].get("content", "")
-                if selected
-                else "现有资料不足以可靠回答该问题。"
-            )
-            return {
-                "candidates": candidates,
-                "selected": selected,
-                "prompt_context": retrieved.get("prompt_context") or "",
-                "answer": answer,
-                "citations": [selected[0].get("chunk_id")] if selected else [],
-                "abstained": not selected,
-                "latency_ms": (time.perf_counter() - started) * 1000,
-            }
-
-        return run_evaluation(
-            dataset,
-            case_runner,
-            output_dir=output_dir,
-            top_k=top_k,
-            run_metadata={
-                "retriever": "custom_dataset_v3.2_hash_hybrid_rule_baseline",
-                "answerer": "deterministic_top1_chunk",
-                "faithfulness_judge": "disabled",
-            },
-        )
-
-    def get_rag_evaluation_v4(self):
-        path = (
-            self.root_dir / "evaluations" / "rag_v4_latest" / "rag_eval_v4_report.json"
-        )
-        return _read_json(path, {})
-
-    def run_rag_evaluation_v41(self, top_k: int = 5, backend: str = "deterministic"):
-        from .paperstorm_ablation_v41 import run_ablation
-        from .paperstorm_eval_v4 import build_seed_dataset
-        from .paperstorm_rag import HashEmbeddingProvider
-        from .paperstorm_retrieval_v41 import (
-            SentenceTransformerProvider,
-            multilingual_tokenize,
-        )
-
-        if backend == "deterministic":
-            provider = HashEmbeddingProvider(dim=128)
-
-            def score_pairs(pairs):
-                scores = []
-                for query, document in pairs:
-                    query_terms = set(multilingual_tokenize(query))
-                    document_terms = set(multilingual_tokenize(document))
-                    scores.append(
-                        len(query_terms & document_terms) / max(1, len(query_terms))
-                    )
-                return scores
-
-        elif backend == "real":
-            provider = SentenceTransformerProvider()
-            score_pairs = None
-        else:
-            raise ValueError("backend must be 'deterministic' or 'real'")
-        return run_ablation(
-            build_seed_dataset(),
-            output_dir=self.root_dir / "evaluations" / "rag_v41_latest",
-            embedding_provider=provider,
-            reranker_score_fn=score_pairs,
-            top_k=top_k,
-        )
-
-    def get_rag_evaluation_v41(self):
-        path = (
-            self.root_dir
-            / "evaluations"
-            / "rag_v41_latest"
-            / "rag_eval_v41_ablation.json"
-        )
-        return _read_json(path, {})
-
     def get_trace(self, task_id: str):
         state = self._read_state(task_id)
         trace_path = Path(state["output_dir"]) / "paperstorm_trace.jsonl"
@@ -330,7 +248,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v5.1",
+                "version": "v5.6",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -340,8 +258,6 @@ class PaperStormTaskService:
             "trace": self.get_trace(task_id),
             "process": self.get_process_artifacts(task_id),
             "pipeline_worker": _read_json(output_dir / "pipeline_worker.json", {}),
-            "rag_evaluation_v4": self.get_rag_evaluation_v4(),
-            "rag_evaluation_v41": self.get_rag_evaluation_v41(),
             "service_snapshot": {
                 "task_id": task_id,
                 "output_dir": str(output_dir),
@@ -633,17 +549,6 @@ class PaperStormTaskService:
 
         return PaperStormChatAgent(self).restore_context(chat_id, compaction_id)
 
-    def run_context_benchmark_v42(self):
-        from .paperstorm_context_benchmark_v42 import run_context_benchmark
-
-        return run_context_benchmark(
-            self.root_dir / "evaluations" / "context_v42_latest"
-        )
-
-    def get_context_benchmark_v42(self):
-        root = self.root_dir / "evaluations" / "context_v42_latest"
-        return _read_json(root / "context_benchmark_v42.json", {})
-
     def create_memory(self, **payload):
         return self._memory_service_v43().upsert(**payload)
 
@@ -673,15 +578,6 @@ class PaperStormTaskService:
 
     def set_memory_enabled(self, namespace: str, enabled: bool):
         return self._memory_service_v43().set_enabled(namespace, enabled)
-
-    def run_memory_benchmark_v43(self):
-        from .paperstorm_memory_benchmark_v43 import run_memory_benchmark
-
-        return run_memory_benchmark(self.root_dir / "evaluations" / "memory_v43_latest")
-
-    def get_memory_benchmark_v43(self):
-        root = self.root_dir / "evaluations" / "memory_v43_latest"
-        return _read_json(root / "memory_benchmark_v43.json", {})
 
     def invoke_conversation_graph(self, **payload):
         return self._production_runtime_v45().invoke(**payload)
@@ -749,41 +645,6 @@ class PaperStormTaskService:
         root = self.root_dir / "evaluations" / "runtime_v44_latest"
         return _read_json(root / "langgraph_benchmark_v44.json", {})
 
-    def run_multi_task_benchmark(
-        self,
-        embedding: str = "hash",
-        top_k: int = 5,
-        zotero_root: Optional[str] = None,
-    ):
-        from .paperstorm_multi_task_benchmark import run_multi_task_benchmark
-
-        root = zotero_root or os.getenv("PAPERSTORM_ZOTERO_ROOT", "")
-        if not root:
-            raise ValueError("zotero_root is required (or set PAPERSTORM_ZOTERO_ROOT)")
-        return run_multi_task_benchmark(
-            root,
-            self.root_dir / "evaluations" / "multi_task_latest",
-            embedding=embedding,
-            top_k=top_k,
-        )
-
-    def get_multi_task_benchmark(self):
-        root = self.root_dir / "evaluations" / "multi_task_latest"
-        return _read_json(root / "multi_task_benchmark.json", {})
-
-    def run_retrieval_runtime_benchmark(self, embedding: str = "auto", top_k: int = 5):
-        from .paperstorm_retrieval_runtime import run_retrieval_benchmark
-
-        return run_retrieval_benchmark(
-            self.root_dir / "evaluations" / "retrieval_runtime_latest",
-            top_k=top_k,
-            embedding=embedding,
-        )
-
-    def get_retrieval_runtime_benchmark(self):
-        root = self.root_dir / "evaluations" / "retrieval_runtime_latest"
-        return _read_json(root / "retrieval_runtime_benchmark.json", {})
-
     def import_evaluation_v54_dataset(self, dataset_path: str):
         from .paperstorm_eval_v54 import AnnotationStore
 
@@ -841,12 +702,18 @@ class PaperStormTaskService:
         return AnnotationStore(self._evaluation_v54_root(), dataset).save_review(payload)
 
     def run_evaluation_v54_context(self):
-        from .paperstorm_eval_v54 import AnnotationStore, evaluate_context_scenarios
+        from .paperstorm_eval_v54 import (
+            AnnotationStore,
+            enrich_context_cases,
+            evaluate_context_scenarios,
+            normalize_v54_corpus,
+        )
 
         dataset = self._evaluation_v54_dataset()
         store = AnnotationStore(self._evaluation_v54_root(), dataset)
         reviewed = store.export_reviewed_dataset()["cases"]
         cases = reviewed or store.list_cases()[: min(20, len(dataset.get("cases") or []))]
+        cases = enrich_context_cases(cases, normalize_v54_corpus(dataset))
         report = evaluate_context_scenarios(cases)
         report["trust"] = store.progress()
         self._write_evaluation_v54_report("context", report)
@@ -862,6 +729,7 @@ class PaperStormTaskService:
     ):
         from .paperstorm_eval_v54 import (
             AnnotationStore,
+            normalize_v54_corpus,
             ranked_document_ids,
             run_retrieval_benchmark,
         )
@@ -872,7 +740,7 @@ class PaperStormTaskService:
         store = AnnotationStore(self._evaluation_v54_root(), dataset)
         evaluated_dataset = dict(dataset, cases=store.list_cases())
         provider = _dense_provider(embedding)
-        index = HybridPaperIndex(dataset.get("corpus") or [], provider)
+        index = HybridPaperIndex(normalize_v54_corpus(dataset), provider)
         requested = list(configurations or ["bm25", "dense", "hybrid"])
         skipped = {}
         reranker = None
@@ -976,9 +844,9 @@ class PaperStormTaskService:
         )
 
     def _memory_service_v43(self):
-        from .paperstorm_memory_v43 import LongTermMemoryService
+        from .paperstorm_memory_v56 import LongTermMemoryService
 
-        return LongTermMemoryService(self.root_dir / "memory_service_v43")
+        return LongTermMemoryService(self.root_dir / "memory_service_v56")
 
     def _run_fake_research(self, state: Dict):
         output_dir = Path(state["output_dir"])

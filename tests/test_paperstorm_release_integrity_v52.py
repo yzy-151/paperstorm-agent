@@ -29,17 +29,65 @@ class PaperStormReleaseIntegrityV52Test(unittest.TestCase):
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
         for package in ("fastapi", "uvicorn", "httpx"):
             self.assertRegex(requirements, rf"(?m)^{package}(?:[<>=].*)?$")
+        self.assertRegex(requirements, r"(?m)^huggingface-hub>=0\.34,<1\.0$")
+        self.assertRegex(requirements, r"(?m)^sentence-transformers>=3\.4,<6\.0$")
 
-    def test_package_versions_match_v52(self):
+    def test_public_tests_do_not_depend_on_gitignored_private_docs(self):
+        private_docs = {"VERSION_PLAN.md", "RESUME_INTERVIEW_PLAN.md", "OPERATION_GUIDE.md"}
+        for path in (ROOT / "tests").glob("test_*.py"):
+            if path.resolve() == Path(__file__).resolve():
+                continue
+            content = path.read_text(encoding="utf-8")
+            for filename in private_docs:
+                self.assertNotIn(filename, content, str(path))
+
+    def test_setup_declares_only_verified_python_versions(self):
+        setup_text = (ROOT / "setup.py").read_text(encoding="utf-8")
+        self.assertIn('python_requires=">=3.10,<3.12"', setup_text)
+
+    def test_package_versions_match_v56(self):
         setup_text = (ROOT / "setup.py").read_text(encoding="utf-8")
         init_text = (ROOT / "knowledge_storm" / "__init__.py").read_text(
             encoding="utf-8"
         )
         setup_version = re.search(r'version="([^"]+)"', setup_text).group(1)
         init_version = re.search(r'__version__ = "([^"]+)"', init_text).group(1)
-        self.assertEqual(setup_version, "5.2.0")
+        self.assertEqual(setup_version, "5.6.0")
         self.assertEqual(init_version, setup_version)
         self.assertIn("PaperStorm Agent", setup_text)
+
+    def test_v54_evaluation_artifacts_are_documented_and_sanitized(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        guide = (ROOT / "docs" / "PAPERSTORM_V54_EVALUATION.md").read_text(
+            encoding="utf-8"
+        )
+        summary = (
+            ROOT / "docs" / "benchmarks" / "paperstorm_real_eval_v54_summary.json"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("v5.4", readme)
+        self.assertIn("PAPERSTORM_V54_EVALUATION.md", readme)
+        self.assertIn("人工审核", guide)
+        self.assertIn('"evidence_status"', summary)
+        for content in (guide, summary):
+            self.assertNotRegex(content, r"[A-Za-z]:\\")
+
+    def test_v55_public_benchmark_artifacts_are_documented_and_sanitized(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        guide = (ROOT / "docs" / "PAPERSTORM_V55_PUBLIC_BENCHMARKS.md").read_text(
+            encoding="utf-8"
+        )
+        summary = (
+            ROOT / "docs" / "benchmarks" / "paperstorm_public_v55_summary.json"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("SciFact", readme)
+        self.assertIn("QASPER", readme)
+        self.assertIn("public_official", summary)
+        self.assertIn("1309", summary)
+        self.assertIn("证据检索", guide)
+        for content in (guide, summary):
+            self.assertNotRegex(content, r"[A-Za-z]:\\")
 
     def test_ci_runs_offline_unit_tests(self):
         workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(

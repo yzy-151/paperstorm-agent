@@ -20,6 +20,66 @@ QUERY_VALIDITY = {"valid", "invalid", "needs_edit"}
 EVIDENCE_SUFFICIENCY = {"sufficient", "partial", "insufficient"}
 
 
+def normalize_v54_corpus(dataset: Dict) -> List[Dict]:
+    """把 v5.2 corpus 记录还原为 HybridPaperIndex 的 Chunk 契约。"""
+
+    output = []
+    for index, document in enumerate((dataset or {}).get("corpus") or [], start=1):
+        metadata = dict(document.get("metadata") or {})
+        source_document_id = str(
+            document.get("source_document_id")
+            or metadata.get("source_document_id")
+            or document.get("document_id")
+            or "document-{0}".format(index)
+        )
+        chunk_id = str(
+            (document.get("chunk_ids") or [document.get("document_id")])[0]
+            or "chunk-{0}".format(index)
+        )
+        content = str(document.get("content") or document.get("text") or "")
+        output.append(
+            {
+                "chunk_id": chunk_id,
+                "document_id": source_document_id,
+                "title": str(document.get("title") or source_document_id),
+                "content": content,
+                "retrieval_content": str(metadata.get("context") or content),
+                "metadata": metadata,
+            }
+        )
+    return output
+
+
+def enrich_context_cases(
+    cases: Iterable[Dict], chunks: Iterable[Dict], max_chunks: int = 6, max_chars: int = 16000
+) -> List[Dict]:
+    """为每条用例附加来自同一篇真实论文的多段证据。"""
+
+    grouped = {}
+    for chunk in chunks or []:
+        grouped.setdefault(str(chunk.get("document_id") or ""), []).append(chunk)
+    output = []
+    for case in cases or []:
+        item = deepcopy(case)
+        source_document_id = str(
+            (item.get("metadata") or {}).get("source_document_id") or ""
+        )
+        sections = []
+        for chunk in grouped.get(source_document_id, [])[: max(1, int(max_chunks))]:
+            metadata = chunk.get("metadata") or {}
+            sections.append(
+                "[page {0} | {1}]\n{2}".format(
+                    metadata.get("page_number") or "?",
+                    chunk.get("chunk_id") or "chunk",
+                    chunk.get("content") or "",
+                )
+            )
+        if sections:
+            item["context_evidence"] = "\n\n".join(sections)[: max(512, int(max_chars))]
+        output.append(item)
+    return output
+
+
 def ranked_document_ids(chunks: Iterable[Dict]) -> List[str]:
     """将 Chunk 排名折叠为稳定的文档排名。"""
 
@@ -156,6 +216,42 @@ def select_dev_configuration(reports: Dict[str, Dict]) -> str:
     return max(reports.items(), key=key)[0]
 
 
+def select_deployable_configuration(
+    dev_reports: Dict[str, Dict],
+    latency_budget_ms: float = 500.0,
+    max_recall_drop: float = 0.02,
+) -> Dict:
+    wrapped = {name: {"dev": metrics} for name, metrics in dev_reports.items()}
+    quality_best = select_dev_configuration(wrapped)
+    non_reranked = {
+        name: report for name, report in dev_reports.items() if name != "hybrid_rerank"
+    }
+    deployable_baseline = (
+        select_dev_configuration(
+            {name: {"dev": metrics} for name, metrics in non_reranked.items()}
+        )
+        if non_reranked
+        else quality_best
+    )
+    if quality_best != "hybrid_rerank":
+        return {
+            "quality_best": quality_best,
+            "selected": quality_best,
+            "reranker_gate": {"enabled": False, "reason": "重排不是 dev 质量最优配置"},
+        }
+    gate = reranker_gate(
+        dev_reports[deployable_baseline],
+        dev_reports[quality_best],
+        max_recall_drop=max_recall_drop,
+        latency_budget_ms=latency_budget_ms,
+    )
+    return {
+        "quality_best": quality_best,
+        "selected": quality_best if gate["enabled"] else deployable_baseline,
+        "reranker_gate": gate,
+    }
+
+
 def reranker_gate(
     baseline: Dict,
     reranked: Dict,
@@ -182,6 +278,8 @@ def run_retrieval_benchmark(
     top_k: int = 5,
     trust_level: str = "candidate",
     bootstrap_samples: int = 2000,
+    reranker_latency_budget_ms: float = 500.0,
+    max_recall_drop: float = 0.02,
 ) -> Dict:
     """在 dev 选型，并把 test 结果与证据状态分开报告。"""
 
@@ -204,44 +302,53 @@ def run_retrieval_benchmark(
             per_case, bootstrap_samples=bootstrap_samples
         )
 
-    selectable = {
-        name: {"dev": metrics} for name, metrics in dev_reports.items()
-    }
-    selected = select_dev_configuration(selectable)
+    selection = select_deployable_configuration(
+        dev_reports,
+        latency_budget_ms=reranker_latency_budget_ms,
+        max_recall_drop=max_recall_drop,
+    )
+    selected = selection["selected"]
     baseline = "bm25" if "bm25" in dev_reports else next(iter(dev_reports))
-    test_configurations = list(dict.fromkeys([baseline, selected]))
-    test_per_case = {
-        configuration: _evaluate_retrieval_cases(
-            test_cases, configuration, search_fn, top_k=top_k
-        )
-        for configuration in test_configurations
-    }
-    test_reports = {
-        configuration: summarize_retrieval_cases(
-            per_case, bootstrap_samples=bootstrap_samples
-        )
-        for configuration, per_case in test_per_case.items()
-    }
-    baseline_scores = [
-        item["ndcg_at_5"] for item in test_per_case.get(baseline, [])
-    ]
-    selected_scores = [
-        item["ndcg_at_5"] for item in test_per_case.get(selected, [])
-    ]
+    release_ready = trust_level == "release_ready"
+    test_reports = {}
+    paired_test_delta = None
+    if release_ready:
+        test_configurations = list(dict.fromkeys([baseline, selected]))
+        test_per_case = {
+            configuration: _evaluate_retrieval_cases(
+                test_cases, configuration, search_fn, top_k=top_k
+            )
+            for configuration in test_configurations
+        }
+        test_reports = {
+            configuration: summarize_retrieval_cases(
+                per_case, bootstrap_samples=bootstrap_samples
+            )
+            for configuration, per_case in test_per_case.items()
+        }
+        baseline_scores = [
+            item["ndcg_at_5"] for item in test_per_case.get(baseline, [])
+        ]
+        selected_scores = [
+            item["ndcg_at_5"] for item in test_per_case.get(selected, [])
+        ]
+        paired_test_delta = paired_score_delta(baseline_scores, selected_scores)
     return {
         "project": "PaperStorm v5.4 真实论文检索评测",
         "protocol": "document_holdout_dev_selection_frozen_test",
         "selection_split": "dev",
-        "final_reporting_split": "test",
+        "final_reporting_split": "test" if release_ready else None,
         "selected_configuration": selected,
+        "quality_best_configuration": selection["quality_best"],
+        "reranker_gate": selection["reranker_gate"],
         "baseline_configuration": baseline,
         "evidence_status": trust_level,
-        "release_claim_allowed": trust_level == "release_ready",
+        "release_claim_allowed": release_ready,
         "top_k": top_k,
         "dataset_sha256": _dataset_sha256(dataset),
         "dev": dev_reports,
         "test": test_reports,
-        "paired_test_delta": paired_score_delta(baseline_scores, selected_scores),
+        "paired_test_delta": paired_test_delta,
         "limitations": _retrieval_limitations(trust_level, len(test_cases)),
     }
 
@@ -357,7 +464,11 @@ def _context_scenario(case):
     query = str(case.get("query") or "请解释论文的核心方法。")
     source_document_id = str(metadata.get("source_document_id") or "unknown-document")
     source_title = str(metadata.get("source_title") or "Unknown paper")
-    excerpt = str(evidence.get("excerpt") or "论文证据尚未提供。")
+    excerpt = str(
+        case.get("context_evidence")
+        or evidence.get("excerpt")
+        or "论文证据尚未提供。"
+    )
     entities = _unique_strings(metadata.get("query_terms") or [])
     constraints = ["中文", "引用"]
     messages = [

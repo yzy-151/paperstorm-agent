@@ -56,6 +56,16 @@ def _chunks():
 
 
 class PaperStormRealEvalV52Test(unittest.TestCase):
+    def test_candidate_generator_supports_five_distinct_review_intents(self):
+        from knowledge_storm.paperstorm_real_eval_v52 import _candidate_queries
+
+        queries = _candidate_queries(["无源互调", "神经网络", "抑制"])
+
+        self.assertGreaterEqual(len(queries), 5)
+        self.assertEqual(len(queries), len(set(queries)))
+        self.assertTrue(any("证据" in query for query in queries))
+        self.assertTrue(any("比较" in query for query in queries))
+
     def test_dataset_is_document_split_auditable_and_has_hard_negatives(self):
         from knowledge_storm.paperstorm_real_eval_v52 import build_auditable_dataset
 

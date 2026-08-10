@@ -30,8 +30,8 @@ class PaperStormDemoRunbookTest(unittest.TestCase):
         self.assertIn("快速开始", readme)
         self.assertIn("paperstorm_service_api:app", readme)
         self.assertIn("http://127.0.0.1:8002", readme)
-        self.assertIn("聊天问答模式", readme)
-        self.assertIn("调研写文章模式", readme)
+        self.assertIn("论文调研模式", readme)
+        self.assertIn("智能问答模式", readme)
 
 
 if __name__ == "__main__":

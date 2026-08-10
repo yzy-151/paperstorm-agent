@@ -175,46 +175,6 @@ class PaperStormEvalV4Test(unittest.TestCase):
         self.assertEqual(report["bad_cases"][0]["failure_stage"], "retrieval_miss")
         self.assertIn("uncategorized", report["category_slices"])
 
-    def test_task_service_persists_latest_v4_report(self):
-        from knowledge_storm.paperstorm_service import PaperStormTaskService
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            service = PaperStormTaskService(temp_dir)
-            report = service.run_rag_evaluation_v4()
-            latest = service.get_rag_evaluation_v4()
-
-        self.assertEqual(report["project"], "PaperStorm RAG Evaluation v4.0")
-        self.assertEqual(latest["metrics"]["total_cases"], 100)
-        self.assertIn("failure_counts", latest["metrics"])
-
-    def test_fastapi_exposes_v4_evaluation_routes(self):
-        from fastapi.testclient import TestClient
-
-        from examples.storm_examples.paperstorm_service_api import create_app
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            client = TestClient(create_app(service_root=Path(temp_dir)))
-            response = client.post("/evaluations/rag-v4", json={"top_k": 5})
-            latest = client.get("/evaluations/rag-v4/latest")
-            invalid = client.post("/evaluations/rag-v4", json={"top_k": 0})
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["metrics"]["total_cases"], 100)
-        self.assertEqual(latest.status_code, 200)
-        self.assertEqual(invalid.status_code, 422)
-
-    def test_dashboard_exposes_v4_bad_case_workbench(self):
-        root = Path(__file__).resolve().parents[1]
-        index = (root / "frontend" / "paperstorm_dashboard" / "index.html").read_text(encoding="utf-8")
-        script = (root / "frontend" / "paperstorm_dashboard" / "app.js").read_text(encoding="utf-8")
-
-        self.assertIn("v4.0", index)
-        self.assertIn("rag-eval-v4-panel", index)
-        self.assertIn("run-rag-eval-v4", index)
-        self.assertIn("rag-eval-v4-bad-cases", index)
-        self.assertIn("/evaluations/rag-v4", script)
-        self.assertIn("renderRAGEvaluationV4", script)
-
 
 if __name__ == "__main__":
     unittest.main()

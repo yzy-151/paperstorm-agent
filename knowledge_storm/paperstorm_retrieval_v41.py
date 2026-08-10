@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence
 
+import numpy as np
+
 
 def multilingual_tokenize(text: str) -> List[str]:
     """Tokenize exact Latin terms and add CJK unigrams/bigrams for BM25."""
@@ -179,6 +181,14 @@ class HybridPaperIndex:
         )
         if len(self.embeddings) != len(self.chunks):
             raise ValueError("embedding count must match chunk count")
+        embedding_matrix = np.asarray(self.embeddings, dtype=np.float32)
+        norms = np.linalg.norm(embedding_matrix, axis=1, keepdims=True)
+        self._normalized_embedding_matrix = np.divide(
+            embedding_matrix,
+            norms,
+            out=np.zeros_like(embedding_matrix),
+            where=norms != 0,
+        )
         dimension = int(getattr(embedding_provider, "dim", 0) or 0)
         if not dimension and self.embeddings:
             dimension = len(self.embeddings[0])
@@ -202,13 +212,13 @@ class HybridPaperIndex:
         if mode not in {"bm25", "dense", "hybrid", "hybrid_rerank"}:
             raise ValueError("unsupported retrieval mode: {0}".format(mode))
         candidate_k = min(len(self.chunks), candidate_k or max(top_k * 4, 20))
-        bm25 = self._bm25_search(query, candidate_k)
-        dense = self._dense_search(query, candidate_k)
         if mode == "bm25":
-            selected = bm25
+            selected = self._bm25_search(query, candidate_k)
         elif mode == "dense":
-            selected = dense
+            selected = self._dense_search(query, candidate_k)
         else:
+            bm25 = self._bm25_search(query, candidate_k)
+            dense = self._dense_search(query, candidate_k)
             selected = reciprocal_rank_fusion(
                 [bm25, dense], rank_constant=rank_constant
             )
@@ -348,8 +358,13 @@ class HybridPaperIndex:
         return ranked
 
     def _dense_search(self, query: str, top_k: int):
-        query_vector = self.embedding_provider.embed_query(query)
-        scores = [_cosine(query_vector, vector) for vector in self.embeddings]
+        query_vector = np.asarray(
+            self.embedding_provider.embed_query(query), dtype=np.float32
+        )
+        query_norm = float(np.linalg.norm(query_vector))
+        if query_norm:
+            query_vector = query_vector / query_norm
+        scores = self._normalized_embedding_matrix @ query_vector
         ranked = []
         for index in sorted(
             range(len(scores)), key=lambda value: (-scores[value], value)

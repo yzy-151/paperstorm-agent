@@ -16,7 +16,7 @@ from langgraph.types import RetryPolicy
 from pydantic import BaseModel, Field
 
 from .paperstorm_intent_router import PaperStormIntentRouter
-from .paperstorm_memory_v43 import LongTermMemoryService
+from .paperstorm_memory_v56 import LongTermMemoryService
 from .paperstorm_research_qa import evaluate_evidence_sufficiency
 
 
@@ -204,7 +204,7 @@ class PaperStormLangGraphRuntime:
         self.chat_llm = chat_llm
         self.evidence_judge = evidence_judge
         self.memory_service = memory_service or LongTermMemoryService(
-            Path(task_service.root_dir) / "memory_service_v43"
+            Path(task_service.root_dir) / "memory_service_v56"
         )
         self.deep_research_tool = deep_research_tool or StormDeepResearchToolV44(
             task_service

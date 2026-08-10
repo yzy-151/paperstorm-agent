@@ -1,0 +1,44 @@
+{
+  "project": "PaperStorm v5.4",
+  "evidence_status": "candidate",
+  "release_claim_allowed": false,
+  "dataset": {
+    "source": "local_zotero_pdf_text",
+    "paper_count": 40,
+    "chunk_count": 868,
+    "evaluated_paper_count": 23,
+    "candidate_count": 115,
+    "dev_candidate_count": 55,
+    "frozen_candidate_count": 60,
+    "human_reviewed_count": 0,
+    "minimum_valid_frozen_reviews": 50,
+    "split_unit": "document_id",
+    "dataset_sha256": "dd9af15ec6909945cccfbeef296c62bd3a3555ebe2380030646a85c0936b00e0"
+  },
+  "retrieval_dev": {
+    "top_k": 5,
+    "bootstrap_samples": 2000,
+    "selected_configuration": "hybrid",
+    "quality_best_configuration": "hybrid_rerank",
+    "reranker_deployed": false,
+    "reranker_gate_reason": "P95 latency exceeded 500 ms budget",
+    "methods": {
+      "bm25": {"recall_at_5": 0.090909, "mrr": 0.090909, "ndcg_at_5": 0.090909, "p95_latency_ms": 248.4848},
+      "dense": {"recall_at_5": 0.327273, "mrr": 0.260606, "ndcg_at_5": 0.277348, "p95_latency_ms": 234.8450},
+      "hybrid": {"recall_at_5": 0.363636, "mrr": 0.253030, "ndcg_at_5": 0.281420, "p95_latency_ms": 335.7130},
+      "hybrid_rerank": {"recall_at_5": 0.400000, "mrr": 0.348485, "ndcg_at_5": 0.361687, "p95_latency_ms": 3252.6530}
+    }
+  },
+  "context_real_paper_probe": {
+    "scenario_count": 20,
+    "answer_quality_claim_allowed": false,
+    "full_history": {"input_tokens": 1799.2, "token_reduction_rate": 0.0, "constraint_retention_rate": 1.0, "source_retention_rate": 1.0},
+    "fixed_window": {"input_tokens": 55.0, "token_reduction_rate": 0.969395, "constraint_retention_rate": 0.5, "source_retention_rate": 0.0},
+    "structured_compaction": {"input_tokens": 301.9, "token_reduction_rate": 0.832, "constraint_retention_rate": 1.0, "source_retention_rate": 1.0, "restore_exact_rate": 1.0, "artifact_reference_rate": 1.0}
+  },
+  "limitations": [
+    "Queries are automatically generated annotation candidates and are not human gold labels.",
+    "Frozen test is locked until at least 50 valid human reviews satisfy the domain gate.",
+    "Context probes demonstrate deterministic retention and token trade-offs, not answer-quality gains."
+  ]
+}

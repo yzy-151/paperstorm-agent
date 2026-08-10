@@ -259,16 +259,14 @@ class PaperStormProductionV45Test(unittest.TestCase):
                 self.assertIn(metric, report["metrics"])
             self.assertEqual(report["metrics"]["acl_leakage_rate"], 0.0)
 
-    def test_api_and_dashboard_expose_v45_governance(self):
+    def test_dashboard_exposes_live_production_diagnostics(self):
         root = Path(__file__).resolve().parents[1]
         index = (root / "frontend/paperstorm_dashboard/index.html").read_text(encoding="utf-8")
         script = (root / "frontend/paperstorm_dashboard/app.js").read_text(encoding="utf-8")
 
-        self.assertIn("v4.5", index)
-        self.assertIn("production-v45-metrics", index)
-        self.assertIn("production-v45-trace", index)
-        self.assertIn("/evaluations/production-v45", script)
-        self.assertIn("/production/traces/", script)
+        self.assertIn("执行链路诊断", index)
+        self.assertIn("runtime-production-status", index)
+        self.assertIn('/production/status', script)
 
     def test_production_api_exposes_governed_runtime_and_benchmark(self):
         try:
