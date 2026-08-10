@@ -302,6 +302,41 @@ nDCG 数字。
 检索与生成分开评测：Recall/MRR/nDCG 判断"有没有找到证据"，Answer F1 判断"找到证据后
 是否答对"。Boolean 与不可答问题表现较好，Abstractive F1（0.2651）是主要短板。
 
+### 付费协议运行（1/4 规模，2026-08-10）
+
+在正式全量付费实验前，先按 **1/4 协议规模** 完成两组长上下文实验（DeepSeek
+`deepseek-chat`，温度 0，逐题 checkpoint，成本约 $1.1）：
+
+**LongMemEval-S 端到端问答（125/500）**：复用 v5.6 持久化 Memory 检索 Top-5 会话
+作为证据，reader 生成答案。证据 Recall@5 `0.8075`，整体 EM `0.256`；分类型看，
+单会话问答 EM `0.4286`，多会话推理 EM `0.0364` —— 检索证据足够，但多会话跨 session
+推理是当前主要瓶颈（与头尾截断的证据表示有关）。该运行使用非官方 token-F1/EM 判分，
+不能与官方 LongMemEval Judge 直接对比。
+
+| 维度 | 结果 |
+| --- | ---: |
+| 成功 / 总题数 | 125 / 125 |
+| Evidence Recall@5 | 0.8075 |
+| 单会话问答 EM / F1 | 0.4286 / 0.5303 |
+| 多会话推理 EM / F1 | 0.0364 / 0.0622 |
+| 成本估算 | $0.34 |
+
+**QASPER full-paper vs v5.6 预算上下文（validation 251 题）**：同一批问题分别用
+整篇论文段落与 v5.6 预算装配上下文生成，250 条成功配对：
+
+| 指标 | full | v5.6 | Δ |
+| --- | ---: | ---: | ---: |
+| Answer F1 | 0.5383 | 0.5399 | +0.002 |
+| Exact Match | 0.2590 | 0.2550 | -0.004 |
+| Evidence F1 | 0.5732 | 0.5674 | -0.006 |
+| Prompt tokens | 1,453,417 | 1,306,984 | -10.1% |
+
+结论：v5.6 上下文在全部指标上保持在 2pp 质量预算内（"压缩不丢证据"成立）；
+但 QASPER validation 论文大多能装进 6656 token 预算，平均只省 10% 输入，
+50% 削减目标需要真正超预算的长文（见 QASPER Context 诊断的 16.7% 全论文口径）。
+完整逐题数据见
+[docs/benchmarks/paperstorm_v56_paid_quarter_summary.json](docs/benchmarks/paperstorm_v56_paid_quarter_summary.json)。
+
 ### 如何复现
 
 数据与模型缓存放在仓库外（`PAPERSTORM_BENCHMARK_ROOT`），仓库只保存 adapter、
@@ -345,6 +380,19 @@ python examples/storm_examples/run_qasper_context_benchmark.py `
   --dataset <qasper-test-v0.3.json> `
   --rankings results/public_benchmarks/v55_qasper_test_real/predictions.jsonl `
   --output-dir <external-cache>/v56/runs/qasper-context-v56
+
+# 1/4 付费协议运行（需 API Key，可断点续跑）
+python examples/storm_examples/run_longmemeval_answer_benchmark.py `
+  --dataset <longmemeval_s_cleaned.json> --memory-root <persisted-memory> `
+  --output-dir <external-cache>/v56/runs/longmemeval-answer-quarter --limit 125
+python examples/storm_examples/run_qasper_answer_benchmark.py `
+  --split validation --retrieval-predictions <validation-rankings.jsonl> `
+  --output-dir <external-cache>/v56/runs/qasper-context-quarter/full `
+  --limit 251 --context-mode full
+python examples/storm_examples/run_qasper_answer_benchmark.py `
+  --split validation --retrieval-predictions <validation-rankings.jsonl> `
+  --output-dir <external-cache>/v56/runs/qasper-context-quarter/v56 `
+  --limit 251 --context-mode v56 --input-budget-tokens 6656
 ```
 
 网页端开发者控制台可运行所有输入已就绪的 Benchmark；缺少配对预测的 LongBench 会

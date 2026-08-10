@@ -132,6 +132,20 @@ Evidence 单层预算；装配器选择整段丢弃而不是静默截断来源�
 
 adapter、paired scorer、checkpoint 和离线 fixture 已完成并通过。官方 LongBench v2 下载在 58.9 MB 时连接提前中断，JSON 校验失败；随后 Hugging Face 连续多次连接超时。残缺文件未用于成绩，正式 task accuracy/token paired comparison 仍标记为外部网络阻塞，不伪装成已完成榜单结果。
 
+### 5.4 付费协议运行（1/4 规模，2026-08-10）
+
+LongMemEval-S 端到端问答（125/500，DeepSeek reader）：125/125 成功，证据
+Recall@5 `0.8075`；单会话问答 EM/F1 `0.4286 / 0.5303`，多会话推理
+`0.0364 / 0.0622`，成本约 $0.34。检索证据充分但多会话推理是主要短板
+（与 head+tail 证据截断有关）。判分为非官方 token-F1/EM 规则。
+
+QASPER full-paper vs v5.6 预算上下文（validation 251 题，250 配对）：
+Answer F1 `0.5383 → 0.5399`、EM `0.2590 → 0.2550`、Evidence F1
+`0.5732 → 0.5674`，全部在 2pp 质量预算内；输入 token 减少 `10.1%`（该子集论文
+大多未超预算，50% 削减目标需更长文档验证）。逐题数据与摘要见仓库外
+`results/public_benchmarks/v56_qasper_context_quarter/` 与
+`docs/benchmarks/paperstorm_v56_paid_quarter_summary.json`。
+
 ## 6. 遇到的困难与解决
 
 ### 6.1 官方 session ID 会重复

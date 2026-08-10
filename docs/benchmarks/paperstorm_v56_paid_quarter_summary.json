@@ -1,0 +1,54 @@
+{
+  "version": "5.6.0",
+  "generated_at": "2026-08-10",
+  "model": "deepseek/deepseek-chat",
+  "evidence_tier": "public-official-1of4-protocol-run",
+  "note": "1/4 scale paid protocol run; unofficial answer judges (token-F1/EM and abstention rule) instead of official LongMemEval LLM judge. Full-scale runs remain pending.",
+  "longmemeval_answer_quarter": {
+    "dataset": "LongMemEval-S cleaned-2025-09",
+    "case_count": 125,
+    "successful_predictions": 125,
+    "failed_predictions": 0,
+    "evidence_recall_at_5": 0.8075,
+    "accuracy": 0.256,
+    "token_f1": 0.3244,
+    "exact_match": 0.256,
+    "by_question_type": {
+      "single-session-user": {"n": 70, "accuracy": 0.4286, "token_f1": 0.5303},
+      "multi-session": {"n": 55, "accuracy": 0.0364, "token_f1": 0.0622}
+    },
+    "prompt_tokens": 1242806,
+    "completion_tokens": 363,
+    "cost_estimate_usd": 0.336,
+    "finding": "evidence retrieval is strong (0.8075) and single-session QA is usable (0.43), but multi-session reasoning is the bottleneck (0.036); head+tail evidence truncation likely hurts cross-session answers."
+  },
+  "qasper_context_paired_quarter": {
+    "dataset": "QASPER official validation",
+    "case_count": 251,
+    "paired_cases": 250,
+    "context_full": {
+      "answer_f1": 0.538267,
+      "answer_exact_match": 0.258964,
+      "evidence_f1": 0.573225,
+      "prompt_tokens": 1453417
+    },
+    "context_v56": {
+      "answer_f1": 0.539929,
+      "answer_exact_match": 0.25498,
+      "evidence_f1": 0.567359,
+      "prompt_tokens": 1306984
+    },
+    "delta_v56_minus_full": {
+      "answer_f1": 0.0017,
+      "answer_exact_match": -0.004,
+      "evidence_f1": -0.0059
+    },
+    "token_reduction_mean": 0.0605,
+    "token_reduction_median": 0.0,
+    "same_exact_answer_rate": 0.572,
+    "prompt_tokens_full_plus_v56": 2760401,
+    "cost_estimate_usd": 0.78,
+    "finding": "within the 2pp quality budget on every metric (Answer F1 -0.2pp to +0.2pp), but QASPER validation papers mostly fit the 6656-token budget, so mean token reduction is only 6%; the 50% reduction guardrail needs papers that actually exceed the budget (see full-paper Context diagnostic)."
+  },
+  "total_cost_estimate_usd": 1.12
+}

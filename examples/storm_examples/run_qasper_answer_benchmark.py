@@ -38,6 +38,19 @@ def build_parser():
     parser.add_argument("--retrieval-mode", default="hybrid_rerank")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--smoke-limit", type=int)
+    parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--context-mode",
+        choices=("topk", "full", "v56"),
+        default="topk",
+        help="topk=Top-K 证据；full=整篇论文段落；v56=Top-K 优先 + 预算裁剪",
+    )
+    parser.add_argument(
+        "--input-budget-tokens",
+        type=int,
+        default=6656,
+        help="v56 上下文输入预算（默认 8192 窗口 - 1536 输出预留）",
+    )
     parser.add_argument("--model", default="deepseek/deepseek-chat")
     parser.add_argument(
         "--api-base",
@@ -66,7 +79,7 @@ def main(argv=None):
         split=args.split,
         cache_dir=cache_dir / "datasets",
     )
-    dataset = _subset(dataset, args.smoke_limit)
+    dataset = _subset(dataset, args.limit or args.smoke_limit)
     rankings = load_rankings(args.retrieval_predictions, mode=args.retrieval_mode)
     rankings.update(_read_ranking_checkpoint(output_dir / "rankings.jsonl"))
     missing = [case for case in dataset.cases if case.case_id not in rankings]
@@ -125,6 +138,8 @@ def main(argv=None):
         top_k=args.top_k,
         on_prediction=progress,
         parse_attempts=args.parse_attempts,
+        context_mode=args.context_mode,
+        input_budget_tokens=args.input_budget_tokens,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return report

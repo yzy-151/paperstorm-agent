@@ -140,6 +140,8 @@ def run_qasper_generation(
     prompt_version=PROMPT_VERSION,
     on_prediction=None,
     parse_attempts=2,
+    context_mode="topk",
+    input_budget_tokens=None,
 ):
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -149,13 +151,42 @@ def run_qasper_generation(
     for case in dataset.cases:
         if existing.get(case.case_id, {}).get("status") == "succeeded":
             continue
-        ranked_ids = [
+        ranked_documents = [
             document_id
             for document_id in rankings.get(case.case_id, [])[: max(1, int(top_k))]
             if document_id in document_map
         ]
+        if context_mode == "full":
+            paper_id = str(case.metadata.get("paper_id") or "")
+            selected_documents = [
+                document
+                for document in dataset.documents
+                if str(document.metadata.get("paper_id") or "") == paper_id
+            ]
+        elif context_mode == "v56":
+            paper_id = str(case.metadata.get("paper_id") or "")
+            ranked_set = set(ranked_documents)
+            paper_documents = [
+                document
+                for document in dataset.documents
+                if str(document.metadata.get("paper_id") or "") == paper_id
+            ]
+            selected_documents = [
+                document_map[document_id] for document_id in ranked_documents
+            ] + [
+                document
+                for document in paper_documents
+                if document.document_id not in ranked_set
+            ]
+            selected_documents = _trim_to_budget(
+                selected_documents, input_budget_tokens
+            )
+        else:
+            selected_documents = [
+                document_map[document_id] for document_id in ranked_documents
+            ]
         prompt = build_qasper_prompt(
-            case.query, [document_map[document_id] for document_id in ranked_ids]
+            case.query, selected_documents
         )
         started = time.perf_counter()
         text = ""
@@ -180,7 +211,7 @@ def run_qasper_generation(
             cited_ids = [
                 str(value)
                 for value in parsed.get("evidence_ids") or []
-                if str(value) in ranked_ids
+                if str(value) in ranked_documents
             ]
             abstained = bool(parsed.get("abstained")) or _is_unanswerable(
                 parsed.get("answer")
@@ -208,13 +239,18 @@ def run_qasper_generation(
                 )
                 for document_id in cited_ids
             ],
-            "ranked_document_ids": ranked_ids,
+            "ranked_document_ids": ranked_documents,
             "status": status,
             "error": error,
             "raw_response": text,
             "raw_responses": raw_responses,
             "parse_errors": parse_errors,
             "generation_attempts": generation_attempts,
+            "context_mode": context_mode,
+            "context_document_count": len(selected_documents),
+            "context_estimated_tokens": _estimate_tokens(
+                "".join(document.text for document in selected_documents)
+            ),
             "latency_ms": round((time.perf_counter() - started) * 1000.0, 4),
             "usage": usage,
             "model": model_name,
@@ -239,6 +275,8 @@ def run_qasper_generation(
         "model": model_name,
         "prompt_version": prompt_version,
         "top_k": max(1, int(top_k)),
+        "context_mode": context_mode,
+        "input_budget_tokens": input_budget_tokens,
         "case_count": len(dataset.cases),
         "successful_predictions": successful,
         "failed_predictions": len(dataset.cases) - successful,
@@ -251,6 +289,23 @@ def run_qasper_generation(
     )
     _write_json(output_path / "metrics.json", report)
     return report
+
+
+def _estimate_tokens(text):
+    return max(1, len(str(text or "")) // 4)
+
+
+def _trim_to_budget(documents, budget_tokens):
+    if not budget_tokens:
+        return documents
+    used = 0
+    selected = []
+    for document in documents:
+        cost = _estimate_tokens(document.text)
+        if used + cost <= max(1, int(budget_tokens)):
+            selected.append(document)
+            used += cost
+    return selected or (documents[:1] if documents else [])
 
 
 def build_qasper_prompt(question, documents):

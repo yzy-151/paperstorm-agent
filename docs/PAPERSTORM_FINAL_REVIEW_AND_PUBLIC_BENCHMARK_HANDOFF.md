@@ -1025,6 +1025,11 @@ Real API smoke: LongMemEval 10 cases succeeded, Recall@5=0.4, P95=399.558 ms
 
 ### 15.3 P0：Memory 端到端答案评测
 
+**状态（2026-08-10，1/4 协议规模完成）**：LongMemEval-S 125/500 题端到端问答
+（DeepSeek reader，非官方 token-F1/EM 判分）：125/125 成功，证据 Recall@5
+`0.8075`，单会话 EM `0.4286`、多会话 EM `0.0364`，成本约 $0.34。全量 500 题与
+官方 Judge、50 条错误分类仍待完成。
+
 **工作**：在 LongMemEval-S 固定同一 reader LLM，对比 recent window、Context only、Context + V5.6 Memory；使用逐题 checkpoint，按能力类型报告。
 
 **验收**：
@@ -1036,6 +1041,12 @@ Real API smoke: LongMemEval 10 cases succeeded, Recall@5=0.4, P95=399.558 ms
 - 至少抽查 50 条错误，分类 stale fact、未召回、召回未采用、时间错误、错误拒答。
 
 ### 15.4 P0：Context 端到端质量闭环
+
+**状态（2026-08-10，1/4 协议规模完成）**：QASPER validation 251 题 full-paper vs
+v5.6 预算上下文配对（250 成功配对）：Answer F1 `0.5383 → 0.5399`、EM
+`0.2590 → 0.2550`、Evidence F1 `0.5732 → 0.5674`，质量下降均在 2pp 内；输入
+token 减少 10.1%（该子集未超预算，50% 削减目标留待超长文档场景）。LongBench
+官方数据仍受外部网络阻塞。
 
 **工作**：网络恢复后获取 LongBench 官方完整数据，使用同一 LLM 配对比较 full context、fixed window、V5.6 structured context；同时在 QASPER 冻结 test 上比较 full 与 V5.6 的 Answer/Evidence F1。
 
