@@ -89,3 +89,51 @@ test("developer workbench discovers local datasets and exposes reproducible runs
     fullPage: true,
   });
 });
+
+test("chat exposes session list, expandable citations and regenerate without losing history", async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 900});
+  await page.goto(baseURL, {waitUntil: "networkidle"});
+  await page.locator("#show-chat-mode").click();
+
+  const sessionsBefore = await page.locator(".session-item").count().catch(() => 0);
+  await page.locator("#create-chat").click();
+  await expect(page.locator(".session-item").first()).toBeVisible({timeout: 10000});
+  await page.locator("#chat-input").fill("PIM 是什么，神经网络如何抑制它？");
+  await page.locator("#send-chat").click();
+
+  const lastMessage = page.locator("#chat-messages .message.assistant").last();
+  await expect(lastMessage).toContainText(/神经网络|PIM|无源互调/, {timeout: 60000});
+  await expect(lastMessage.locator(".citations summary")).toContainText("引用");
+  await lastMessage.locator(".citations summary").click();
+  await expect(lastMessage.locator(".citations li").first()).toBeVisible();
+  const sessionsAfter = await page.locator(".session-item").count();
+  expect(sessionsAfter).toBeGreaterThanOrEqual(sessionsBefore + 1);
+
+  await page.locator("#regenerate-chat").click();
+  await expect(page.locator("#chat-messages .message").last()).toContainText("v2", {timeout: 60000});
+  await expect(page.locator("#chat-messages .message").last()).toContainText("重新生成");
+  expect(await page.locator("#stop-chat").count()).toBe(1);
+  await expect(page.locator("#stop-chat")).toBeHidden();
+
+  await page.screenshot({
+    path: path.join(screenshotRoot, "chat-session-citations.png"),
+    fullPage: true,
+  });
+});
+
+test("research article downloads as markdown and developer console stays clean", async ({page}) => {
+  await page.setViewportSize({width: 1366, height: 768});
+  await page.goto(baseURL, {waitUntil: "networkidle"});
+
+  const downloadPromise = page.waitForEvent("download", {timeout: 15000});
+  await page.locator("#start-research-demo").click();
+  await expect(page.locator("#article-content")).not.toBeEmpty({timeout: 60000});
+  await expect(page.locator("#download-article-md")).toBeEnabled();
+  await page.locator("#download-article-md").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.md$/);
+
+  await page.locator("#show-developer-mode").click();
+  await expect(page.locator(".benchmark-card")).toHaveCount(6, {timeout: 30000});
+  await expect(page.locator("#leave-developer-mode")).toBeVisible();
+});

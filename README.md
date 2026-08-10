@@ -90,6 +90,10 @@ python examples/storm_examples/start_paperstorm_service.py `
 一次点击内完成 fake 任务创建、检索、大纲、文章与评分展示；真实链路在
 "高级运行设置"中选择"真实检索与 LLM"。右下/右上"开发者控制台"进入公开评测工作台。
 
+启动脚本自带 preflight：缺 uvicorn 时给出 `pip install uvicorn`，端口 8002 被
+占用时自动建议并顺延到 8003，未配置 DeepSeek/MiniMax Key 时提示真实模式所需的
+环境变量（fake 演示不需要 Key）。
+
 底层调试时也可直接启动 FastAPI 应用：
 
 ```powershell
@@ -120,6 +124,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
 
 ![V5.6 论文调研模式](docs/screenshots/dashboard-research-v56.png)
 
+- 调研文章支持一键**下载 Markdown**，便于本地保存与二次整理。
 - 输入主题后一次点击完成任务创建、运行、状态追踪和结果刷新；五阶段进度
   （创建任务 → 检索证据 → 生成大纲 → 撰写文章 → 完成）明确显示当前位置。
 - fake 模式快速生成可复现示例结果；paperstorm 模式调用真实 arXiv/PDF 检索与 LLM。
@@ -131,6 +136,11 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
 
 - 输入即问答：普通聊天/系统问题直接回复，技术问题优先复用已有调研任务，
   证据不足自动启动深度调研；说"请记住：…"保存跨会话记忆。
+- **会话列表**：左侧历史会话可一键切换加载，显示消息数与最近内容摘要。
+- **引用展开**：每条带证据的回答可展开引用明细（标题 / 来源链接 / 页码 / 片段），
+  无来源的引用明确标记"失效"。
+- **重新生成 / 停止**：可对最后一条回答重新生成（旧回答保留为 v1，新回答标 v2，
+  不覆盖历史）；生成中可点"停止"中止后续阶段写入。
 - 会话栏可切换运行模式（fake 本地演示 / paperstorm 真实检索+LLM）与检索器
   （arxiv / local-pdf）。
 - 每条回复标注运行时与检索栈（如 `langgraph-v4.4`、`v41`），可追溯执行链路。

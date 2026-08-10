@@ -424,7 +424,7 @@ class LongTermMemoryServiceV56:
         lexical = _bm25_scores(corpus, query_tokens)
         query_vector = self.embedding_provider.embed_query(query)
         vectors = self._load_vectors(records)
-        dense = [_cosine(query_vector, vector) for vector in vectors]
+        dense = [float(_cosine(query_vector, vector)) for vector in vectors]
         query_entities = {item.lower() for item in _entities(query, {})}
         entity = [len(query_entities.intersection({item.lower() for item in record.get("entities", [])})) / max(1, len(query_entities)) for record in records]
         ranks = [_ranks(signal) for signal in (lexical, dense, entity)]
@@ -440,7 +440,7 @@ class LongTermMemoryServiceV56:
             item = dict(record)
             item["scores"] = {"lexical": round(lexical[index], 6), "dense": round(dense[index], 6), "entity": round(entity[index], 6), "temporal": temporal, "rrf": round(rrf, 6), "importance": record["importance"], "recency": round(recency, 6), "final": round(final, 6)}
             item["retrieval_reasons"] = [name for name, score in (("lexical", lexical[index]), ("dense", dense[index]), ("entity", entity[index]), ("temporal", temporal)) if score > 0]
-            item["_vector"] = list(vectors[index])
+            item["_vector"] = vectors[index].tolist()
             output.append(item)
         output.sort(key=lambda item: item["scores"]["final"], reverse=True)
         return output

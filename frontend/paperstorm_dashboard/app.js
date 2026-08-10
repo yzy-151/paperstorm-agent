@@ -6,6 +6,9 @@ const state = {
   benchmarkPoll: null,
   researchTaskId: "",
   chatId: "",
+  chatSessions: [],
+  chatController: null,
+  lastArticle: "",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -64,6 +67,7 @@ function setMode(mode) {
   }
   document.body.dataset.mode = mode;
   if (developer) loadBenchmarkCatalog();
+  if (mode === "chat") loadChatSessions();
 }
 
 function researchPayload(demo = false) {
@@ -124,8 +128,50 @@ async function loadResearchResult(taskId) {
     fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/scorecard`),
   ]);
   $("#article-content").textContent = article.content || "任务完成，但没有生成文章。";
+  state.lastArticle = article.content || "";
+  $("#download-article-md").disabled = !state.lastArticle;
   renderMetricGrid($("#scorecard"), scorecard, 8);
   $("#research-score-section").classList.toggle("hidden", !Object.keys(scorecard).length);
+}
+
+async function loadChatSessions() {
+  try {
+    state.chatSessions = await fetchJson("/chat/sessions?limit=50");
+    renderChatSessions();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+function renderChatSessions() {
+  const container = $("#chat-session-list");
+  if (!state.chatSessions.length) {
+    container.innerHTML = '<p class="empty-state">暂无历史会话。</p>';
+    return;
+  }
+  container.innerHTML = state.chatSessions.map((session) => `
+    <button class="session-item ${state.chatId === session.chat_id ? "active" : ""}" data-chat-id="${escapeHtml(session.chat_id)}" type="button">
+      <strong>${escapeHtml(session.title || "PaperStorm Chat")}</strong>
+      <span>${session.message_count} 条消息 · ${escapeHtml(session.run_mode)} / ${escapeHtml(session.retriever)}</span>
+      <small>${escapeHtml(session.last_preview || "无消息")}</small>
+    </button>
+  `).join("");
+  $$(".session-item").forEach((item) => {
+    item.addEventListener("click", () => loadChatSession(item.dataset.chatId));
+  });
+}
+
+async function loadChatSession(chatId) {
+  try {
+    const session = await fetchJson(`/chat/sessions/${encodeURIComponent(chatId)}`);
+    state.chatId = session.chat_id;
+    $("#chat-session-id").textContent = session.chat_id;
+    $("#chat-context-summary").textContent = "等待消息";
+    renderChatMessages(session.messages || []);
+    renderChatSessions();
+  } catch (error) {
+    toast(error.message, "error");
+  }
 }
 
 async function createChat() {
@@ -147,6 +193,7 @@ async function createChat() {
     $("#chat-session-id").textContent = session.chat_id;
     $("#chat-messages").innerHTML = "";
     renderChatMessages(session.messages || []);
+    loadChatSessions();
     toast("新会话已创建");
   } catch (error) {
     toast(error.message, "error");
@@ -166,22 +213,90 @@ async function sendChat(event) {
   const button = $("#send-chat");
   button.disabled = true;
   button.textContent = "思考中";
+  $("#stop-chat").classList.remove("hidden");
+  $("#regenerate-chat").disabled = true;
+  state.chatController = new AbortController();
   try {
     const result = await fetchJson(`/chat/sessions/${encodeURIComponent(state.chatId)}/messages`, {
       method: "POST",
       body: JSON.stringify({message}),
+      signal: state.chatController.signal,
     });
     renderChatMessages(result.messages || []);
     const context = result.context || result.context_meter || {};
     $("#chat-context-summary").textContent = context.input_tokens
       ? `${context.input_tokens} tokens · ${context.compacted ? "已压缩" : "未压缩"}`
       : `${(result.messages || []).length} 条消息`;
+    $("#regenerate-chat").disabled = !((result.messages || []).at(-1)?.role === "assistant");
+    loadChatSessions();
   } catch (error) {
-    appendMessage("assistant", `请求失败：${error.message}`);
+    if (error.name === "AbortError") {
+      appendMessage("assistant", "已停止生成。");
+    } else {
+      appendMessage("assistant", `请求失败：${error.message}`);
+    }
   } finally {
+    state.chatController = null;
+    $("#stop-chat").classList.add("hidden");
     button.disabled = false;
     button.textContent = "发送";
   }
+}
+
+async function stopChat() {
+  if (state.chatController) state.chatController.abort();
+  if (state.chatId) {
+    try {
+      await fetchJson(`/chat/sessions/${encodeURIComponent(state.chatId)}/stop`, {method: "POST"});
+    } catch (_error) {
+      // stop is best-effort; the UI already aborted the request
+    }
+  }
+  $("#stop-chat").classList.add("hidden");
+  toast("已停止生成");
+}
+
+async function regenerateChat() {
+  if (!state.chatId) return;
+  const button = $("#regenerate-chat");
+  button.disabled = true;
+  try {
+    const result = await fetchJson(`/chat/sessions/${encodeURIComponent(state.chatId)}/regenerate`, {method: "POST"});
+    renderChatMessages(result.messages || []);
+    toast(result.regenerated ? "已生成新版本回答" : "重新生成完成");
+    loadChatSessions();
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    const messages = $("#chat-messages").querySelectorAll(".message");
+    button.disabled = !(messages.length && messages[messages.length - 1].classList.contains("assistant"));
+  }
+}
+
+function renderMessageNode(message) {
+  const node = document.createElement("div");
+  const role = message.role === "user" ? "user" : "assistant";
+  node.className = `message ${role}`;
+  const metadata = message.metadata || {};
+  const version = metadata.version ? ` <span class="version-badge">v${escapeHtml(metadata.version)}</span>` : "";
+  const regenerated = metadata.regenerated ? " <span class=\"version-badge\">重新生成</span>" : "";
+  let citationsHtml = "";
+  const citations = Array.isArray(metadata.citations) ? metadata.citations : [];
+  if (citations.length) {
+    const items = citations.map((citation) => {
+      const title = escapeHtml(citation.title || citation.name || "未命名来源");
+      const url = citation.url || "";
+      const page = citation.page ? ` · 第 ${escapeHtml(citation.page)} 页` : "";
+      const chunk = citation.chunk ? ` · ${escapeHtml(citation.chunk)}` : "";
+      const source = url
+        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">来源</a>`
+        : '<b class="missing-badge">失效</b>';
+      return `<li>${title}${source}${page}${chunk}</li>`;
+    }).join("");
+    citationsHtml = `<details class="citations"><summary>引用 ${citations.length} 条</summary><ul>${items}</ul></details>`;
+  }
+  node.innerHTML = `<strong>${role === "user" ? "你" : "PaperStorm"}${version}${regenerated}</strong><p>${escapeHtml(message.content)}</p>${citationsHtml}`;
+  return node;
 }
 
 function renderChatMessages(messages) {
@@ -191,16 +306,30 @@ function renderChatMessages(messages) {
     appendMessage("assistant", "会话已创建。你可以直接聊天，也可以提出需要论文证据的问题。");
     return;
   }
-  messages.forEach((message) => appendMessage(message.role, message.content));
+  messages.forEach((message) => {
+    container.appendChild(renderMessageNode(message));
+  });
+  container.scrollTop = container.scrollHeight;
 }
 
 function appendMessage(role, content) {
   const container = $("#chat-messages");
-  const node = document.createElement("div");
-  node.className = `message ${role === "user" ? "user" : "assistant"}`;
-  node.innerHTML = `<strong>${role === "user" ? "你" : "PaperStorm"}</strong><p>${escapeHtml(content)}</p>`;
-  container.appendChild(node);
+  container.appendChild(renderMessageNode({role, content, metadata: {}}));
   container.scrollTop = container.scrollHeight;
+}
+
+function downloadArticleMarkdown() {
+  if (!state.lastArticle) return;
+  const blob = new Blob([state.lastArticle], {type: "text/markdown;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `paperstorm-${state.researchTaskId || "research"}.md`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  toast("Markdown 已下载");
 }
 
 async function loadBenchmarkCatalog() {
@@ -460,6 +589,10 @@ $("#start-research-demo").addEventListener("click", () => runResearchWorkflow(tr
 $("#start-research-workflow").addEventListener("click", () => runResearchWorkflow(false));
 $("#create-chat").addEventListener("click", createChat);
 $("#chat-form").addEventListener("submit", sendChat);
+$("#refresh-chat-sessions").addEventListener("click", loadChatSessions);
+$("#regenerate-chat").addEventListener("click", regenerateChat);
+$("#stop-chat").addEventListener("click", stopChat);
+$("#download-article-md").addEventListener("click", downloadArticleMarkdown);
 $("#refresh-benchmark-catalog").addEventListener("click", loadBenchmarkCatalog);
 $("#benchmark-profile").addEventListener("change", () => {
   if (state.selectedBenchmark) selectBenchmark(state.selectedBenchmark.id);

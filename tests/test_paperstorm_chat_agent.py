@@ -223,6 +223,43 @@ class PaperStormChatAgentTest(unittest.TestCase):
             self.assertEqual(loaded.status_code, 200)
             self.assertEqual(loaded.json()["chat_id"], chat_id)
 
+    def test_list_sessions_and_regenerate_keep_history(self):
+        service = self.make_service()
+        session = service.create_chat_session(
+            topic="pim 神经网络抑制",
+            run_mode="fake",
+            expected_keywords=["passive intermodulation"],
+            forbidden_keywords=["DRAM"],
+        )
+        first = service.send_chat_message(session["chat_id"], "PIM 是什么？")
+
+        sessions = service.list_chat_sessions()
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0]["chat_id"], session["chat_id"])
+        self.assertGreaterEqual(sessions[0]["message_count"], 2)
+
+        before = len(first["messages"])
+        regenerated = service.regenerate_chat_message(session["chat_id"])
+        messages = regenerated["messages"]
+        self.assertTrue(regenerated.get("regenerated"))
+        self.assertEqual(messages[-1]["role"], "assistant")
+        self.assertEqual(messages[-1]["metadata"].get("version"), 2)
+        # 旧回答保留为 v1，新回答追加为 v2，不覆盖历史
+        self.assertEqual(len(messages), before + 1)
+        self.assertEqual(messages[-2]["metadata"].get("version"), 1)
+        self.assertIn("citations", messages[-1]["metadata"])
+
+    def test_stop_generation_flag_is_best_effort_and_cleared_on_next_send(self):
+        service = self.make_service()
+        session = service.create_chat_session(topic="pim 神经网络抑制", run_mode="fake")
+
+        stopped = service.stop_chat_generation(session["chat_id"])
+        self.assertEqual(stopped["status"], "stopping")
+
+        reply = service.send_chat_message(session["chat_id"], "你好")
+        self.assertNotEqual(reply.get("status"), "stopped")
+        self.assertGreaterEqual(len(reply["messages"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

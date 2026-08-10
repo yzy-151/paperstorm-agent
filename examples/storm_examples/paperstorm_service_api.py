@@ -427,6 +427,18 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     def get_chat_session(chat_id: str):
         return service.get_chat_session(chat_id)
 
+    @app.get("/chat/sessions")
+    def list_chat_sessions(limit: int = 50):
+        return service.list_chat_sessions(limit=limit)
+
+    @app.post("/chat/sessions/{chat_id}/regenerate")
+    def regenerate_chat_session(chat_id: str):
+        return service.regenerate_chat_message(chat_id)
+
+    @app.post("/chat/sessions/{chat_id}/stop")
+    def stop_chat_session(chat_id: str):
+        return service.stop_chat_generation(chat_id)
+
     @app.post("/chat/sessions/{chat_id}/messages")
     def send_chat_message(chat_id: str, request: ChatMessageRequest):
         return service.send_chat_message(

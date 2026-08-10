@@ -1,5 +1,6 @@
 import hashlib
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ class PaperStormChatAgent:
         self.intent_router = intent_router or PaperStormIntentRouter()
         self.chat_dir = Path(task_service.root_dir) / "chat_sessions"
         self.chat_dir.mkdir(parents=True, exist_ok=True)
+        self._cancelled_ids = set()
+        self._cancel_lock = threading.Lock()
 
     def create_session(
         self,
@@ -76,10 +79,83 @@ class PaperStormChatAgent:
     def get_session(self, chat_id: str) -> Dict:
         return self._read_session(chat_id)
 
+    def list_sessions(self, limit: int = 50) -> List[Dict]:
+        sessions = []
+        for path in self.chat_dir.glob("*.json"):
+            try:
+                session = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            messages = session.get("messages") or []
+            last = messages[-1] if messages else None
+            sessions.append(
+                {
+                    "chat_id": session.get("chat_id") or path.stem,
+                    "title": session.get("title") or "PaperStorm Chat",
+                    "run_mode": session.get("run_mode", ""),
+                    "retriever": session.get("retriever", ""),
+                    "message_count": len(messages),
+                    "last_preview": (last or {}).get("content", "")[:80] if last else "",
+                    "created_at": session.get("created_at", ""),
+                    "updated_at": session.get("updated_at", ""),
+                }
+            )
+        sessions.sort(key=lambda item: str(item["updated_at"]), reverse=True)
+        return sessions[: max(1, int(limit))]
+
+    def regenerate_last(self, chat_id: str) -> Dict:
+        session = self._read_session(chat_id)
+        messages = session.get("messages") or []
+        user_indices = [index for index, item in enumerate(messages) if item.get("role") == "user"]
+        if not user_indices:
+            raise ValueError("no user message to regenerate")
+        user_message = messages[user_indices[-1]]
+        self._write_session(session)
+        result = self.send_message(chat_id, user_message.get("content", ""))
+        if result.get("status") == "stopped":
+            return result
+        session = self._read_session(chat_id)
+        session_messages = session.get("messages") or []
+        if (
+            len(session_messages) >= 2
+            and session_messages[-2].get("role") == "user"
+            and session_messages[-1].get("role") == "assistant"
+        ):
+            session_messages.pop(-2)
+            assistant = session_messages[-1]
+            assistant.setdefault("metadata", {})
+            previous_versions = []
+            for item in session_messages[:-1]:
+                if item.get("role") == "assistant":
+                    item.setdefault("metadata", {})
+                    if not item["metadata"].get("version"):
+                        item["metadata"]["version"] = 1
+                    previous_versions.append(int(item["metadata"]["version"]))
+            assistant["metadata"]["version"] = max(previous_versions or [0]) + 1
+            assistant["metadata"]["regenerated"] = True
+            self._write_session(session)
+            result["messages"] = session_messages
+            result["regenerated"] = True
+        return result
+
+    def stop_generation(self, chat_id: str) -> Dict:
+        with self._cancel_lock:
+            self._cancelled_ids.add(chat_id)
+        return {"status": "stopping", "chat_id": chat_id}
+
+    def _is_cancelled(self, chat_id: str) -> bool:
+        with self._cancel_lock:
+            return chat_id in self._cancelled_ids
+
+    def _clear_cancel(self, chat_id: str):
+        with self._cancel_lock:
+            self._cancelled_ids.discard(chat_id)
+
     def send_message(self, chat_id: str, message: str) -> Dict:
         message = str(message or "").strip()
         if not message:
             raise ValueError("message is required")
+        self._clear_cancel(chat_id)
 
         session = self._read_session(chat_id)
         engine = self._context_engine(session)
@@ -87,6 +163,10 @@ class PaperStormChatAgent:
         user_message = _message("user", message)
         session["messages"].append(user_message)
         engine.store.append_message(user_message)
+        if self._is_cancelled(chat_id):
+            session["messages"].pop()
+            self._write_session(session)
+            return {"status": "stopped", "chat_id": chat_id, "messages": session["messages"]}
         context_window = self._context_window(session)
         memory = self._build_memory(session, message)
         long_term_memory = self._recall_long_term_memory(session, message)
@@ -102,6 +182,10 @@ class PaperStormChatAgent:
             user_message=user_message,
             context_window=routed_context["messages"],
         )
+        if self._is_cancelled(chat_id):
+            session["messages"].pop()
+            self._write_session(session)
+            return {"status": "stopped", "chat_id": chat_id, "messages": session["messages"]}
         router_decision = graph_run.get("router_decision") or {}
         long_term_memory = graph_run.get("memory_recall") or long_term_memory
         answer = _graph_answer_payload(graph_run)
@@ -117,6 +201,8 @@ class PaperStormChatAgent:
                 "router_decision": router_decision,
                 "tool_decision": _tool_decision(router_decision, answer),
                 "citation_count": len(answer.get("citations") or []),
+                "citations": answer.get("citations") or [],
+                "evidence": answer.get("evidence") or [],
                 "retrieval_stack": answer.get("retrieval_stack", ""),
             },
         )

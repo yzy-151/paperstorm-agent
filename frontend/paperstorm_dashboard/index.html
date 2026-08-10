@@ -65,12 +65,16 @@
         </section>
 
         <section class="surface" id="research-result-workspace">
-          <div class="section-heading"><div><span>RESEARCH RESULT</span><h2>调研文章</h2></div><b>evidence grounded</b></div>
+          <div class="section-heading"><div><span>RESEARCH RESULT</span><h2>调研文章</h2></div><b>evidence grounded</b><button class="secondary-button" id="download-article-md" type="button" disabled>下载 Markdown</button></div>
           <article class="article" id="article-content">完成调研后，文章将在这里展示。</article>
         </section>
       </section>
 
       <section class="chat-view product-only hidden" id="chat-view">
+        <aside class="surface chat-sessions" id="chat-sessions-panel">
+          <div class="section-heading"><div><span>HISTORY</span><h2>会话列表</h2></div><button class="icon-button" id="refresh-chat-sessions" type="button" title="刷新">↻</button></div>
+          <div class="session-list" id="chat-session-list"><p class="empty-state">暂无历史会话。</p></div>
+        </aside>
         <aside class="surface chat-settings">
           <div class="section-heading"><div><span>CONVERSATION</span><h2>研究问答</h2></div></div>
           <p>普通聊天直接回答；技术问题复用已有证据，证据不足时自动调研。</p>
@@ -81,6 +85,10 @@
         </aside>
         <section class="surface chat-workspace">
           <div class="chat-messages" id="chat-messages"><div class="message assistant"><strong>PaperStorm</strong><p>我是带论文检索、上下文压缩和长期记忆的 Research Chat Agent。</p></div></div>
+          <div class="chat-toolbar">
+            <button id="regenerate-chat" type="button" disabled>重新生成</button>
+            <button id="stop-chat" type="button" class="danger-button hidden">停止</button>
+          </div>
           <form class="chat-composer" id="chat-form">
             <textarea id="chat-input" rows="3" placeholder="直接提问，例如：PIM 是什么，神经网络如何抑制它？"></textarea>
             <button id="send-chat" type="submit">发送</button>

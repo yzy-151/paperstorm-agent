@@ -1052,6 +1052,24 @@ Real API smoke: LongMemEval 10 cases succeeded, Recall@5=0.4, P95=399.558 ms
 
 **工作**：补齐会话列表、引用展开、重新生成、停止生成；调研结果增加 Outline/证据/章节进度和 Markdown 下载；启动脚本增加依赖、Key、端口 preflight。
 
+**状态（2026-08-10 完成）**：
+
+- 会话列表：新增 `GET /chat/sessions`，前端左侧历史会话一键切换；
+- 引用展开：助手消息持久化 `citations/evidence` 元数据，前端按
+  title/url/page/chunk 展开，缺 url 标"失效"；
+- 重新生成：`POST /chat/sessions/{id}/regenerate`，旧回答保留为 v1、新回答标
+  v2，不覆盖历史；
+- 停止生成：`POST /chat/sessions/{id}/stop` + 前端 AbortController，阶段级取消
+  （真实 LLM 单次调用无法 token 级中断，属已知边界）；
+- Markdown 下载：调研文章一键下载 `.md`；
+- 启动脚本 preflight：uvicorn 缺失给出可执行安装命令、端口占用自动顺延 8003、
+  API Key 缺失给出配置提示；
+- Playwright 覆盖 desktop/mobile、stop/regenerate、citation、download、
+  developer toggle，**5/5 通过**；浏览器 console error 0；全量离线回归
+  **286 通过（2 个 workflow-scope 跳过）**。
+
+保留项：独立 Outline/证据侧栏未单独实现（以五阶段进度 + 文章 + 聊天引用展开覆盖）。
+
 **验收**：
 
 - 新用户只看首页能在 3 次点击内完成 fake 聊天和 fake 调研；

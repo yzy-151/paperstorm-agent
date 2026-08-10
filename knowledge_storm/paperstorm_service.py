@@ -534,6 +534,21 @@ class PaperStormTaskService:
 
         return PaperStormChatAgent(self).send_message(chat_id, message)
 
+    def list_chat_sessions(self, limit: int = 50):
+        from .paperstorm_chat_agent import PaperStormChatAgent
+
+        return PaperStormChatAgent(self).list_sessions(limit=limit)
+
+    def regenerate_chat_message(self, chat_id: str):
+        from .paperstorm_chat_agent import PaperStormChatAgent
+
+        return PaperStormChatAgent(self).regenerate_last(chat_id)
+
+    def stop_chat_generation(self, chat_id: str):
+        from .paperstorm_chat_agent import PaperStormChatAgent
+
+        return PaperStormChatAgent(self).stop_generation(chat_id)
+
     def get_chat_context(self, chat_id: str):
         from .paperstorm_chat_agent import PaperStormChatAgent
 
