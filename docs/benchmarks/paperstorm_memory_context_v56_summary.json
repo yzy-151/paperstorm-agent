@@ -14,11 +14,12 @@
       "p50_latency_ms": 146.757,
       "p95_latency_ms": 202.643
     },
-    "v56_minilm_cpu": {
-      "embedding": "sentence-transformers/all-MiniLM-L6-v2",
-      "recall_at_5": 0.793,
-      "p50_latency_ms": 1586.114,
-      "p95_latency_ms": 1857.286
+    "v56_real_persisted": {
+      "embedding": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "vector_persistence": "sqlite-memory_fact_vectors",
+      "recall_at_5": 0.800333,
+      "p50_latency_ms": 218.079,
+      "p95_latency_ms": 359.274
     }
   },
   "longbench": {
@@ -43,7 +44,7 @@
   },
   "limitations": [
     "LongMemEval result is retrieval-only and is not end-to-end answer accuracy.",
-    "Latency is single-process Windows CPU warm-query time and includes on-demand session embedding.",
+    "Latency is single-process Windows CPU warm-query time; vectors are persisted at write time and queries only encode the query.",
     "LongBench formal paired task score is not claimed."
   ]
 }

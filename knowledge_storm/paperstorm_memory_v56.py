@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+import numpy as np
+
 from .paperstorm_memory_v43 import MemoryWritePolicy, _model_dump
 from .paperstorm_rag import HashEmbeddingProvider
 
@@ -127,6 +129,16 @@ class LongTermMemoryServiceV56:
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS memory_fact_vectors (
+                    fact_id TEXT PRIMARY KEY,
+                    namespace TEXT NOT NULL,
+                    backend TEXT NOT NULL,
+                    dim INTEGER NOT NULL,
+                    vector_blob BLOB NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_fact_vectors_backend
+                    ON memory_fact_vectors(backend, namespace);
                 """
             )
 
@@ -274,6 +286,7 @@ class LongTermMemoryServiceV56:
             self._event(connection, namespace, "memory_upserted", {"memory_id": memory_id, "supersedes_id": supersedes_id})
             row = connection.execute("SELECT * FROM memory_facts WHERE id=?", (memory_id,)).fetchone()
             result = self._fact_dict(connection, row)
+            self._store_vector(connection, memory_id, namespace, self._embed_text(_search_text(result)))
         result["deduplicated"] = False
         return result
 
@@ -410,7 +423,7 @@ class LongTermMemoryServiceV56:
         corpus = [_tokenize(_search_text(item)) for item in records]
         lexical = _bm25_scores(corpus, query_tokens)
         query_vector = self.embedding_provider.embed_query(query)
-        vectors = self.embedding_provider.embed([_search_text(item) for item in records])
+        vectors = self._load_vectors(records)
         dense = [_cosine(query_vector, vector) for vector in vectors]
         query_entities = {item.lower() for item in _entities(query, {})}
         entity = [len(query_entities.intersection({item.lower() for item in record.get("entities", [])})) / max(1, len(query_entities)) for record in records]
@@ -431,6 +444,57 @@ class LongTermMemoryServiceV56:
             output.append(item)
         output.sort(key=lambda item: item["scores"]["final"], reverse=True)
         return output
+
+    def _provider_fingerprint(self):
+        provider = self.embedding_provider
+        name = str(getattr(provider, "name", None) or type(provider).__name__)
+        model = str(getattr(provider, "model_name", None) or "")
+        dim = int(getattr(provider, "dim", 0) or 0)
+        return "{0}|{1}|{2}".format(name, model, dim)
+
+    def _embed_text(self, text):
+        vector = self.embedding_provider.embed([str(text or "")])[0]
+        return np.asarray(vector, dtype=np.float32).reshape(-1)
+
+    def _store_vector(self, connection, fact_id, namespace, vector):
+        vector = np.asarray(vector, dtype=np.float32).reshape(-1)
+        connection.execute(
+            """INSERT OR REPLACE INTO memory_fact_vectors
+               (fact_id, namespace, backend, dim, vector_blob, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (fact_id, namespace, self._provider_fingerprint(), int(vector.size), vector.tobytes(), _now()),
+        )
+
+    def _load_vectors(self, records):
+        if not records:
+            return []
+        backend = self._provider_fingerprint()
+        record_ids = [str(record["id"]) for record in records]
+        placeholders = ",".join("?" for _ in record_ids)
+        vectors_by_id = {}
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT fact_id, backend, dim, vector_blob FROM memory_fact_vectors
+                   WHERE fact_id IN ({0})""".format(placeholders),
+                record_ids,
+            ).fetchall()
+            for row in rows:
+                if str(row["backend"]) != backend:
+                    continue
+                vectors_by_id[str(row["fact_id"])] = np.frombuffer(
+                    bytes(row["vector_blob"]), dtype=np.float32
+                ).reshape(int(row["dim"]))
+        missing = [record for record in records if str(record["id"]) not in vectors_by_id]
+        if missing:
+            encoded = self.embedding_provider.embed([_search_text(item) for item in missing])
+            with self._connect() as connection:
+                for record, vector in zip(missing, encoded):
+                    self._store_vector(
+                        connection, str(record["id"]), str(record["namespace"]), vector
+                    )
+            for record, vector in zip(missing, encoded):
+                vectors_by_id[str(record["id"])] = np.asarray(vector, dtype=np.float32).reshape(-1)
+        return [vectors_by_id[str(record["id"])] for record in records]
 
     def _attach_sources(self, connection, fact_id, namespace, source_ids, episode_id):
         for source_id in source_ids:

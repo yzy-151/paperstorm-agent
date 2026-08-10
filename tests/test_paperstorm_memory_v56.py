@@ -18,6 +18,20 @@ class KeywordEmbedding:
         ]
 
 
+class CountingEmbedding(KeywordEmbedding):
+    def __init__(self):
+        self.embed_calls = 0
+        self.embed_query_calls = 0
+
+    def embed(self, texts):
+        self.embed_calls += 1
+        return super().embed(texts)
+
+    def embed_query(self, text):
+        self.embed_query_calls += 1
+        return super().embed_query(text)
+
+
 class PaperStormMemoryV56Tests(unittest.TestCase):
     def _service(self, root):
         from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
@@ -45,6 +59,47 @@ class PaperStormMemoryV56Tests(unittest.TestCase):
             self.assertEqual(service.list_episodes("tenant-a:user-1")[0]["source_id"], "message-1")
             self.assertEqual(service.list_episodes("tenant-b:user-1"), [])
             self.assertEqual(service.storage_info()["journal_mode"].lower(), "wal")
+
+    def test_fact_vectors_persist_and_are_reused_across_queries(self):
+        from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = CountingEmbedding()
+            service = LongTermMemoryServiceV56(Path(temp_dir) / "memory", embedding_provider=provider)
+            service.upsert(
+                namespace="tenant:user",
+                memory_type="fact",
+                subject="pim",
+                content="PIM 指无源互调，中文射频场景常见。",
+                canonical_key="pim",
+                valid_from="2026-01-01T00:00:00+00:00",
+            )
+            service.upsert(
+                namespace="tenant:user",
+                memory_type="fact",
+                subject="vlc",
+                content="VLC 是可见光通信。",
+                canonical_key="vlc",
+                valid_from="2026-01-01T00:00:00+00:00",
+            )
+            provider.embed_calls = 0
+            provider.embed_query_calls = 0
+
+            first = service.search("tenant:user", "无源互调是什么", top_k=1)
+            first_id = first["results"][0]["id"]
+            embed_calls_after_first = provider.embed_calls
+
+            second = service.search("tenant:user", "无源互调是什么", top_k=1)
+            self.assertEqual(second["results"][0]["id"], first_id)
+            self.assertEqual(provider.embed_calls, embed_calls_after_first)
+            self.assertGreaterEqual(provider.embed_query_calls, 2)
+
+            service2 = LongTermMemoryServiceV56(
+                Path(temp_dir) / "memory", embedding_provider=CountingEmbedding()
+            )
+            same = service2.search("tenant:user", "无源互调是什么", top_k=1)
+            self.assertEqual(same["results"][0]["id"], first_id)
+            self.assertEqual(service2.embedding_provider.embed_calls, 0)
 
     def test_fact_update_preserves_history_and_provenance(self):
         with tempfile.TemporaryDirectory() as temp_dir:

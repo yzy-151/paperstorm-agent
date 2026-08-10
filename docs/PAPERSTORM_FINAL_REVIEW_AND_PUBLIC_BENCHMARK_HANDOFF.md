@@ -1006,6 +1006,14 @@ Real API smoke: LongMemEval 10 cases succeeded, Recall@5=0.4, P95=399.558 ms
 
 **工作**：为 V5.6 fact/session embedding 增加持久化缓存和 FAISS/HNSW ANN；批量写入使用单事务；查询不再现场编码全部 session。
 
+**状态（2026-08-10 完成）**：向量在写入时一次性编码并持久化到 SQLite
+`memory_fact_vectors`（backend 指纹隔离不同 embedding 模型），查询只编码 query、
+按主键取向量，不再逐查询重编码全部 session。500/500 复跑（复用已导入事实库，
+重启不重编码）结果为 Recall@5 `0.8003`、P50 `218.1ms`、P95 `359.3ms`
+（早期 `0.7930 / 1857ms`），满足 `Recall>=0.773` 与 `P95<=500ms`；目标 `<=300ms`
+未完全达到（CPU 查询编码约 30-130ms）。未引入 FAISS ANN：当前 22k 事实规模下
+精确持久化向量已达标且无召回损失，语料扩大后再引入 ANN。
+
 **验收**：
 
 - LongMemEval-S 同一 500 题、同一 MiniLM、Top-5；

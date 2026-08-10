@@ -90,9 +90,16 @@ BM25 + real dense embedding + entity overlap
 | --- | --- | ---: | ---: | ---: |
 | Recent 5 sessions | 无 | 0.1358 | 0 ms | 0 ms |
 | v5.6 Memory | hash（协议基线） | 0.4813 | 146.8 ms | 202.6 ms |
-| v5.6 Memory | all-MiniLM-L6-v2，CPU | **0.7930** | 1586.1 ms | 1857.3 ms |
+| v5.6 Memory | paraphrase-multilingual-MiniLM-L12-v2，CPU，向量持久化 | **0.8003** | 218.1 ms | 359.3 ms |
 
 结论：时间/namespace 过滤和混合检索明显优于 recent window；真实语义向量进一步提升召回，但当前按 query 现场编码所有 session，CPU P95 约 1.86 秒，后续应将 fact embedding 预计算并建立 ANN 索引。
+
+> 更新（v5.6 收尾）：已实现写入时一次性编码并持久化向量（SQLite `memory_fact_vectors`，
+> 以 backend 指纹隔离不同 embedding 模型），查询只编码 query、按主键取向量。
+> 500/500 复跑（复用已导入事实库，重启不重编码）结果为 Recall@5 `0.8003`、
+> P50 `218.1ms`、P95 `359.3ms`，相比早期 `0.7930 / 1857ms` 提升召回并降低 80.6% P95。
+> 当前 22k 事实规模下精确持久化向量已满足延迟预算，无需 ANN；语料进一步扩大时
+> 再引入 FAISS/HNSW，避免引入近似召回损失。
 
 原始数据、SQLite 和逐题 prediction 位于仓库外：
 

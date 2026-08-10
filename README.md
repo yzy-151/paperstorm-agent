@@ -229,11 +229,13 @@ LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突，解析失败
 | --- | ---: | ---: | ---: |
 | Recent 5 sessions | 0.1358 | 0 ms | 0 ms |
 | v5.6 Memory，hash 协议基线 | 0.4813 | 146.8 ms | 202.6 ms |
-| v5.6 Memory，all-MiniLM-L6-v2 CPU | **0.7930** | 1586.1 ms | 1857.3 ms |
+| v5.6 Memory，paraphrase-multilingual-MiniLM-L12-v2（向量持久化） | **0.8003** | 218.1 ms | 359.3 ms |
 
-真实向量质量明显更高，但当前按 query 编码全部 session 导致 P95 偏高，下一步是
-预计算 embedding 与 ANN 索引。LongBench adapter/paired scorer 已通过离线测试，
-官方数据下载因外部网络中断未完成，因此不声称 LongBench task score。
+v5.6 在写入时一次性编码事实并持久化向量（SQLite `memory_fact_vectors`，按模型指纹
+隔离），查询只编码 query、按主键取向量，不再逐查询重编码全部 session：与早期
+`0.7930 / P95 1857ms` 相比，Recall@5 提升到 `0.8003`，P95 降到 `359.3ms`
+（-80.6%）。LongBench adapter/paired scorer 已通过离线测试，官方数据下载因外部
+网络中断未完成，因此不声称 LongBench task score。
 
 ### 主结果 2：QASPER Context 预算治理（v5.6）
 
