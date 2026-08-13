@@ -36,6 +36,28 @@ class PaperStormUIV57Test(unittest.TestCase):
         ):
             self.assertIn(marker, self.readme)
 
+    def test_real_pipeline_is_the_default_for_research_and_chat(self):
+        self.assertIn(
+            '<option value="paperstorm" selected>真实检索与 LLM</option>',
+            self.html,
+        )
+        self.assertIn(
+            '<option value="paperstorm" selected>真实 API</option>',
+            self.html,
+        )
+
+    def test_advanced_keyword_filters_are_empty_by_default(self):
+        self.assertIn('id="task-expected-keyword" placeholder=', self.html)
+        self.assertIn('id="task-forbidden-keyword" placeholder=', self.html)
+        self.assertNotIn('id="task-expected-keyword" value=', self.html)
+        self.assertNotIn('id="task-forbidden-keyword" value=', self.html)
+
+    def test_public_copy_does_not_market_an_expert_edition(self):
+        forbidden = ("专家版", "专业版", "专业工作台", "professional workspace")
+        for marker in forbidden:
+            self.assertNotIn(marker, self.html.lower())
+            self.assertNotIn(marker, self.readme.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

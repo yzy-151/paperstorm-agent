@@ -42,7 +42,7 @@
         <section class="research-view product-only" id="research-view">
           <header class="page-heading">
             <div><span>RESEARCH WORKSPACE</span><h1>论文调研</h1><p>从问题定义到证据检索、结构化写作与质量评估。</p></div>
-            <button id="start-research-demo" type="button">运行正式样例</button>
+            <button id="start-research-demo" type="button">运行示例主题</button>
           </header>
 
           <section class="surface research-composer">
@@ -54,9 +54,9 @@
               <button id="start-research-workflow" type="button">开始调研</button>
             </div>
             <details><summary>高级运行设置</summary><div class="form-row advanced-row">
-              <label>运行方式<select id="task-run-mode"><option value="fake">本地可复现演示</option><option value="paperstorm">真实检索与 LLM</option></select></label>
-              <label>期望关键词<input id="task-expected-keyword" value="passive intermodulation" /></label>
-              <label>排除关键词<input id="task-forbidden-keyword" value="DRAM" /></label>
+              <label>运行方式<select id="task-run-mode"><option value="paperstorm" selected>真实检索与 LLM</option><option value="fake">本地可复现演示</option></select></label>
+              <label>期望关键词<input id="task-expected-keyword" placeholder="可选，用于约束检索方向" /></label>
+              <label>排除关键词<input id="task-forbidden-keyword" placeholder="可选，用于过滤无关领域" /></label>
             </div></details>
           </section>
 
@@ -143,7 +143,7 @@
       <aside class="workspace-inspector product-only">
         <div class="inspector-block chat-settings">
           <span class="rail-label">运行配置</span>
-          <label>问答模式<select id="chat-run-mode"><option value="fake">本地演示</option><option value="paperstorm">真实 API</option></select></label>
+          <label>问答模式<select id="chat-run-mode"><option value="paperstorm" selected>真实 API</option><option value="fake">本地演示</option></select></label>
           <label>检索器<select id="chat-retriever"><option value="arxiv">arXiv</option><option value="local-pdf">本地 PDF</option></select></label>
         </div>
         <div class="inspector-block"><span class="rail-label">当前上下文</span><dl class="session-meta"><dt>SESSION</dt><dd id="chat-session-id">尚未创建</dd><dt>CONTEXT</dt><dd id="chat-context-summary">等待消息</dd></dl></div>

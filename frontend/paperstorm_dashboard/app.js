@@ -80,9 +80,9 @@ function researchPayload(demo = false) {
     topic: demo ? "无源互调的神经网络抑制方法" : $("#task-topic").value.trim(),
     retriever: $("#task-retriever").value,
     output_language: $("#task-output-language").value,
-    run_mode: demo ? "fake" : $("#task-run-mode").value,
-    expected_keywords: [$("#task-expected-keyword").value.trim()].filter(Boolean),
-    forbidden_keywords: [$("#task-forbidden-keyword").value.trim()].filter(Boolean),
+    run_mode: $("#task-run-mode").value,
+    expected_keywords: demo ? [] : [$("#task-expected-keyword").value.trim()].filter(Boolean),
+    forbidden_keywords: demo ? [] : [$("#task-forbidden-keyword").value.trim()].filter(Boolean),
   };
 }
 
@@ -123,7 +123,7 @@ async function runResearchWorkflow(demo = false) {
     toast(error.message, "error");
   } finally {
     button.disabled = false;
-    button.textContent = demo ? "运行正式样例" : "开始调研";
+    button.textContent = demo ? "运行示例主题" : "开始调研";
   }
 }
 

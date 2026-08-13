@@ -30,9 +30,11 @@ async function main() {
 
   try {
     await page.goto(baseURL, {waitUntil: "networkidle"});
+    await page.locator("#task-run-mode").selectOption("fake", {force: true});
     await page.locator("#start-research-demo").click();
     await page.locator("#start-research-demo").waitFor({state: "visible"});
     await page.waitForFunction(() => document.querySelector("#research-current-activity")?.textContent.includes("调研完成"));
+    await page.locator("#task-run-mode").selectOption("paperstorm", {force: true});
     await page.screenshot({path: path.join(output, "dashboard-research-v57.png"), fullPage: true});
     const research = await assertLayout(page, "research");
 

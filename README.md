@@ -1,7 +1,7 @@
 # PaperStorm Agent（v5.7）
 
 > 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v5.7 将研究、
-> 对话、证据、运行状态和公开 Benchmark 整合为一套专业工作台；底层继续使用
+> 对话、证据、运行状态和公开 Benchmark 整合为统一工作台；底层继续使用
 > v5.6 Memory / Context 与 v5.5 公开评测口径，不用 UI 版本虚增算法成绩。
 
 ![PaperStorm v5.7 调研工作台](docs/screenshots/dashboard-research-v57.png)
@@ -99,20 +99,20 @@ pip install -e .
 ### 启动服务
 
 ```powershell
-# 在项目根目录运行；fake 正式样例不需要 API Key
+# 在项目根目录运行；默认真实模式需要 API Key
 python examples/storm_examples/start_paperstorm_service.py `
   --service-root ./results/paperstorm_demo_service `
   --host 127.0.0.1 `
   --port 8002
 ```
 
-打开 <http://127.0.0.1:8002>。默认进入"论文调研"，点击"运行正式样例"即可在
-一次点击内完成 fake 任务创建、检索、大纲、文章与评分展示；真实链路在
-"高级运行设置"中选择"真实检索与 LLM"。右下/右上"开发者控制台"进入公开评测工作台。
+打开 <http://127.0.0.1:8002>。默认进入"论文调研"并使用真实检索与 LLM；填写主题后
+点击"开始调研"即可执行任务创建、论文检索、大纲、文章与评分链路。"高级运行设置"
+可切换为本地可复现演示；左侧"开发者控制台"进入公开评测工作台。
 
 启动脚本自带 preflight：缺 uvicorn 时给出 `pip install uvicorn`，端口 8002 被
 占用时自动建议并顺延到 8003，未配置 DeepSeek/MiniMax Key 时提示真实模式所需的
-环境变量（fake 演示不需要 Key）。
+环境变量。本地可复现演示不调用真实检索与 LLM，只用于离线验证。
 
 底层调试时也可直接启动 FastAPI 应用：
 
@@ -147,7 +147,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
 - 调研文章支持一键**下载 Markdown**，便于本地保存与二次整理。
 - 输入主题后一次点击完成任务创建、运行、状态追踪和结果刷新；五阶段进度
   （创建任务 → 检索证据 → 生成大纲 → 撰写文章 → 完成）明确显示当前位置。
-- fake 模式快速生成可复现示例结果；paperstorm 模式调用真实 arXiv/PDF 检索与 LLM。
+- 默认 paperstorm 模式调用真实 arXiv/PDF 检索与 LLM；fake 仅用于离线可复现测试。
 - 支持数据源（arXiv / 本地 PDF）、输出语言（中文 / 原文）、期望与排除关键词。
 
 ### 2. 智能问答模式
@@ -161,7 +161,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
   无来源的引用明确标记"失效"。
 - **重新生成 / 停止**：可对最后一条回答重新生成（旧回答保留为 v1，新回答标 v2，
   不覆盖历史）；生成中可点"停止"中止后续阶段写入。
-- 会话栏可切换运行模式（fake 本地演示 / paperstorm 真实检索+LLM）与检索器
+- 会话栏默认使用 paperstorm 真实检索+LLM，也可显式切换 fake 本地演示与检索器
   （arxiv / local-pdf）。
 - 每条回复标注运行时与检索栈（如 `langgraph-v4.4`、`v41`），可追溯执行链路。
 
@@ -444,7 +444,7 @@ python examples/storm_examples/run_qasper_answer_benchmark.py `
 Claude Code（上下文分层 / MCP / 工作流）、Hermes（会话搜索 / Context Compressor）、
 Anthropic Contextual Retrieval / Context Engineering、MemGPT（虚拟内存与按需分页）、
 Mem0 / Graphiti（episode provenance、时间有效事实）、Stanford STORM。逐条对照与
-差异说明见 [docs/DESIGN_SOURCES.md](docs/DESIGN_SOURCES.md)。
+相关实现均在对应模块、测试与公开评测记录中给出，可按下方目录直接定位和复现。
 
 ## 目录结构
 
@@ -476,7 +476,7 @@ docs/                                # 评测记录 / Benchmark 口径 / 截图
 | v5.4 Trustworthy Evaluation | 人工门禁、质量/延迟联合选型 | 历史版本 |
 | v5.5 Public Benchmarks | SciFact / QASPER 公开评测、官方 evaluator 对拍 | 公开检索与 Answer F1 |
 | v5.6 Memory & Context | SQLite temporal memory、五层 Context、LongMemEval-S、QASPER Context 诊断 | 当前算法与评测底座 |
-| **v5.7 Professional Workspace** | 直角深色工作台、Visio 风格架构图、Benchmark 能力矩阵与正式截图 | 当前版本 |
+| **v5.7 Workspace** | 直角深色工作台、Visio 风格架构图、Benchmark 能力矩阵与正式截图 | 当前版本 |
 
 ## License
 

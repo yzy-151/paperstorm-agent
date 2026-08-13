@@ -26,6 +26,7 @@ test("desktop one-click demo completes and renders the research result", async (
     fullPage: true,
   });
 
+  await page.locator("#task-run-mode").selectOption("fake", {force: true});
   await page.locator("#start-research-demo").click();
   await expect(page.locator("#start-research-demo")).toBeEnabled({timeout: 30000});
   await expect(page.locator("#research-current-activity")).toContainText("调研完成");
