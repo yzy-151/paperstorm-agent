@@ -98,8 +98,8 @@ def run_longmemeval_answers(
                 for item in results
             ]
             evidence = "\n\n".join(
-                "[session {0}]\n{1}".format(
-                    index + 1,
+                "{0}\n{1}".format(
+                    _evidence_label(index, item),
                     _slice_evidence(
                         str(item.get("content") or ""), int(evidence_chars)
                     ),
@@ -313,13 +313,49 @@ def _estimate_tokens(text):
 
 
 def _slice_evidence(content, head_chars):
-    """Keep the head and tail of a long session so answers near either end survive."""
+    """Keep the head and tail of a long session so answers near either end survive.
+
+    Cut points are snapped to line boundaries so whole messages stay intact;
+    single-line content falls back to plain character slicing.
+    """
     head_chars = max(1, int(head_chars))
-    if len(content) <= head_chars * 2:
-        return content
-    return "{0}\n...[truncated {1} chars]...\n{2}".format(
-        content[:head_chars], len(content) - head_chars * 2, content[-head_chars:]
+    text = str(content or "")
+    if len(text) <= head_chars * 2:
+        return text
+    head = text[:head_chars]
+    tail = text[-head_chars:]
+    head_newline = head.rfind("\n")
+    if head_newline > 0:
+        head = head[: head_newline + 1]
+    tail_newline = tail.find("\n")
+    if tail_newline >= 0:
+        tail = tail[tail_newline + 1 :]
+    dropped = len(text) - len(head) - len(tail)
+    if dropped <= 0:
+        return text
+    return "{0}\n...[truncated {1} chars]...\n{2}".format(head, dropped, tail)
+
+
+def _evidence_label(index, item):
+    """Build a session label, including the session timestamp when available."""
+    stamp = _evidence_timestamp(item)
+    return "[session {0}{1}]".format(
+        index + 1, " ({0})".format(stamp) if stamp else ""
     )
+
+
+def _evidence_timestamp(item):
+    """Best-effort timestamp for a retrieved memory fact."""
+    metadata = item.get("metadata") or {}
+    raw = (
+        metadata.get("timestamp")
+        or metadata.get("date")
+        or metadata.get("session_date")
+        or item.get("valid_from")
+        or item.get("occurred_at")
+        or item.get("created_at")
+    )
+    return str(raw).strip() if str(raw or "").strip() else ""
 
 
 def _read_predictions(path):

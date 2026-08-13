@@ -1,11 +1,13 @@
-# PaperStorm Agent（v5.6）
+# PaperStorm Agent（v5.7）
 
-> 基于 Stanford STORM 二次开发的中文论文调研与知识库 Agent。v5.6 重点完成
-> Memory / Context 工程化重构与公开 Benchmark 评测：所有对外指标均来自公开、
-> 可复现的数据集（SciFact、QASPER、LongMemEval-S），按证据等级与口径如实报告，
-> 不再使用 synthetic 分数作为发布入口。
+> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v5.7 将研究、
+> 对话、证据、运行状态和公开 Benchmark 整合为一套专业工作台；底层继续使用
+> v5.6 Memory / Context 与 v5.5 公开评测口径，不用 UI 版本虚增算法成绩。
 
-![PaperStorm 调研模式](docs/screenshots/dashboard-research-v56.png)
+![PaperStorm v5.7 调研工作台](docs/screenshots/dashboard-research-v57.png)
+
+**论文调研** · **智能问答** · **混合检索** · **长期记忆** · **上下文治理** ·
+**Multi-Agent Research** · **公开 Benchmark** · **Runtime Trace**
 
 ## 项目一眼看懂
 
@@ -26,25 +28,43 @@ Agent 平台原型：
   RRF 与 MMR。
 - **生产治理**：SQLite WAL 控制面，ACL / 审计 / 事务幂等 / TTL 缓存 / 持久任务 /
   熔断 / 层级 span。
-- **网页端**：面向用户的产品界面（论文调研 / 智能问答两种模式）与面向开发的
-  公开评测工作台分离，一键运行全部 Benchmark。
+- **v5.7 工作台**：直角深色信息架构，左侧任务导航、中部执行工作区、右侧
+  Context / Memory 检查器；开发者控制台独立承载数据集就绪度、实验命令、日志、
+  指标与 Runtime Trace。
 
-## 最终能力地图
+## 系统架构图
 
-```mermaid
-flowchart LR
-  A[用户输入] --> B[意图路由<br/>规则兜底 + LLM 增强]
-  B -->|聊天/系统| C[casual_chat]
-  B -->|知识问答| D[记忆召回]
-  B -->|论文调研| E[知识检索<br/>BM25+Dense+RRF]
-  D --> F[证据评分]
-  E --> F
-  F -->|足够| G[引用回答]
-  F -->|不足| H[storm_deep_research<br/>STORM 隔离工具]
-  H --> G
-  G --> I[记忆写入]
-  I --> J[生产控制面<br/>ACL/幂等/审计/span]
-```
+### 领导总览：业务流程与项目价值
+
+![PaperStorm 领导总览](docs/architecture/paperstorm-executive-overview-v57.svg)
+
+这张图用于汇报和项目介绍：从业务需求进入统一 Agent 平台，经意图编排分流到
+智能问答或深度调研，再由 RAG、Memory、Context 与 Multi-Agent 能力支撑，最终形成
+可信回答、结构化文章和可量化的工程闭环。
+
+[编辑 Draw.io 源文件](docs/architecture/paperstorm-executive-overview-v57.drawio) ·
+[下载 PNG](docs/architecture/paperstorm-executive-overview-v57.png)
+
+### Agent 详细流程：协作链路与算法底座
+
+![PaperStorm Agent 详细流程](docs/architecture/paperstorm-agent-system-flow-v57.svg)
+
+这张图用于技术讲解和面试：左侧是数据源、模型与工具，中间展开 Chat Agent 与
+Research Agent 两条执行链，并保留原 STORM 的 Persona Generator、WikiWriter、
+TopicExpert、ConvSimulator、Knowledge Curation、两阶段 Outline、章节写作与润色；
+右侧说明 RAG、Memory、Context、Runtime 和工程治理算法，底部连接公开评测反馈闭环。
+
+[编辑 Draw.io 源文件](docs/architecture/paperstorm-agent-system-flow-v57.drawio) ·
+[下载 PNG](docs/architecture/paperstorm-agent-system-flow-v57.png)
+
+<details>
+<summary>展开技术全景附录</summary>
+
+![PaperStorm 技术全景附录](docs/architecture/paperstorm-system-architecture.png)
+
+[在浏览器中打开技术全景源文件](docs/architecture/paperstorm-system-architecture.html)
+
+</details>
 
 ## 官方 STORM 基础架构（本项目基础）
 
@@ -120,9 +140,9 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
 
 ## 前端功能图文说明
 
-### 1. 论文调研模式（默认）
+### 1. 论文调研工作台（默认）
 
-![V5.6 论文调研模式](docs/screenshots/dashboard-research-v56.png)
+![V5.7 论文调研工作台](docs/screenshots/dashboard-research-v57.png)
 
 - 调研文章支持一键**下载 Markdown**，便于本地保存与二次整理。
 - 输入主题后一次点击完成任务创建、运行、状态追踪和结果刷新；五阶段进度
@@ -132,7 +152,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
 
 ### 2. 智能问答模式
 
-![V5.6 智能问答模式](docs/screenshots/dashboard-chat-v56.png)
+![V5.7 智能问答模式](docs/screenshots/dashboard-chat-v57.png)
 
 - 输入即问答：普通聊天/系统问题直接回复，技术问题优先复用已有调研任务，
   证据不足自动启动深度调研；说"请记住：…"保存跨会话记忆。
@@ -147,9 +167,9 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
 
 ### 3. 开发者控制台与公开评测工作台
 
-![V5.6 公开评测工作台](docs/screenshots/dashboard-benchmark-workbench-v56.png)
+![V5.7 公开评测工作台](docs/screenshots/dashboard-developer-v57.png)
 
-- 右上角"开发者控制台"将公开评测与运行诊断从用户产品界面分离。
+- 左侧导航的"开发者控制台"将公开评测与运行诊断从用户产品界面分离。
 - Benchmark Registry 只发布 v5.5/v5.6 证据：SciFact、QASPER Retrieval、
   QASPER Answer F1、LongMemEval-S 与 QASPER Context；旧 synthetic 分数不再提供
   网页入口。
@@ -216,6 +236,18 @@ LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突，解析失败
 - 治理缓存：SQLite TTL + tag 失效（数据变更驱动，非 LRU）。
 
 ## Benchmark：公开评测与口径
+
+### 能力矩阵
+
+| 能力 | 公开数据与指标 | 当前定位 |
+| --- | --- | --- |
+| <img src="docs/assets/benchmark-icon-retrieval.svg" width="42" alt="Retrieval"> **Retrieval** | SciFact / QASPER；Recall、MRR、nDCG、P95 | BM25、Dense、Hybrid、Hybrid + Rerank 同口径对比 |
+| <img src="docs/assets/benchmark-icon-answer.svg" width="42" alt="Answer F1"> **Answer** | QASPER；Answer F1、EM、Evidence F1 | 冻结检索结果后评估 Reader，区分召回问题与生成问题 |
+| <img src="docs/assets/benchmark-icon-memory.svg" width="42" alt="Memory"> **Memory** | LongMemEval-S；Evidence Recall@5、P50/P95 | 跨会话长期记忆检索；不冒充端到端答案准确率 |
+| <img src="docs/assets/benchmark-icon-context.svg" width="42" alt="Context"> **Context** | QASPER Context；证据保留率、预算率、压缩比 | 验证压缩是否丢失已召回证据与结构完整性 |
+
+开发者控制台从本地 `PAPERSTORM_BENCHMARK_ROOT` 自动发现数据与历史结果，按
+`READY / BLOCKED` 显示运行条件，并提供可复制命令、实时日志、PID、结果路径与停止操作。
 
 ### 评测原则
 
@@ -443,7 +475,8 @@ docs/                                # 评测记录 / Benchmark 口径 / 截图
 | v5.2 Evaluation Integrity | 真实论文文档级 holdout、冻结 test、Bootstrap CI | 历史版本 |
 | v5.4 Trustworthy Evaluation | 人工门禁、质量/延迟联合选型 | 历史版本 |
 | v5.5 Public Benchmarks | SciFact / QASPER 公开评测、官方 evaluator 对拍 | 公开检索与 Answer F1 |
-| **v5.6 Memory & Context** | SQLite temporal memory、五层 Context、LongMemEval-S、QASPER Context 诊断 | 当前版本 |
+| v5.6 Memory & Context | SQLite temporal memory、五层 Context、LongMemEval-S、QASPER Context 诊断 | 当前算法与评测底座 |
+| **v5.7 Professional Workspace** | 直角深色工作台、Visio 风格架构图、Benchmark 能力矩阵与正式截图 | 当前版本 |
 
 ## License
 

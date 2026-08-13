@@ -8,7 +8,17 @@ from pathlib import Path
 from .base import BenchmarkCase, BenchmarkDataset, BenchmarkDocument
 
 
-def load_longmemeval(path, split="test", version="cleaned-2025-09", limit=None):
+def load_longmemeval(
+    path, split="test", version="cleaned-2025-09", limit=None, keep_documents=True
+):
+    """Load LongMemEval cases (and optionally all haystack documents).
+
+    ``keep_documents=False`` avoids materializing every session text of every
+    question (the full 500-question haystack can be multiple GB in memory).
+    The answer-generation runner only needs ``cases``, so documents are kept
+    as lightweight stubs (id only, no text) to keep ``relevant_document_ids``
+    valid without paying the text/messages memory cost.
+    """
     documents, cases = [], []
     for row_index, row in enumerate(_iter_json_array(path, limit=limit)):
         case_id = str(row.get("question_id") or row.get("id") or "question-{0}".format(row_index))
@@ -41,18 +51,25 @@ def load_longmemeval(path, split="test", version="cleaned-2025-09", limit=None):
                 BenchmarkDocument(
                     document_id=document_id,
                     title="LongMemEval session {0}".format(session_id),
-                    text=_session_text(messages),
-                    metadata={
-                        "question_id": case_id,
-                        "session_id": session_id,
-                        "timestamp": str(
-                            session_mapping.get("date")
-                            or session_mapping.get("timestamp")
-                            or session_mapping.get("session_date")
-                            or (parallel_dates[session_index] if session_index < len(parallel_dates) else "")
-                        ),
-                        "messages": tuple(messages),
-                    },
+                    text=_session_text(messages) if keep_documents else "",
+                    metadata=(
+                        {
+                            "question_id": case_id,
+                            "session_id": session_id,
+                            "timestamp": str(
+                                session_mapping.get("date")
+                                or session_mapping.get("timestamp")
+                                or session_mapping.get("session_date")
+                                or (
+                                    parallel_dates[session_index]
+                                    if session_index < len(parallel_dates)
+                                    else ""
+                                )
+                            ),
+                        }
+                        if keep_documents
+                        else {"question_id": case_id, "session_id": session_id}
+                    ),
                 )
             )
         evidence_raw = row.get("answer_session_ids") or row.get("evidence_session_ids") or row.get("evidence") or []

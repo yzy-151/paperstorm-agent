@@ -31,7 +31,7 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
         for marker in (
             "BENCHMARK CONTROL PLANE",
             "PUBLIC EVIDENCE",
-            "Benchmark 目录",
+            "Benchmark Registry",
             "v5.5 / v5.6",
             "执行链路诊断",
         ):
@@ -54,8 +54,8 @@ class PaperStormFrontendDocsTest(unittest.TestCase):
             ".benchmark-catalog",
             ".benchmark-run-workspace",
             ".benchmark-log-tail",
-            ".readiness-grid",
-            "@media (max-width: 680px)",
+            ".status-band",
+            "@media (max-width: 560px)",
             "minmax(0, 1fr)",
         ):
             self.assertIn(marker, self.styles)

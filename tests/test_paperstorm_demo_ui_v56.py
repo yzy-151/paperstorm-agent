@@ -34,12 +34,12 @@ class PaperStormDemoUIV56Test(unittest.TestCase):
         self.assertIn('id="developer-view"', self.index)
         self.assertIn('id="leave-developer-mode"', self.index)
         self.assertIn('setMode("developer")', self.script)
-        self.assertIn(".developer-view", self.styles)
+        self.assertIn('body[data-mode="developer"]', self.styles)
 
     def test_layout_uses_stable_responsive_dimensions(self):
-        self.assertIn("width: min(1320px", self.styles)
+        self.assertIn("grid-template-columns: 208px minmax(0, 1fr) 288px", self.styles)
         self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr))", self.styles)
-        self.assertIn("@media (max-width: 680px)", self.styles)
+        self.assertIn("@media (max-width: 560px)", self.styles)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=2400, initial-scale=1" />
+  <title>PaperStorm Agent Platform - System Architecture</title>
+  <style>
+    :root {
+      --canvas: #f5f7fa;
+      --surface: #ffffff;
+      --ink: #172033;
+      --muted: #526078;
+      --line: #d9e0e9;
+      --control: #0f9d8a;
+      --control-soft: #e8f7f4;
+      --data: #2f6fed;
+      --data-soft: #edf3ff;
+      --external: #d58a16;
+      --external-soft: #fff5df;
+      --danger: #d94a4a;
+      --danger-soft: #fff0ee;
+      --storage: #7567a8;
+      --storage-soft: #f1effa;
+      --storm: #435a73;
+      --storm-soft: #eef2f6;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 2400px; min-width: 2400px; background: var(--canvas); color: var(--ink); }
+    body { font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif; letter-spacing: 0; }
+    .architecture-map {
+      position: relative;
+      width: 2400px;
+      height: 1500px;
+      padding: 26px 32px 24px;
+      display: grid;
+      grid-template-rows: 102px 138px 406px 326px 430px;
+      gap: 12px;
+      overflow: hidden;
+      background:
+        linear-gradient(#e5eaf1 1px, transparent 1px),
+        linear-gradient(90deg, #e5eaf1 1px, transparent 1px),
+        var(--canvas);
+      background-size: 32px 32px;
+    }
+    .map-header, .layer, .panel {
+      background: rgba(255,255,255,.97);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 3px 12px rgba(38, 54, 74, .055);
+    }
+    .map-header { display: grid; grid-template-columns: 1.3fr 1fr; align-items: center; padding: 16px 22px; }
+    .title-line { display: flex; align-items: baseline; gap: 18px; }
+    h1 { margin: 0; font-size: 34px; line-height: 1.1; letter-spacing: 0; }
+    .version { color: var(--control); font-size: 17px; font-weight: 800; }
+    .subtitle { margin: 7px 0 0; color: var(--muted); font-size: 15px; }
+    .legend { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px 18px; }
+    .legend-item { display: flex; gap: 7px; align-items: center; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .legend-line { width: 30px; height: 3px; border-radius: 3px; background: currentColor; }
+    .legend-line.dashed { height: 0; border-top: 2px dashed currentColor; background: none; }
+    .legend .control { color: var(--control); }
+    .legend .data { color: var(--data); }
+    .legend .external { color: var(--external); }
+    .legend .danger { color: var(--danger); }
+    .legend .optional { color: #8994a5; }
+    .ownership { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+    .badge { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; font-size: 9px; font-weight: 800; letter-spacing: .4px; white-space: nowrap; }
+    .badge.paperstorm { color: #087766; background: var(--control-soft); border: 1px solid #a9ded4; }
+    .badge.storm { color: var(--storm); background: var(--storm-soft); border: 1px solid #cbd5df; }
+    .badge.external { color: #995f09; background: var(--external-soft); border: 1px solid #edd092; }
+    .badge.blocked { color: #a23333; background: var(--danger-soft); border: 1px solid #efb2ad; }
+    .layer { position: relative; padding: 12px 14px 14px 64px; overflow: hidden; }
+    .layer-label {
+      position: absolute; inset: 0 auto 0 0; width: 48px; display: flex; align-items: center; justify-content: center;
+      color: #fff; background: var(--control); font-size: 11px; font-weight: 800; writing-mode: vertical-rl;
+      transform: rotate(180deg); letter-spacing: 1px; text-transform: uppercase;
+    }
+    .layer-label.data-bg { background: var(--data); }
+    .layer-label.storage-bg { background: var(--storage); }
+    .layer-grid { height: 100%; display: grid; gap: 10px; }
+    .entry-grid { grid-template-columns: 1.05fr 2fr; }
+    .execution-grid { grid-template-columns: 1fr 1.2fr; }
+    .foundation-grid { grid-template-columns: 1.05fr 1.05fr 1fr; }
+    .bottom-grid { grid-template-columns: .92fr 1.08fr; }
+    .panel { min-width: 0; padding: 8px 11px; box-shadow: none; overflow: hidden; }
+    .panel.control-panel { border-top: 3px solid var(--control); }
+    .panel.data-panel { border-top: 3px solid var(--data); }
+    .panel.external-panel { border-top: 3px solid var(--external); }
+    .panel.storage-panel { border-top: 3px solid var(--storage); }
+    .panel.danger-panel { border-top: 3px solid var(--danger); }
+    .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+    .panel-title h2, .panel-title h3 { margin: 0; letter-spacing: 0; }
+    .panel-title h2 { font-size: 18px; }
+    .panel-title h3 { font-size: 15px; }
+    .panel-kicker { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .7px; text-transform: uppercase; }
+    .nodes { display: grid; gap: 7px; }
+    .nodes.cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .nodes.cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .nodes.cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .nodes.cols-5 { grid-template-columns: repeat(5, 1fr); }
+    .node {
+      min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 8px 9px; background: #fff;
+      overflow-wrap: anywhere;
+    }
+    .node strong { display: block; font-size: 12px; line-height: 1.18; margin-bottom: 3px; }
+    .node p { margin: 0; color: var(--muted); font-size: 9.5px; line-height: 1.32; }
+    .node.control-node { border-color: #9ed9ce; background: var(--control-soft); }
+    .node.data-node { border-color: #b7cbf4; background: var(--data-soft); }
+    .node.external-node { border-color: #ead098; background: var(--external-soft); }
+    .node.storage-node { border-color: #c9c2e5; background: var(--storage-soft); }
+    .node.danger-node { border-color: #efb9b4; background: var(--danger-soft); }
+    .node.storm-node { border-color: #cbd5df; background: var(--storm-soft); }
+    .flow { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
+    .flow .node { flex: 1; }
+    .arrow { flex: 0 0 15px; display: grid; place-items: center; color: var(--control); font-size: 19px; font-weight: 800; }
+    .arrow.data-arrow { color: var(--data); }
+    .arrow.danger-arrow { color: var(--danger); }
+    .mini-flow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+    .chip { padding: 4px 7px; border: 1px solid var(--line); border-radius: 4px; background: #fff; font-size: 9px; font-weight: 700; }
+    .chip.control-chip { color: #087766; border-color: #acdcd3; background: var(--control-soft); }
+    .chip.data-chip { color: #2356b7; border-color: #bfd0f2; background: var(--data-soft); }
+    .chip.storage-chip { color: #5a4c91; border-color: #cec8e5; background: var(--storage-soft); }
+    .micro-arrow { color: var(--muted); font-size: 10px; font-weight: 800; }
+    .callout { margin-top: 7px; border-left: 3px solid var(--danger); background: var(--danger-soft); padding: 6px 8px; color: #8e3535; font-size: 9.5px; line-height: 1.3; }
+    .ownership-row { display: flex; gap: 4px; margin-top: 5px; }
+    .branch-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 7px; }
+    .branch { position: relative; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; background: #fff; }
+    .branch::before { content: ""; position: absolute; top: -8px; left: 50%; height: 8px; border-left: 2px solid var(--control); }
+    .branch.danger-branch::before { border-color: var(--danger); border-left-style: dashed; }
+    .branch strong { display: block; font-size: 10px; margin-bottom: 2px; }
+    .branch p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.25; }
+    .subsystem { display: grid; grid-template-rows: auto auto 1fr auto; }
+    .subsystem .flow { margin-bottom: 7px; }
+    .subsystem .node { padding: 7px; }
+    .subsystem .node strong { font-size: 10.5px; }
+    .subsystem .node p { font-size: 8.7px; }
+    .detail-list { margin: 4px 0 0; padding-left: 15px; color: var(--muted); font-size: 9px; line-height: 1.35; columns: 2; column-gap: 14px; }
+    .detail-list li { margin-bottom: 2px; break-inside: avoid; }
+    .pipeline-caption { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 3px 0 6px; color: var(--muted); font-size: 9.5px; }
+    .runtime-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-top: 7px; }
+    .runtime-strip .node { padding: 6px; text-align: center; }
+    .runtime-strip .node strong { font-size: 9.5px; margin: 0; }
+    .storage-columns { display: grid; grid-template-columns: .9fr .9fr 1.2fr; gap: 8px; height: calc(100% - 28px); }
+    .stack { display: flex; flex-direction: column; gap: 6px; }
+    .stack .node { flex: 1; }
+    .benchmark-layout { display: grid; grid-template-columns: 1.1fr .9fr; gap: 8px; height: calc(100% - 28px); }
+    .benchmark-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .benchmark-card { border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; background: #fff; }
+    .benchmark-card strong { font-size: 10.5px; display: block; margin-bottom: 2px; }
+    .benchmark-card p { margin: 0; font-size: 8.6px; line-height: 1.26; color: var(--muted); }
+    .benchmark-card.blocked-card { border-style: dashed; border-color: #e3a39e; background: var(--danger-soft); }
+    .loop-column { display: flex; flex-direction: column; justify-content: center; gap: 5px; }
+    .loop-step { position: relative; padding: 7px 8px 7px 26px; border: 1px solid #b9caef; border-radius: 6px; background: var(--data-soft); }
+    .loop-step b { position: absolute; left: 7px; top: 7px; width: 13px; height: 13px; border-radius: 50%; background: var(--data); color: #fff; font-size: 8px; display: grid; place-items: center; }
+    .loop-step strong { display: block; font-size: 10px; }
+    .loop-step span { display: block; color: var(--muted); font-size: 8.5px; margin-top: 2px; }
+    .loop-down { text-align: center; height: 8px; line-height: 8px; color: var(--data); font-size: 12px; }
+    .side-rail { position: absolute; right: 8px; top: 254px; bottom: 446px; width: 20px; pointer-events: none; }
+    .side-rail::before { content: ""; position: absolute; left: 8px; top: 0; bottom: 0; border-left: 2px dashed #9eabbc; }
+    .rail-tag { position: absolute; right: -3px; padding: 4px 5px; writing-mode: vertical-rl; background: #fff; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 8px; font-weight: 800; }
+    .rail-tag.request { top: 34px; }
+    .rail-tag.event { bottom: 34px; }
+    .footer-note { position: absolute; right: 43px; bottom: 28px; color: #7a8697; font-size: 8px; }
+  </style>
+</head>
+<body>
+<main class="architecture-map">
+  <header class="map-header">
+    <div>
+      <div class="title-line"><h1>PaperStorm Agent Platform</h1><span class="version">v5.6 architecture</span></div>
+      <p class="subtitle">论文深度调研 + 可检索对话 + Memory / Context 工程 + 可恢复 Runtime + 公开评测闭环</p>
+    </div>
+    <div>
+      <div class="legend">
+        <span class="legend-item control"><i class="legend-line"></i>Agent 控制流</span>
+        <span class="legend-item data"><i class="legend-line"></i>数据 / 检索流</span>
+        <span class="legend-item external"><i class="legend-line"></i>外部模型与工具</span>
+        <span class="legend-item danger"><i class="legend-line dashed"></i>降级 / 拒答</span>
+        <span class="legend-item optional"><i class="legend-line dashed"></i>可选 / 兼容路径</span>
+      </div>
+      <div class="ownership"><span class="badge storm">STORM CORE</span><span class="badge paperstorm">PAPERSTORM</span><span class="badge external">EXTERNAL</span></div>
+    </div>
+  </header>
+
+  <section class="layer entry-layer">
+    <div class="layer-label">Entry & Control</div>
+    <div class="layer-grid entry-grid">
+      <article class="panel control-panel">
+        <div class="panel-title"><h2>入口与交互</h2><span class="badge paperstorm">PAPERSTORM</span></div>
+        <div class="nodes cols-5">
+          <div class="node control-node"><strong>论文调研</strong><p>主题、数据源、语言、fake / real</p></div>
+          <div class="node control-node"><strong>智能问答</strong><p>多轮会话、引用、重生成、停止</p></div>
+          <div class="node control-node"><strong>开发者控制台</strong><p>Benchmark、日志、Trace、结果</p></div>
+          <div class="node"><strong>REST + SSE</strong><p>FastAPI、状态轮询、事件推送</p></div>
+          <div class="node"><strong>CLI + MCP</strong><p>脚本入口、Tool Schema、服务适配</p></div>
+        </div>
+      </article>
+      <article class="panel control-panel">
+        <div class="panel-title"><h2>服务层与生产控制面</h2><span class="panel-kicker">request lifecycle & governance</span></div>
+        <div class="nodes cols-5">
+          <div class="node control-node"><strong>Task Service</strong><p>submit → queued → running → succeeded / failed</p></div>
+          <div class="node control-node"><strong>Chat Service</strong><p>Session 持久化、上下文、取消与版本</p></div>
+          <div class="node"><strong>Worker & Concurrency</strong><p>并发容量、队列调度、恢复与重试</p></div>
+          <div class="node storage-node"><strong>Production Control</strong><p>ACL、幂等、TTL Cache、熔断、审计</p></div>
+          <div class="node data-node"><strong>Benchmark Manager</strong><p>Registry、隔离子进程、PID、日志与结果</p></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="layer">
+    <div class="layer-label">Agent Execution</div>
+    <div class="layer-grid execution-grid">
+      <article class="panel control-panel">
+        <div class="panel-title"><h2>Research Pipeline</h2><span><span class="badge paperstorm">PAPERSTORM</span> <span class="badge storm">STORM CORE</span></span></div>
+        <div class="pipeline-caption"><span>面向长文交付：从研究计划到可引用文章</span><b>task_id / run_id 全程贯穿</b></div>
+        <div class="flow">
+          <div class="node control-node"><strong>Planner</strong><p>主题规范化、问题分解、Query Plan</p></div><span class="arrow">›</span>
+          <div class="node data-node"><strong>Retriever</strong><p>arXiv / PDF / Zotero 并发检索</p></div><span class="arrow">›</span>
+          <div class="node danger-node"><strong>Critic</strong><p>相关性、排除词、重复与坏结果过滤</p></div><span class="arrow">›</span>
+          <div class="node storage-node"><strong>Memory Agent</strong><p>证据与中间结论写入运行记忆</p></div><span class="arrow">›</span>
+          <div class="node control-node"><strong>Evaluator</strong><p>覆盖率、失败原因与运行评分</p></div>
+        </div>
+        <div class="mini-flow">
+          <span class="chip">多角色视角生成</span><span class="micro-arrow">→</span>
+          <span class="chip">专家访谈模拟</span><span class="micro-arrow">→</span>
+          <span class="chip data-chip">知识策展 / conversation_log</span><span class="micro-arrow">→</span>
+          <span class="chip">两阶段 Outline</span><span class="micro-arrow">→</span>
+          <span class="chip">章节并发写作</span><span class="micro-arrow">→</span>
+          <span class="chip">Article Polish</span>
+        </div>
+        <div class="nodes cols-4">
+          <div class="node storm-node"><strong>Knowledge Curation</strong><p>不同 persona 围绕主题提问；检索证据带 URL、摘要和引用编号。</p><div class="ownership-row"><span class="badge storm">STORM CORE</span></div></div>
+          <div class="node storm-node"><strong>Outline Generation</strong><p>先基于资料形成草案，再结合对话深化结构，减少章节松散。</p><div class="ownership-row"><span class="badge storm">STORM CORE</span></div></div>
+          <div class="node storm-node"><strong>Article Generation</strong><p>按章节独立检索相关证据并并发生成，合并为带引用长文。</p><div class="ownership-row"><span class="badge storm">STORM CORE</span></div></div>
+          <div class="node storm-node"><strong>Article Polish</strong><p>整篇上下文去重、统一风格并生成最终 Markdown / TXT 产物。</p><div class="ownership-row"><span class="badge storm">STORM CORE</span></div></div>
+        </div>
+        <div class="callout">失败路径：检索超时 / 空 Query / 模型异常 → 节点级错误记录 → 重试或保留可恢复中间产物 → 任务标记 failed，不静默吞错。</div>
+      </article>
+
+      <article class="panel control-panel">
+        <div class="panel-title"><h2>Chat Agent Runtime</h2><span class="badge paperstorm">LANGGRAPH + PAPERSTORM</span></div>
+        <div class="pipeline-caption"><span>面向连续交互：生成优先，证据不足才升级检索或深度调研</span><b>thread_id + request_id 幂等</b></div>
+        <div class="flow">
+          <div class="node control-node"><strong>Context Assemble</strong><p>五层工作集 + Token Budget</p></div><span class="arrow">›</span>
+          <div class="node control-node"><strong>Intent Route</strong><p>规则兜底 + LLM 增强</p></div><span class="arrow">›</span>
+          <div class="node storage-node"><strong>Memory Recall</strong><p>跨会话事实与 episode</p></div><span class="arrow">›</span>
+          <div class="node data-node"><strong>Knowledge Retrieval</strong><p>已有任务 / KB / 论文证据</p></div><span class="arrow">›</span>
+          <div class="node control-node"><strong>Evidence Gate</strong><p>LLM Judge + 确定性保守回退</p></div>
+        </div>
+        <div class="branch-row">
+          <div class="branch"><strong>证据充分 → Cited Answer</strong><p>Reader LLM 只使用入选上下文，返回答案与可展开引用。</p></div>
+          <div class="branch"><strong>需要新知识 → Deep Research</strong><p>调用隔离的 STORM 工具，等待调研结果后再组织回答。</p></div>
+          <div class="branch danger-branch"><strong>歧义 / 不安全 → Clarify / Refuse</strong><p>请求补充主题，或明确说明现有证据不足，不伪造答案。</p></div>
+        </div>
+        <div class="mini-flow">
+          <span class="chip control-chip">answer_with_citations</span><span class="micro-arrow">→</span>
+          <span class="chip storage-chip">memory_candidate_write</span><span class="micro-arrow">→</span>
+          <span class="chip control-chip">final_trace</span><span class="micro-arrow">→</span>
+          <span class="chip">Session JSON / SSE event</span>
+        </div>
+        <div class="runtime-strip">
+          <div class="node"><strong>SQLite Checkpoint</strong></div>
+          <div class="node"><strong>节点级 Retry</strong></div>
+          <div class="node"><strong>Tool Registry</strong></div>
+          <div class="node"><strong>Hook Manager</strong></div>
+          <div class="node"><strong>Cancel / Regenerate</strong></div>
+          <div class="node"><strong>Span Trace</strong></div>
+        </div>
+        <div class="callout">升级条件：技术问题缺少可靠证据、裁判判定 insufficient，或用户明确要求调研；闲聊与系统问题不应误入论文检索。</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="layer">
+    <div class="layer-label data-bg">Core Foundation</div>
+    <div class="layer-grid foundation-grid">
+      <article class="panel data-panel subsystem">
+        <div class="panel-title"><h2>RAG Retrieval</h2><span class="badge paperstorm">PAPERSTORM</span></div>
+        <div class="flow">
+          <div class="node data-node"><strong>Chunk</strong><p>边界、overlap、metadata</p></div><span class="arrow data-arrow">›</span>
+          <div class="node data-node"><strong>Recall</strong><p>BM25 + Dense</p></div><span class="arrow data-arrow">›</span>
+          <div class="node data-node"><strong>Fusion</strong><p>RRF Hybrid</p></div><span class="arrow data-arrow">›</span>
+          <div class="node data-node"><strong>Rerank</strong><p>Cross-Encoder</p></div><span class="arrow data-arrow">›</span>
+          <div class="node data-node"><strong>Compress</strong><p>相关片段精简</p></div><span class="arrow data-arrow">›</span>
+          <div class="node data-node"><strong>Citation</strong><p>来源 / 页码 / chunk</p></div>
+        </div>
+        <ul class="detail-list"><li>中英混合 unigram / bigram</li><li>Query 清洗与 PIM 领域消歧</li><li>Hash 为 CI / Smoke 快速模式</li><li>Sentence Transformer 真实向量</li><li>文档级 scope 与 hard negatives</li><li>质量优先 Rerank，低延迟默认 Hybrid</li></ul>
+        <div class="callout">门控：无意义词重叠或向量相关度不足 → 拒答 / 触发新调研，不把不相关 chunk 拼入 Prompt。</div>
+      </article>
+
+      <article class="panel storage-panel subsystem">
+        <div class="panel-title"><h2>Memory v5.6</h2><span class="badge paperstorm">TEMPORAL MEMORY</span></div>
+        <div class="flow">
+          <div class="node storage-node"><strong>Episode</strong><p>原始会话事件</p></div><span class="arrow">›</span>
+          <div class="node storage-node"><strong>Fact</strong><p>规范化长期事实</p></div><span class="arrow">›</span>
+          <div class="node storage-node"><strong>Provenance</strong><p>来源 / 实体 / 审计</p></div><span class="arrow">›</span>
+          <div class="node storage-node"><strong>Hybrid Recall</strong><p>BM25 + Vector + Time</p></div><span class="arrow">›</span>
+          <div class="node storage-node"><strong>RRF + MMR</strong><p>融合与多样性</p></div>
+        </div>
+        <ul class="detail-list"><li>SQLite WAL 持久化</li><li>namespace 用户隔离</li><li>valid_from / valid_to</li><li>supersedes_id 事实演进</li><li>as_of 历史查询</li><li>embedding 按模型指纹持久化</li><li>importance / recency</li><li>enable / export / delete / audit</li></ul>
+        <div class="callout">LongMemEval-S：Recent-5 Recall@5 0.1358 → v5.6 Memory 0.8003；持久向量后 P95 约 359 ms。仅代表 evidence retrieval。</div>
+      </article>
+
+      <article class="panel control-panel subsystem">
+        <div class="panel-title"><h2>Context v5.6</h2><span class="badge paperstorm">WORKING SET</span></div>
+        <div class="flow">
+          <div class="node control-node"><strong>Pinned</strong><p>系统约束</p></div><span class="arrow">›</span>
+          <div class="node control-node"><strong>Active</strong><p>近期消息组</p></div><span class="arrow">›</span>
+          <div class="node control-node"><strong>Summary</strong><p>递归压缩</p></div><span class="arrow">›</span>
+          <div class="node control-node"><strong>Memory & Evidence</strong><p>按需召回</p></div><span class="arrow">›</span>
+          <div class="node control-node"><strong>Artifact</strong><p>大纲 / 工具产物</p></div>
+        </div>
+        <ul class="detail-list"><li>模型窗口 - 输出预留 = 输入上限</li><li>每层独立 Token Cap</li><li>soft / high watermark</li><li>tool call + result 原子组</li><li>Summary DAG / compaction_id</li><li>Context Ledger 精确恢复</li><li>结构校验与 hard fit</li><li>失败回退确定性摘要</li></ul>
+        <div class="callout">QASPER：已召回证据保留率 0.999847；压缩前后 Gold Recall 均为 0.618648；Context 平均为全文 token 的 16.657%。</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="layer">
+    <div class="layer-label storage-bg">Data, Eval & Trace</div>
+    <div class="layer-grid bottom-grid">
+      <article class="panel storage-panel">
+        <div class="panel-title"><h2>外部依赖、工具与持久化</h2><span class="panel-kicker">data plane</span></div>
+        <div class="storage-columns">
+          <div class="stack">
+            <div class="node external-node"><strong>论文与知识源</strong><p>arXiv API · 本地 PDF · Zotero · 企业文档</p><div class="ownership-row"><span class="badge external">EXTERNAL</span></div></div>
+            <div class="node external-node"><strong>模型服务</strong><p>DeepSeek / MiniMax · Embedding · Cross-Encoder</p><div class="ownership-row"><span class="badge external">EXTERNAL</span></div></div>
+            <div class="node data-node"><strong>Tool System</strong><p>ArxivSearch · LocalPDFSearch · KnowledgeBaseQA · ResearchQA</p></div>
+          </div>
+          <div class="stack">
+            <div class="node storage-node"><strong>会话与任务</strong><p>task state JSON · chat session JSON · run_config</p></div>
+            <div class="node storage-node"><strong>运行状态</strong><p>LangGraph checkpoints.sqlite · Production SQLite WAL</p></div>
+            <div class="node storage-node"><strong>Memory / Context</strong><p>memory_v56.sqlite3 · Context Ledger / event lineage</p></div>
+          </div>
+          <div class="stack">
+            <div class="node data-node"><strong>Research Artifacts</strong><p>conversation_log · raw_search_results · url_to_info · outline · article · polished article</p></div>
+            <div class="node storage-node"><strong>Observability</strong><p>Runtime event · Agent trace · Span tree · Audit event · Error redaction · Token / latency usage</p></div>
+            <div class="node control-node"><strong>反馈回路</strong><p>坏例归因和 Benchmark 结果反向驱动 Retriever、Memory、Context 与 Prompt 迭代。</p></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel data-panel">
+        <div class="panel-title"><h2>Public Evaluation & Benchmark Registry</h2><span class="badge paperstorm">EVIDENCE-BASED</span></div>
+        <div class="benchmark-layout">
+          <div class="benchmark-cards">
+            <div class="benchmark-card"><strong>SciFact · Retrieval</strong><p>300 query / 5,183 abstracts · Recall@10 · MRR · nDCG · latency</p></div>
+            <div class="benchmark-card"><strong>QASPER · Retrieval</strong><p>1,309 questions · paper-scoped evidence Recall@5 · hard negatives</p></div>
+            <div class="benchmark-card"><strong>QASPER · Answer</strong><p>1,451 test questions · Answer F1 · EM · Evidence F1 · paid LLM gate</p></div>
+            <div class="benchmark-card"><strong>LongMemEval-S · Memory</strong><p>500 questions · cross-session evidence Recall@5 · category / latency</p></div>
+            <div class="benchmark-card"><strong>QASPER · Context</strong><p>Token ratio · evidence retention · over-budget · validation rate</p></div>
+            <div class="benchmark-card blocked-card"><strong>LongBench · Context <span class="badge blocked">BLOCKED</span></strong><p>Adapter ready；同模型 full / fixed / v5.6 配对预测仍缺失，不发布分数。</p></div>
+          </div>
+          <div class="loop-column">
+            <div class="loop-step"><b>1</b><strong>Discover Inputs</strong><span>环境变量 → 用户缓存 → 项目数据目录</span></div><div class="loop-down">↓</div>
+            <div class="loop-step"><b>2</b><strong>Benchmark Registry</strong><span>READY / BLOCKED · evidence tier · command preview</span></div><div class="loop-down">↓</div>
+            <div class="loop-step"><b>3</b><strong>Smoke / Quality</strong><span>Hash 快速链路 / 真实向量与 Rerank / LLM 明示成本</span></div><div class="loop-down">↓</div>
+            <div class="loop-step"><b>4</b><strong>Isolated Run Manager</strong><span>allowlist subprocess · PID · cancel · log tail</span></div><div class="loop-down">↓</div>
+            <div class="loop-step"><b>5</b><strong>Evidence Package</strong><span>metrics · manifest · predictions · bad cases · CI · raw JSON</span></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <div class="side-rail"><span class="rail-tag request">REQUESTS ↓</span><span class="rail-tag event">EVENTS / TRACE ↑</span></div>
+  <span class="footer-note">Source boundaries verified against PaperStorm v5.6 codebase · 2026-08-11</span>
+</main>
+</body>
+</html>

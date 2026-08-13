@@ -248,7 +248,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v5.6",
+                "version": "v5.7",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],

@@ -3,157 +3,154 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PaperStorm Agent Dashboard | Research Agent</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2338d6bd'/%3E%3Cpath d='M9 23V10h11v3h-7v2h6v3h-6v5z' fill='%2303100e'/%3E%3C/svg%3E" />
+    <title>PaperStorm Agent Workspace</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2300c2a8'/%3E%3Cpath d='M8 24V8h15v4H13v3h8v4h-8v5z' fill='%23060a0e'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body data-mode="research">
-    <header class="app-header">
-      <div class="brand-block">
-        <p class="eyebrow">PaperStorm Research Agent</p>
-        <h1>把论文检索变成可追溯的答案</h1>
-        <p>调研、问答、Memory、Context 与公开评测，共用一条可观察执行链路。</p>
-      </div>
-      <div class="header-actions">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="PaperStorm 首页">
+        <span class="brand-mark">PS</span>
+        <span><strong>PaperStorm</strong><small>RESEARCH AGENT PLATFORM</small></span>
+      </a>
+      <div class="topbar-context"><span>WORKSPACE</span><strong id="workspace-title">论文调研</strong></div>
+      <div class="topbar-actions">
         <span class="service-pill" id="service-state"><i class="status-dot"></i><span>连接中</span></span>
-        <span class="release-pill"><small>release</small><strong>v5.6</strong></span>
-        <button class="secondary-button" id="show-developer-mode" type="button">开发者控制台</button>
+        <span class="release-pill"><small>release</small><strong>v5.7</strong></span>
       </div>
     </header>
 
-    <main class="app-shell">
-      <nav class="mode-switch product-only" aria-label="PaperStorm modes">
-        <button class="mode-tab active" id="show-research-mode" type="button">论文调研</button>
-        <button class="mode-tab" id="show-chat-mode" type="button">智能问答</button>
+    <div class="workspace-shell">
+      <nav class="workspace-rail" aria-label="主导航">
+        <div class="rail-section product-only">
+          <span class="rail-label">工作空间</span>
+          <button class="rail-item active" id="show-research-mode" type="button"><i>R</i><span>论文调研</span></button>
+          <button class="rail-item" id="show-chat-mode" type="button"><i>Q</i><span>智能问答</span></button>
+        </div>
+        <div class="rail-section">
+          <span class="rail-label">工程工具</span>
+          <button class="rail-item" id="show-developer-mode" type="button"><i>D</i><span>开发者控制台</span></button>
+        </div>
+        <div class="rail-spacer"></div>
+        <div class="rail-foot">
+          <span>RAG · MEMORY · CONTEXT</span>
+          <small>Stanford STORM based</small>
+        </div>
       </nav>
 
-      <section class="research-view product-only" id="research-view">
-        <div class="demo-strip">
-          <div><span>NO-KEY DEMO</span><strong>一键运行完整调研链路</strong><p>创建任务、检索证据、生成大纲、写作并展示评估。</p></div>
-          <button id="start-research-demo" type="button">运行正式样例</button>
-        </div>
+      <main class="workspace-main">
+        <section class="research-view product-only" id="research-view">
+          <header class="page-heading">
+            <div><span>RESEARCH WORKSPACE</span><h1>论文调研</h1><p>从问题定义到证据检索、结构化写作与质量评估。</p></div>
+            <button id="start-research-demo" type="button">运行正式样例</button>
+          </header>
 
-        <section class="surface research-composer">
-          <div class="section-heading"><div><span>RESEARCH WORKSPACE</span><h2>开始一次论文调研</h2></div><b>research → evidence → article</b></div>
-          <div class="form-row research-fields">
-            <label class="grow">调研主题<input id="task-topic" value="无源互调的神经网络抑制方法" /></label>
-            <label>数据源<select id="task-retriever"><option value="arxiv">arXiv 论文</option><option value="local-pdf">本地 PDF</option></select></label>
-            <label>语言<select id="task-output-language"><option value="zh">中文</option><option value="original">原文</option></select></label>
-            <button id="start-research-workflow" type="button">开始调研</button>
-          </div>
-          <details>
-            <summary>高级运行设置</summary>
-            <div class="form-row advanced-row">
+          <section class="surface research-composer">
+            <div class="section-heading"><div><span>01 / REQUEST</span><h2>定义调研任务</h2></div><b>research → evidence → article</b></div>
+            <div class="form-row research-fields">
+              <label class="grow">调研主题<input id="task-topic" value="无源互调的神经网络抑制方法" /></label>
+              <label>数据源<select id="task-retriever"><option value="arxiv">arXiv 论文</option><option value="local-pdf">本地 PDF</option></select></label>
+              <label>语言<select id="task-output-language"><option value="zh">中文</option><option value="original">原文</option></select></label>
+              <button id="start-research-workflow" type="button">开始调研</button>
+            </div>
+            <details><summary>高级运行设置</summary><div class="form-row advanced-row">
               <label>运行方式<select id="task-run-mode"><option value="fake">本地可复现演示</option><option value="paperstorm">真实检索与 LLM</option></select></label>
               <label>期望关键词<input id="task-expected-keyword" value="passive intermodulation" /></label>
               <label>排除关键词<input id="task-forbidden-keyword" value="DRAM" /></label>
+            </div></details>
+          </section>
+
+          <section class="pipeline-strip" aria-label="调研执行阶段">
+            <div class="section-heading compact"><div><span>02 / PIPELINE</span><h2>执行链路</h2></div><p class="activity-line" id="research-current-activity">填写主题后开始调研。</p></div>
+            <div class="research-progress" id="research-progress">
+              <div data-stage="created"><i>01</i><span>创建任务</span></div><div data-stage="retrieval"><i>02</i><span>检索证据</span></div>
+              <div data-stage="outline"><i>03</i><span>生成大纲</span></div><div data-stage="writing"><i>04</i><span>撰写文章</span></div>
+              <div data-stage="completed"><i>05</i><span>完成</span></div>
             </div>
-          </details>
-          <div class="research-progress" id="research-progress">
-            <div data-stage="created"><i>1</i><span>创建任务</span></div>
-            <div data-stage="retrieval"><i>2</i><span>检索证据</span></div>
-            <div data-stage="outline"><i>3</i><span>生成大纲</span></div>
-            <div data-stage="writing"><i>4</i><span>撰写文章</span></div>
-            <div data-stage="completed"><i>5</i><span>完成</span></div>
-          </div>
-          <p class="activity-line" id="research-current-activity">填写主题后开始调研。</p>
+          </section>
+
+          <section class="surface hidden" id="research-score-section">
+            <div class="section-heading"><div><span>03 / EVALUATION</span><h2>本次运行评分</h2></div><b id="research-task-id">未运行</b></div>
+            <div class="metric-grid" id="scorecard"></div>
+          </section>
+
+          <section class="surface result-surface" id="research-result-workspace">
+            <div class="section-heading"><div><span>04 / DELIVERABLE</span><h2>调研文章</h2></div><button class="secondary-button" id="download-article-md" type="button" disabled>下载 Markdown</button></div>
+            <article class="article" id="article-content">完成调研后，文章将在这里展示。</article>
+          </section>
         </section>
 
-        <section class="surface hidden" id="research-score-section">
-          <div class="section-heading"><div><span>RUN EVALUATION</span><h2>本次运行评分</h2></div><b id="research-task-id">未运行</b></div>
-          <div class="metric-grid" id="scorecard"></div>
+        <section class="chat-view product-only hidden" id="chat-view">
+          <aside class="chat-sessions" id="chat-sessions-panel">
+            <div class="section-heading compact"><div><span>HISTORY</span><h2>会话</h2></div><button class="icon-button" id="refresh-chat-sessions" type="button" title="刷新会话">↻</button></div>
+            <div class="session-list" id="chat-session-list"><p class="empty-state">暂无历史会话。</p></div>
+          </aside>
+          <section class="chat-workspace">
+            <header class="chat-header"><div><span>CONTEXT-AWARE CHAT</span><h1>研究问答</h1></div><button id="create-chat" type="button">新建聊天</button></header>
+            <div class="chat-messages" id="chat-messages"><div class="message assistant"><strong>PaperStorm</strong><p>我是带论文检索、上下文压缩和长期记忆的 Research Chat Agent。</p></div></div>
+            <div class="chat-toolbar"><button id="regenerate-chat" type="button" class="secondary-button" disabled>重新生成</button><button id="stop-chat" type="button" class="danger-button hidden">停止</button></div>
+            <form class="chat-composer" id="chat-form"><textarea id="chat-input" rows="3" placeholder="直接提问，证据不足时将自动升级为深度调研。"></textarea><button id="send-chat" type="submit">发送</button></form>
+          </section>
         </section>
 
-        <section class="surface" id="research-result-workspace">
-          <div class="section-heading"><div><span>RESEARCH RESULT</span><h2>调研文章</h2></div><b>evidence grounded</b><button class="secondary-button" id="download-article-md" type="button" disabled>下载 Markdown</button></div>
-          <article class="article" id="article-content">完成调研后，文章将在这里展示。</article>
-        </section>
-      </section>
+        <section class="developer-view hidden" id="developer-view">
+          <header class="page-heading developer-header">
+            <div><span>BENCHMARK CONTROL PLANE</span><h1>开发者控制台</h1><p>公开数据集、可复现实验、运行日志和治理状态集中管理。</p></div>
+            <div class="developer-actions"><label>服务地址<input id="service-url" placeholder="当前页面地址" /></label><button class="secondary-button" id="leave-developer-mode" type="button">返回产品</button></div>
+          </header>
 
-      <section class="chat-view product-only hidden" id="chat-view">
-        <aside class="surface chat-sessions" id="chat-sessions-panel">
-          <div class="section-heading"><div><span>HISTORY</span><h2>会话列表</h2></div><button class="icon-button" id="refresh-chat-sessions" type="button" title="刷新">↻</button></div>
-          <div class="session-list" id="chat-session-list"><p class="empty-state">暂无历史会话。</p></div>
-        </aside>
-        <aside class="surface chat-settings">
-          <div class="section-heading"><div><span>CONVERSATION</span><h2>研究问答</h2></div></div>
-          <p>普通聊天直接回答；技术问题复用已有证据，证据不足时自动调研。</p>
-          <label>运行方式<select id="chat-run-mode"><option value="fake">fake（本地演示）</option><option value="paperstorm">paperstorm（真实 API）</option></select></label>
-          <label>检索器<select id="chat-retriever"><option value="arxiv">arXiv</option><option value="local-pdf">本地 PDF</option></select></label>
-          <button id="create-chat" type="button">新建聊天</button>
-          <dl class="session-meta"><dt>会话</dt><dd id="chat-session-id">尚未创建</dd><dt>Context</dt><dd id="chat-context-summary">等待消息</dd></dl>
-        </aside>
-        <section class="surface chat-workspace">
-          <div class="chat-messages" id="chat-messages"><div class="message assistant"><strong>PaperStorm</strong><p>我是带论文检索、上下文压缩和长期记忆的 Research Chat Agent。</p></div></div>
-          <div class="chat-toolbar">
-            <button id="regenerate-chat" type="button" disabled>重新生成</button>
-            <button id="stop-chat" type="button" class="danger-button hidden">停止</button>
-          </div>
-          <form class="chat-composer" id="chat-form">
-            <textarea id="chat-input" rows="3" placeholder="直接提问，例如：PIM 是什么，神经网络如何抑制它？"></textarea>
-            <button id="send-chat" type="submit">发送</button>
-          </form>
-        </section>
-      </section>
+          <section class="status-band" id="benchmark-readiness">
+            <div><small>API SERVICE</small><strong id="ready-service">检查中</strong><span id="ready-service-detail">连接 API</span></div>
+            <div><small>BENCHMARK ROOT</small><strong id="ready-root">未发现</strong><span id="ready-root-detail">等待服务返回</span></div>
+            <div><small>DATASETS</small><strong id="ready-datasets">0 / 6</strong><span>本机缓存自动发现</span></div>
+            <div><small>RUNTIME</small><strong id="ready-python">未知</strong><span id="ready-model-cache">模型缓存未发现</span></div>
+            <button class="icon-button" id="refresh-benchmark-catalog" type="button" title="刷新环境">↻</button>
+          </section>
 
-      <section class="developer-view hidden" id="developer-view">
-        <div class="developer-header">
-          <div><span>BENCHMARK CONTROL PLANE</span><h2>公开评测工作台</h2><p>只展示可解释、可复现的 v5.5/v5.6 证据；旧 synthetic 分数不再作为发布入口。</p></div>
-          <div class="developer-actions"><label>服务地址<input id="service-url" placeholder="当前页面地址" /></label><button class="secondary-button" id="leave-developer-mode" type="button">返回产品</button></div>
-        </div>
+          <section class="console-section">
+            <div class="section-heading"><div><span>PUBLIC EVIDENCE</span><h2>Benchmark Registry</h2></div><b>v5.5 / v5.6</b></div>
+            <div class="benchmark-catalog" id="benchmark-catalog"><p class="empty-state">正在加载 Benchmark Registry...</p></div>
+          </section>
 
-        <section class="surface" id="benchmark-readiness">
-          <div class="section-heading"><div><span>ENVIRONMENT READINESS</span><h2>运行环境</h2></div><button class="icon-button" id="refresh-benchmark-catalog" type="button" title="刷新">↻</button></div>
-          <div class="readiness-grid">
-            <div><small>服务</small><strong id="ready-service">检查中</strong><span id="ready-service-detail">连接 API</span></div>
-            <div><small>Benchmark Root</small><strong id="ready-root">未发现</strong><span id="ready-root-detail">等待服务返回</span></div>
-            <div><small>数据集</small><strong id="ready-datasets">0 / 6</strong><span>按本机缓存自动发现</span></div>
-            <div><small>Python</small><strong id="ready-python">未知</strong><span id="ready-model-cache">模型缓存未发现</span></div>
-          </div>
-        </section>
-
-        <section class="surface">
-          <div class="section-heading"><div><span>PUBLIC EVIDENCE</span><h2>Benchmark 目录</h2></div><b>v5.5 / v5.6</b></div>
-          <div class="benchmark-catalog" id="benchmark-catalog"><p class="empty-state">正在加载 Benchmark Registry...</p></div>
-        </section>
-
-        <section class="surface benchmark-run-workspace" id="benchmark-run-workspace">
-          <div class="section-heading"><div><span>RUN WORKSPACE</span><h2 id="benchmark-selected-name">选择一个 Benchmark</h2></div><span class="run-status idle" id="benchmark-run-status">idle</span></div>
-          <div class="run-layout">
-            <div class="run-config">
-              <p id="benchmark-selected-description">从上方目录选择任务，查看数据、成本和复现参数。</p>
-              <div class="form-row">
-                <label>运行档位<select id="benchmark-profile"><option value="smoke">Smoke：快速验证链路</option><option value="quality">Quality：正式实验</option></select></label>
-                <label class="paid-confirm hidden" id="paid-confirm-row"><input id="benchmark-allow-paid" type="checkbox" /> 我确认该实验会调用付费 LLM</label>
+          <section class="console-section benchmark-run-workspace" id="benchmark-run-workspace">
+            <div class="section-heading"><div><span>EXPERIMENT RUNNER</span><h2 id="benchmark-selected-name">选择一个 Benchmark</h2></div><span class="run-status idle" id="benchmark-run-status">idle</span></div>
+            <div class="run-layout">
+              <div class="run-config">
+                <p id="benchmark-selected-description">从上方目录选择任务，查看数据、成本和复现参数。</p>
+                <div class="form-row"><label>运行档位<select id="benchmark-profile"><option value="smoke">Smoke：快速验证链路</option><option value="quality">Quality：正式实验</option></select></label><label class="paid-confirm hidden" id="paid-confirm-row"><input id="benchmark-allow-paid" type="checkbox" /> 我确认该实验会调用付费 LLM</label></div>
+                <div class="input-manifest" id="benchmark-input-manifest"></div>
+                <div class="command-box"><div><span>REPRODUCIBLE COMMAND</span><button class="text-button" id="copy-benchmark-command" type="button">复制</button></div><code id="benchmark-command-preview">选择 Benchmark 后生成</code></div>
+                <div class="button-row"><button id="start-benchmark-run" type="button" disabled>开始运行</button><button class="danger-button" id="cancel-benchmark-run" type="button" disabled>停止</button></div>
               </div>
-              <div class="input-manifest" id="benchmark-input-manifest"></div>
-              <div class="command-box"><div><span>REPRODUCIBLE COMMAND</span><button class="text-button" id="copy-benchmark-command" type="button">复制</button></div><code id="benchmark-command-preview">选择 Benchmark 后生成</code></div>
-              <div class="button-row"><button id="start-benchmark-run" type="button" disabled>开始运行</button><button class="danger-button" id="cancel-benchmark-run" type="button" disabled>停止</button></div>
+              <div class="run-observer"><div class="run-progress"><i id="benchmark-progress-dot"></i><div><strong id="benchmark-progress-title">尚未运行</strong><p id="benchmark-progress-detail">运行后显示 PID、耗时与产物路径。</p></div></div><pre class="benchmark-log-tail" id="benchmark-log-tail">Benchmark 日志将在这里实时刷新。</pre></div>
             </div>
-            <div class="run-observer">
-              <div class="run-progress"><i id="benchmark-progress-dot"></i><div><strong id="benchmark-progress-title">尚未运行</strong><p id="benchmark-progress-detail">运行后这里显示 PID、耗时与产物路径。</p></div></div>
-              <pre class="benchmark-log-tail" id="benchmark-log-tail">Benchmark 日志将在这里实时刷新。</pre>
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="surface">
-          <div class="section-heading"><div><span>EVIDENCE REPORT</span><h2>结果与边界</h2></div><b id="benchmark-evidence-tier">尚未选择</b></div>
-          <div class="metric-grid benchmark-result-metrics" id="benchmark-result-metrics"></div>
-          <div class="evidence-grid"><div><h3>实验说明</h3><ul id="benchmark-limitations"><li>选择 Benchmark 后显示证据等级与限制。</li></ul></div><div><h3>产物</h3><div id="benchmark-artifacts" class="artifact-list">尚无运行产物。</div></div></div>
-          <details><summary>原始报告 JSON</summary><pre id="benchmark-raw-result">{}</pre></details>
-        </section>
+          <section class="console-section">
+            <div class="section-heading"><div><span>EVIDENCE REPORT</span><h2>结果与边界</h2></div><b id="benchmark-evidence-tier">尚未选择</b></div>
+            <div class="metric-grid benchmark-result-metrics" id="benchmark-result-metrics"></div>
+            <div class="evidence-grid"><div><h3>实验说明</h3><ul id="benchmark-limitations"><li>选择 Benchmark 后显示证据等级与限制。</li></ul></div><div><h3>产物</h3><div id="benchmark-artifacts" class="artifact-list">尚无运行产物。</div></div></div>
+            <details><summary>原始报告 JSON</summary><pre id="benchmark-raw-result">{}</pre></details>
+          </section>
 
-        <section class="surface runtime-diagnostics">
-          <div class="section-heading"><div><span>LIVE RUNTIME</span><h2>执行链路诊断</h2></div><button class="secondary-button" id="refresh-runtime-diagnostics" type="button">刷新</button></div>
-          <div class="diagnostic-grid">
-            <div><h3>服务与治理</h3><pre id="runtime-production-status">等待刷新。</pre></div>
-            <div><h3>最近调研任务</h3><pre id="runtime-task-status">等待刷新。</pre></div>
-            <div><h3>Runtime Trace</h3><pre id="runtime-trace-status">选择或运行调研任务后显示。</pre></div>
-          </div>
+          <section class="console-section runtime-diagnostics">
+            <div class="section-heading"><div><span>LIVE RUNTIME</span><h2>执行链路诊断</h2></div><button class="secondary-button" id="refresh-runtime-diagnostics" type="button">刷新</button></div>
+            <div class="diagnostic-grid"><div><h3>服务与治理</h3><pre id="runtime-production-status">等待刷新。</pre></div><div><h3>最近调研任务</h3><pre id="runtime-task-status">等待刷新。</pre></div><div><h3>Runtime Trace</h3><pre id="runtime-trace-status">选择或运行调研任务后显示。</pre></div></div>
+          </section>
         </section>
-      </section>
-    </main>
+      </main>
+
+      <aside class="workspace-inspector product-only">
+        <div class="inspector-block chat-settings">
+          <span class="rail-label">运行配置</span>
+          <label>问答模式<select id="chat-run-mode"><option value="fake">本地演示</option><option value="paperstorm">真实 API</option></select></label>
+          <label>检索器<select id="chat-retriever"><option value="arxiv">arXiv</option><option value="local-pdf">本地 PDF</option></select></label>
+        </div>
+        <div class="inspector-block"><span class="rail-label">当前上下文</span><dl class="session-meta"><dt>SESSION</dt><dd id="chat-session-id">尚未创建</dd><dt>CONTEXT</dt><dd id="chat-context-summary">等待消息</dd></dl></div>
+        <div class="inspector-block"><span class="rail-label">能力栈</span><ul class="capability-list"><li><i class="teal"></i>Hybrid Retrieval</li><li><i class="blue"></i>Evidence Rerank</li><li><i class="violet"></i>Temporal Memory</li><li><i class="amber"></i>Context Compaction</li></ul></div>
+        <div class="inspector-block inspector-note"><strong>执行策略</strong><p>闲聊直接生成；知识问题先复用证据；证据不足时自动进入 Deep Research。</p></div>
+      </aside>
+    </div>
 
     <div class="toast hidden" id="toast" role="status"></div>
     <script src="app.js"></script>

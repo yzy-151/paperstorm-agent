@@ -24,6 +24,31 @@ class LongMemEvalAnswerV56Test(unittest.TestCase):
         self.assertIn("truncated 3000 chars", sliced)
         self.assertEqual(len(sliced), 3000 + 3000 + len("\n...[truncated 3000 chars]...\n"))
 
+    def test_evidence_slice_snaps_to_line_boundaries(self):
+        from knowledge_storm.evaluation.public_benchmarks.longmemeval_answer import (
+            _slice_evidence,
+        )
+
+        text = "".join("line-{0}\n".format(i) for i in range(100))
+        sliced = _slice_evidence(text, 40)
+        self.assertTrue(sliced.startswith("line-0\n"))
+        self.assertTrue(sliced.endswith("line-99\n"))
+        self.assertIn("truncated", sliced)
+
+    def test_evidence_label_includes_session_timestamp_when_available(self):
+        from knowledge_storm.evaluation.public_benchmarks.longmemeval_answer import (
+            _evidence_label,
+        )
+
+        item = {
+            "metadata": {"timestamp": "2023/05/20 (Sat) 02:21"},
+            "valid_from": "2023-05-20T02:21:00+00:00",
+        }
+        self.assertEqual(
+            _evidence_label(0, item), "[session 1 (2023/05/20 (Sat) 02:21)]"
+        )
+        self.assertEqual(_evidence_label(2, {}), "[session 3]")
+
     def test_scoring_handles_extractive_boolean_and_abstention(self):
         from knowledge_storm.evaluation.public_benchmarks.base import BenchmarkCase
         from knowledge_storm.evaluation.public_benchmarks.longmemeval_answer import (

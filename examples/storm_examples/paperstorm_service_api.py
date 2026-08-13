@@ -31,7 +31,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="5.6")
+    app = FastAPI(title="PaperStorm Agent Service", version="5.7")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

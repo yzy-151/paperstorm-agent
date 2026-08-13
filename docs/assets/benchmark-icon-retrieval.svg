@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" role="img" aria-label="Retrieval benchmark">
+  <rect x="1" y="1" width="70" height="70" fill="#0d141b" stroke="#31404d" stroke-width="2"/>
+  <path d="M17 20h24M17 29h18M17 38h13" stroke="#73a7ff" stroke-width="3"/>
+  <circle cx="43" cy="42" r="10" fill="none" stroke="#24c9b1" stroke-width="3"/>
+  <path d="m50 49 8 8" stroke="#24c9b1" stroke-width="4"/>
+</svg>

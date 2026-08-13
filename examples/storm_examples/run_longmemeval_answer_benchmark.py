@@ -59,7 +59,9 @@ def main(argv=None):
         message=r".*Pydantic serializer warnings.*",
         category=UserWarning,
     )
-    dataset = load_longmemeval(args.dataset, limit=args.limit or None)
+    dataset = load_longmemeval(
+        args.dataset, limit=args.limit or None, keep_documents=False
+    )
     provider = SentenceTransformerProvider(
         model_name=args.embedding_model,
         cache_folder=args.model_cache or None,

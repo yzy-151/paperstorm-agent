@@ -16,7 +16,7 @@ with open("requirements.txt", encoding="utf-8") as f:
 
 setup(
     name="paperstorm-agent",
-    version="5.6.0",
+    version="5.7.0",
     author="PaperStorm contributors; Stanford OVAL contributors",
     description="PaperStorm Agent: a production-oriented research and RAG agent built on Stanford STORM.",
     long_description=long_description,

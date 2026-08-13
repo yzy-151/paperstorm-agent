@@ -66,6 +66,11 @@ function setMode(mode) {
     $("#show-chat-mode").classList.toggle("active", mode === "chat");
   }
   document.body.dataset.mode = mode;
+  const labels = {research: "论文调研", chat: "智能问答", developer: "开发者控制台"};
+  if ($("#workspace-title")) $("#workspace-title").textContent = labels[mode] || "工作空间";
+  $$(".rail-item").forEach((node) => node.classList.remove("active"));
+  const activeNav = mode === "research" ? $("#show-research-mode") : mode === "chat" ? $("#show-chat-mode") : $("#show-developer-mode");
+  activeNav?.classList.add("active");
   if (developer) loadBenchmarkCatalog();
   if (mode === "chat") loadChatSessions();
 }
@@ -365,7 +370,7 @@ function renderBenchmarkReadiness(catalog) {
 
 function renderBenchmarkCatalog(benchmarks) {
   $("#benchmark-catalog").innerHTML = benchmarks.map((item) => `
-    <article class="benchmark-card ${item.ready ? "" : "blocked"} ${state.selectedBenchmark?.id === item.id ? "selected" : ""}" data-benchmark-id="${escapeHtml(item.id)}" tabindex="0">
+    <article class="benchmark-card ${item.ready ? "" : "blocked"} ${state.selectedBenchmark?.id === item.id ? "selected" : ""}" data-benchmark-id="${escapeHtml(item.id)}" data-kind="${benchmarkKind(item)}" tabindex="0">
       <div class="card-meta"><span>${escapeHtml(item.version)} · ${escapeHtml(item.category)}</span><span class="readiness-badge ${item.ready ? "" : "blocked"}">${item.ready ? "READY" : "BLOCKED"}</span></div>
       <h3>${escapeHtml(item.name)}</h3>
       <p>${escapeHtml(item.description)}</p>
@@ -376,6 +381,14 @@ function renderBenchmarkCatalog(benchmarks) {
     card.addEventListener("click", () => selectBenchmark(card.dataset.benchmarkId));
     card.addEventListener("keydown", (event) => { if (event.key === "Enter") selectBenchmark(card.dataset.benchmarkId); });
   });
+}
+
+function benchmarkKind(item) {
+  const value = `${item.id} ${item.category}`.toLowerCase();
+  if (value.includes("memory") || value.includes("longmem")) return "MEM";
+  if (value.includes("context") || value.includes("longbench")) return "CTX";
+  if (value.includes("answer")) return "F1";
+  return "RAG";
 }
 
 function selectBenchmark(benchmarkId) {

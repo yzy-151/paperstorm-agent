@@ -13,11 +13,11 @@ test.use({
 test("desktop one-click demo completes and renders the research result", async ({page}) => {
   await page.setViewportSize({width: 1366, height: 768});
   await page.goto(baseURL, {waitUntil: "networkidle"});
-  await expect(page.locator(".release-pill strong")).toHaveText("v5.6");
+  await expect(page.locator(".release-pill strong")).toHaveText("v5.7");
   await expect(page.locator("#developer-view")).toBeHidden();
 
   await page.locator("#show-research-mode").click();
-  await expect(page.locator(".demo-strip")).toBeVisible();
+  await expect(page.locator(".workspace-inspector")).toBeVisible();
   await expect(page.locator('[data-stage="completed"]')).not.toHaveClass(/complete/);
   await expect(page.locator("#research-score-section")).toBeHidden();
   await expect(page.locator("#article-content")).toContainText("完成调研后");

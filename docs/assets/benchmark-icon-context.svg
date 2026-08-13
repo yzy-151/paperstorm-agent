@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" role="img" aria-label="Context benchmark">
+  <rect x="1" y="1" width="70" height="70" fill="#0d141b" stroke="#31404d" stroke-width="2"/>
+  <rect x="15" y="16" width="42" height="10" fill="none" stroke="#e8b75a" stroke-width="2"/>
+  <rect x="15" y="31" width="32" height="10" fill="none" stroke="#73a7ff" stroke-width="2"/>
+  <rect x="15" y="46" width="22" height="10" fill="none" stroke="#24c9b1" stroke-width="2"/>
+  <path d="M52 32v22m0 0-6-6m6 6 6-6" stroke="#e8b75a" stroke-width="2"/>
+</svg>

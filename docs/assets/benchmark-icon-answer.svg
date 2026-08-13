@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" role="img" aria-label="Answer benchmark">
+  <rect x="1" y="1" width="70" height="70" fill="#0d141b" stroke="#31404d" stroke-width="2"/>
+  <path d="M15 17h42v32H35l-10 8v-8H15Z" fill="none" stroke="#24c9b1" stroke-width="3"/>
+  <path d="M24 27h24M24 35h16" stroke="#73a7ff" stroke-width="3"/>
+  <path d="m43 42 4 4 8-9" fill="none" stroke="#5bd692" stroke-width="3"/>
+</svg>
