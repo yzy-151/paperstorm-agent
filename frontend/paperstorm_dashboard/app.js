@@ -340,9 +340,14 @@ function downloadArticleMarkdown() {
 async function loadBenchmarkCatalog() {
   setServiceState("", "连接中");
   try {
-    state.catalog = await fetchJson("/benchmarks/catalog");
+    const [catalog, observability] = await Promise.all([
+      fetchJson("/benchmarks/catalog"),
+      fetchJson("/observability/status"),
+    ]);
+    state.catalog = catalog;
     setServiceState("online", "服务在线");
     renderBenchmarkReadiness(state.catalog);
+    renderObservabilityStatus(observability);
     renderBenchmarkCatalog(state.catalog.benchmarks || []);
     if (state.selectedBenchmark) {
       const updated = state.catalog.benchmarks.find((item) => item.id === state.selectedBenchmark.id);
@@ -354,6 +359,19 @@ async function loadBenchmarkCatalog() {
     $("#ready-service-detail").textContent = error.message;
     $("#benchmark-catalog").innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
   }
+}
+
+function renderObservabilityStatus(status) {
+  const labels = {
+    configured: "已配置",
+    degraded: "降级",
+    unavailable: "SDK 缺失",
+    "local-only": "本地模式",
+  };
+  $("#ready-langfuse").textContent = labels[status.status] || status.status || "未知";
+  $("#ready-langfuse-detail").textContent = status.remote_enabled
+    ? `${status.environment} · failures ${status.export_failures || 0}`
+    : "设置 PAPERSTORM_OBSERVABILITY=langfuse";
 }
 
 function renderBenchmarkReadiness(catalog) {
@@ -569,11 +587,14 @@ function formatMetric(value) {
 
 async function refreshRuntimeDiagnostics() {
   try {
-    const [production, tasks] = await Promise.all([
+    const [production, tasks, observability] = await Promise.all([
       fetchJson("/production/status"),
       fetchJson("/research-tasks"),
+      fetchJson("/observability/status"),
     ]);
-    $("#runtime-production-status").textContent = JSON.stringify(production, null, 2);
+    $("#runtime-production-status").textContent = JSON.stringify(
+      {production, observability}, null, 2
+    );
     const latest = (tasks.tasks || []).at(-1) || {};
     $("#runtime-task-status").textContent = JSON.stringify(latest, null, 2);
     if (latest.task_id) {

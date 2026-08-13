@@ -7,6 +7,7 @@ Example:
 
 import json
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -31,7 +32,15 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
 
     service = PaperStormTaskService(root_dir=service_root)
     dashboard_dir = Path(dashboard_dir)
-    app = FastAPI(title="PaperStorm Agent Service", version="5.7")
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        try:
+            yield
+        finally:
+            service.observability.flush()
+
+    app = FastAPI(title="PaperStorm Agent Service", version="5.8", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -254,6 +263,10 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.get("/benchmarks/catalog")
     def get_benchmark_catalog():
         return service.get_benchmark_catalog()
+
+    @app.get("/observability/status")
+    def get_observability_status():
+        return service.get_observability_status()
 
     @app.post("/benchmarks/runs")
     def start_benchmark_run(request: BenchmarkRunRequest):

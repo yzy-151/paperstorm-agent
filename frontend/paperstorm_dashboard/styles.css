@@ -141,7 +141,7 @@ body[data-mode="developer"] .workspace-shell { grid-template-columns: 208px minm
 body[data-mode="developer"] .workspace-main { grid-column: 2; }
 .developer-header { align-items: flex-end; }
 .developer-actions { display: flex; align-items: end; gap: 8px; }.developer-actions label { min-width: 260px; }
-.status-band { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) 48px; margin-bottom: 16px; border: 1px solid var(--line); background: var(--line); gap: 1px; }
+.status-band { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 48px; margin-bottom: 16px; border: 1px solid var(--line); background: var(--line); gap: 1px; }
 .status-band > div { min-width: 0; padding: 13px 14px; background: #0b1117; }
 .status-band small, .status-band span { display: block; color: var(--muted); font-size: 9px; }
 .status-band strong { display: block; margin: 5px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }

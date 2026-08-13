@@ -1,13 +1,13 @@
-# PaperStorm Agent（v5.7）
+# PaperStorm Agent（v5.8）
 
-> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v5.7 将研究、
+> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v5.8 将研究、
 > 对话、证据、运行状态和公开 Benchmark 整合为统一工作台；底层继续使用
 > v5.6 Memory / Context 与 v5.5 公开评测口径，不用 UI 版本虚增算法成绩。
 
-![PaperStorm v5.7 调研工作台](docs/screenshots/dashboard-research-v57.png)
+![PaperStorm v5.8 调研工作台](docs/screenshots/dashboard-research-v57.png)
 
 **论文调研** · **智能问答** · **混合检索** · **长期记忆** · **上下文治理** ·
-**Multi-Agent Research** · **公开 Benchmark** · **Runtime Trace**
+**Multi-Agent Research** · **公开 Benchmark** · **Langfuse Observability**
 
 ## 项目一眼看懂
 
@@ -28,11 +28,13 @@ Agent 平台原型：
   RRF 与 MMR。
 - **生产治理**：SQLite WAL 控制面，ACL / 审计 / 事务幂等 / TTL 缓存 / 持久任务 /
   熔断 / 层级 span。
-- **v5.7 工作台**：直角深色信息架构，左侧任务导航、中部执行工作区、右侧
+- **v5.8 可观测性**：Research / Chat / Benchmark 统一 Trace 模型，本地 JSONL
+  镜像与 Langfuse 可选双写；递归脱敏、用户 ID 哈希、失败降级、Trace Score 回传。
+- **工作台**：直角深色信息架构，左侧任务导航、中部执行工作区、右侧
   Context / Memory 检查器；开发者控制台独立承载数据集就绪度、实验命令、日志、
   指标与 Runtime Trace。
 
-## 系统架构图
+## 最终能力地图与系统架构图
 
 ### 领导总览：业务流程与项目价值
 
@@ -137,12 +139,51 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
 | `PAPERSTORM_MODEL_CACHE` | sentence-transformers 模型缓存目录 |
 | `PAPERSTORM_BENCHMARK_ROOT` | SciFact/QASPER/LongMemEval 等公开评测数据根目录；未设置时自动检查 `~/Desktop/codex/paperstorm-benchmarks` 与 `data/benchmarks` |
 | `PAPERSTORM_TEST_OFFLINE` | 测试默认 `1`：禁止外网、真实 LLM 和模型下载；仅显式设置 `0` 才允许联网测试 |
+| `PAPERSTORM_OBSERVABILITY` | 设置为 `langfuse` 启用远程 Trace；未设置时仅写本地 JSONL |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Langfuse 项目凭据；仅在启用远程 Trace 时需要 |
+| `LANGFUSE_BASE_URL` | Langfuse Cloud 区域或自部署地址 |
+| `LANGFUSE_TRACING_ENVIRONMENT` | `development` / `staging` / `production`，用于隔离环境 |
+
+### Langfuse 可观测与评测
+
+Langfuse 是可选依赖，不影响默认安装：
+
+```powershell
+pip install -e ".[observability]"
+$env:PAPERSTORM_OBSERVABILITY="langfuse"
+$env:LANGFUSE_PUBLIC_KEY="pk-lf-..."
+$env:LANGFUSE_SECRET_KEY="sk-lf-..."
+$env:LANGFUSE_BASE_URL="https://cloud.langfuse.com"
+$env:LANGFUSE_TRACING_ENVIRONMENT="development"
+```
+
+启动 PaperStorm 后，调研、聊天和网页 Benchmark 会自动产生 Trace。开发者控制台的
+`LANGFUSE` 状态卡显示 `已配置 / 本地模式 / 降级`；“已配置”表示 SDK 与凭据就绪，
+不虚构异步采集端已经完成网络握手。状态接口为
+`GET /observability/status`。本地事件始终写入
+`<service-root>/observability/events.jsonl`，即使 SDK 未安装、网络中断或 Langfuse
+不可用，Agent 主链路也不会失败。
+
+Trace 映射如下：
+
+| PaperStorm 执行 | Langfuse Trace / Observation | 自动 Score |
+| --- | --- | --- |
+| 一次论文调研 | `paperstorm.research` → `research_pipeline` | `run_score` / `run_success` |
+| 一轮聊天 | `paperstorm.chat` → LangGraph executed nodes | `trajectory_success` / `retrieval_triggered` |
+| 一次公开评测 | `paperstorm.benchmark` | metrics.json 中全部数值指标与 `run_success` |
+
+所有输入、输出和 metadata 在上报前递归脱敏：API Key、Authorization、Cookie、密码与
+Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长字符串截断。生产环境仍应
+优先使用自部署 Langfuse，并根据企业数据制度决定是否上报原始问题和论文片段。
+
+实现边界、故障降级、评测方法和面试讲法见
+[Langfuse 可观测性设计与学习记录](docs/langfuse-observability-v58.md)。
 
 ## 前端功能图文说明
 
-### 1. 论文调研工作台（默认）
+### 1. 论文调研模式（默认工作台）
 
-![V5.7 论文调研工作台](docs/screenshots/dashboard-research-v57.png)
+![V5.8 论文调研工作台](docs/screenshots/dashboard-research-v57.png)
 
 - 调研文章支持一键**下载 Markdown**，便于本地保存与二次整理。
 - 输入主题后一次点击完成任务创建、运行、状态追踪和结果刷新；五阶段进度
@@ -476,7 +517,8 @@ docs/                                # 评测记录 / Benchmark 口径 / 截图
 | v5.4 Trustworthy Evaluation | 人工门禁、质量/延迟联合选型 | 历史版本 |
 | v5.5 Public Benchmarks | SciFact / QASPER 公开评测、官方 evaluator 对拍 | 公开检索与 Answer F1 |
 | v5.6 Memory & Context | SQLite temporal memory、五层 Context、LongMemEval-S、QASPER Context 诊断 | 当前算法与评测底座 |
-| **v5.7 Workspace** | 直角深色工作台、Visio 风格架构图、Benchmark 能力矩阵与正式截图 | 当前版本 |
+| v5.7 Workspace | 直角深色工作台、Visio 风格架构图、Benchmark 能力矩阵与正式截图 | 历史版本 |
+| **v5.8 Observability** | Langfuse 可选双写、统一 Trace/Span/Score、递归脱敏与 fail-open 降级 | 当前版本 |
 
 ## License
 

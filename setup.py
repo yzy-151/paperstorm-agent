@@ -16,7 +16,7 @@ with open("requirements.txt", encoding="utf-8") as f:
 
 setup(
     name="paperstorm-agent",
-    version="5.7.0",
+    version="5.8.0",
     author="PaperStorm contributors; Stanford OVAL contributors",
     description="PaperStorm Agent: a production-oriented research and RAG agent built on Stanford STORM.",
     long_description=long_description,
@@ -36,5 +36,6 @@ setup(
     install_requires=requirements,
     extras_require={
         "benchmarks": ["datasets>=2.18,<3.0"],
+        "observability": ["langfuse>=4.0,<5.0"],
     },
 )

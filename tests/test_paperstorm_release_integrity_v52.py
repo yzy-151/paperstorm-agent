@@ -52,7 +52,7 @@ class PaperStormReleaseIntegrityV52Test(unittest.TestCase):
         )
         setup_version = re.search(r'version="([^"]+)"', setup_text).group(1)
         init_version = re.search(r'__version__ = "([^"]+)"', init_text).group(1)
-        self.assertEqual(setup_version, "5.7.0")
+        self.assertEqual(setup_version, "5.8.0")
         self.assertEqual(init_version, setup_version)
         self.assertIn("PaperStorm Agent", setup_text)
 

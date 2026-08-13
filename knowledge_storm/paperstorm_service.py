@@ -14,8 +14,15 @@ from .paperstorm_qa import PaperStormKnowledgeBase, write_qa_artifact
 class PaperStormTaskService:
     """File-backed service core for PaperStorm task APIs."""
 
-    def __init__(self, root_dir, max_concurrent_tasks: int = 1, pipeline_runner=None):
+    def __init__(
+        self,
+        root_dir,
+        max_concurrent_tasks: int = 1,
+        pipeline_runner=None,
+        observability=None,
+    ):
         from .paperstorm_benchmarks import BenchmarkRunManager
+        from .paperstorm_observability import build_observability
 
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
@@ -25,7 +32,13 @@ class PaperStormTaskService:
         self.results_dir.mkdir(exist_ok=True)
         self.max_concurrent_tasks = max(1, int(max_concurrent_tasks))
         self.pipeline_runner = pipeline_runner
-        self.benchmark_runs = BenchmarkRunManager(self.root_dir)
+        self.observability = observability or build_observability(self.root_dir)
+        self.benchmark_runs = BenchmarkRunManager(
+            self.root_dir, observability=self.observability
+        )
+
+    def get_observability_status(self):
+        return self.observability.status()
 
     def get_benchmark_catalog(self):
         return self.benchmark_runs.catalog()
@@ -102,25 +115,55 @@ class PaperStormTaskService:
         state["started_at"] = _now()
         state["updated_at"] = _now()
         self._write_state(task_id, state)
-        try:
-            if state.get("run_mode") == "fail":
-                raise RuntimeError("simulated task failure for service testing")
-            if state.get("run_mode") == "manual":
-                return state
-            if state.get("run_mode") == "paperstorm":
-                self._run_paperstorm_pipeline(state)
-            elif state.get("run_mode") != "fake":
-                raise ValueError(
-                    "Supported run modes are 'fake', 'paperstorm', 'manual', and 'fail'."
-                )
-            else:
-                self._run_fake_research(state)
-            state["status"] = "succeeded"
-            state["finished_at"] = _now()
-        except Exception as error:
-            state["status"] = "failed"
-            state["finished_at"] = _now()
-            state["error"] = _redact_error(str(error))
+        with self.observability.trace(
+            "paperstorm.research",
+            input={"topic": state.get("topic"), "options": state.get("options", {})},
+            metadata={
+                "task_id": task_id,
+                "run_mode": state.get("run_mode"),
+                "retriever": state.get("retriever"),
+                "output_language": state.get("output_language"),
+                "version": "5.8.0",
+            },
+            session_id=task_id,
+            tags=["research", str(state.get("run_mode") or "")],
+        ) as trace:
+            try:
+                with trace.span(
+                    "research_pipeline",
+                    input={"topic": state.get("topic")},
+                    metadata={"retriever": state.get("retriever")},
+                    as_type="chain",
+                ) as pipeline_span:
+                    if state.get("run_mode") == "fail":
+                        raise RuntimeError("simulated task failure for service testing")
+                    if state.get("run_mode") == "manual":
+                        pipeline_span.end(output={"status": "manual"})
+                        trace.end(output={"status": "running"})
+                        return state
+                    if state.get("run_mode") == "paperstorm":
+                        self._run_paperstorm_pipeline(state)
+                    elif state.get("run_mode") != "fake":
+                        raise ValueError(
+                            "Supported run modes are 'fake', 'paperstorm', 'manual', and 'fail'."
+                        )
+                    else:
+                        self._run_fake_research(state)
+                    pipeline_span.end(output={"status": "succeeded"})
+                state["status"] = "succeeded"
+                state["finished_at"] = _now()
+                scorecard = self.get_scorecard(task_id)
+                total = (scorecard.get("scores") or {}).get("total")
+                if isinstance(total, (int, float)):
+                    trace.score("run_score", float(total))
+                trace.score("run_success", 1.0)
+                trace.end(output={"status": "succeeded", "scorecard": scorecard})
+            except Exception as error:
+                state["status"] = "failed"
+                state["finished_at"] = _now()
+                state["error"] = _redact_error(str(error))
+                trace.score("run_success", 0.0, comment=state["error"])
+                trace.end(output={"status": "failed"}, error=error)
         state["updated_at"] = _now()
         self._write_state(task_id, state)
         return state
@@ -248,7 +291,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v5.7",
+                "version": "v5.8",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -532,7 +575,56 @@ class PaperStormTaskService:
     def send_chat_message(self, chat_id: str, message: str):
         from .paperstorm_chat_agent import PaperStormChatAgent
 
-        return PaperStormChatAgent(self).send_message(chat_id, message)
+        session = PaperStormChatAgent(self).get_session(chat_id)
+        with self.observability.trace(
+            "paperstorm.chat",
+            input={"message": message, "topic": session.get("topic", "")},
+            metadata={
+                "chat_id": chat_id,
+                "run_mode": session.get("run_mode", ""),
+                "retriever": session.get("retriever", ""),
+                "version": "5.8.0",
+            },
+            session_id=chat_id,
+            user_id=session.get("user_id", ""),
+            tags=["chat", str(session.get("run_mode") or "")],
+        ) as trace:
+            try:
+                result = PaperStormChatAgent(self).send_message(chat_id, message)
+                graph_run = result.get("graph_run") or {}
+                events = graph_run.get("node_events") or []
+                event_by_node = {event.get("node"): event for event in events}
+                for node in graph_run.get("executed_nodes") or []:
+                    event = event_by_node.get(node) or {}
+                    with trace.span(
+                        node,
+                        metadata={
+                            "status": event.get("status", "success"),
+                            "duration_ms": event.get("duration_ms"),
+                        },
+                        as_type="chain",
+                    ) as span:
+                        span.end(output={"status": event.get("status", "success")})
+                trace.score(
+                    "trajectory_success",
+                    1.0 if graph_run.get("status") == "succeeded" else 0.0,
+                )
+                trace.score(
+                    "retrieval_triggered",
+                    1.0 if result.get("retrieval_triggered") else 0.0,
+                )
+                trace.end(
+                    output={
+                        "answer": (result.get("assistant_message") or {}).get("content", ""),
+                        "route": graph_run.get("route", ""),
+                        "executed_nodes": graph_run.get("executed_nodes") or [],
+                    }
+                )
+                return result
+            except Exception as error:
+                trace.score("trajectory_success", 0.0, comment=str(error))
+                trace.end(output={"status": "failed"}, error=error)
+                raise
 
     def list_chat_sessions(self, limit: int = 50):
         from .paperstorm_chat_agent import PaperStormChatAgent

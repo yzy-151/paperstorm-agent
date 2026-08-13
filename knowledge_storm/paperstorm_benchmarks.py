@@ -234,13 +234,16 @@ class BenchmarkRunManager:
         service_root: Path,
         registry: Optional[BenchmarkRegistry] = None,
         popen_factory: Callable = subprocess.Popen,
+        observability=None,
     ):
         self.root = Path(service_root) / "benchmark_runs"
         self.root.mkdir(parents=True, exist_ok=True)
         self.registry = registry or BenchmarkRegistry()
         self.popen_factory = popen_factory
+        self.observability = observability
         self._processes: Dict[str, object] = {}
         self._logs: Dict[str, object] = {}
+        self._traces: Dict[str, object] = {}
         self._lock = threading.Lock()
 
     def catalog(self):
@@ -259,6 +262,16 @@ class BenchmarkRunManager:
         )
         log_path = run_dir / "benchmark.log"
         log_handle = log_path.open("w", encoding="utf-8")
+        trace = None
+        if self.observability is not None:
+            trace = self.observability.trace(
+                "paperstorm.benchmark",
+                input={"benchmark_id": benchmark_id, "profile": profile},
+                metadata={"run_id": run_id, "version": "5.8.0"},
+                session_id=run_id,
+                tags=["benchmark", profile],
+            )
+            trace.__enter__()
         try:
             process = self.popen_factory(
                 command,
@@ -268,8 +281,10 @@ class BenchmarkRunManager:
                 text=True,
                 encoding="utf-8",
             )
-        except Exception:
+        except Exception as error:
             log_handle.close()
+            if trace is not None:
+                trace.end(output={"status": "failed_to_start"}, error=error)
             raise
         manifest = {
             "run_id": run_id,
@@ -289,6 +304,8 @@ class BenchmarkRunManager:
         with self._lock:
             self._processes[run_id] = process
             self._logs[run_id] = log_handle
+            if trace is not None:
+                self._traces[run_id] = trace
         return self.get(run_id)
 
     def get(self, run_id: str):
@@ -310,6 +327,10 @@ class BenchmarkRunManager:
         result_path = Path(manifest["output_dir"]) / "metrics.json"
         manifest["result"] = _read_json(result_path)
         manifest["result_path"] = str(result_path) if result_path.exists() else ""
+        if manifest["status"] != "running" and not manifest.get("observability_exported"):
+            self._finish_observability(manifest)
+            manifest["observability_exported"] = True
+            self._write(manifest)
         return manifest
 
     def cancel(self, run_id: str):
@@ -343,6 +364,23 @@ class BenchmarkRunManager:
         if handle is not None and not handle.closed:
             handle.flush()
             handle.close()
+
+    def _finish_observability(self, manifest):
+        from .paperstorm_observability import numeric_scores
+
+        trace = self._traces.pop(manifest["run_id"], None)
+        if trace is None:
+            return
+        for name, value in numeric_scores(manifest.get("result") or {}).items():
+            trace.score(name, value)
+        trace.score("run_success", 1.0 if manifest.get("status") == "succeeded" else 0.0)
+        trace.end(
+            output={
+                "status": manifest.get("status"),
+                "result": manifest.get("result") or {},
+                "result_path": manifest.get("result_path", ""),
+            }
+        )
 
 
 def _resolve_benchmark_root(explicit=None):
