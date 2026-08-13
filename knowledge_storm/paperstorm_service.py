@@ -123,7 +123,7 @@ class PaperStormTaskService:
                 "run_mode": state.get("run_mode"),
                 "retriever": state.get("retriever"),
                 "output_language": state.get("output_language"),
-                "version": "5.8.0",
+                "version": "5.8.1",
             },
             session_id=task_id,
             tags=["research", str(state.get("run_mode") or "")],
@@ -291,7 +291,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v5.8",
+                "version": "v5.8.1",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -583,7 +583,7 @@ class PaperStormTaskService:
                 "chat_id": chat_id,
                 "run_mode": session.get("run_mode", ""),
                 "retriever": session.get("retriever", ""),
-                "version": "5.8.0",
+                "version": "5.8.1",
             },
             session_id=chat_id,
             user_id=session.get("user_id", ""),

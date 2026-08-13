@@ -260,6 +260,59 @@ class PaperStormChatAgentTest(unittest.TestCase):
         self.assertNotEqual(reply.get("status"), "stopped")
         self.assertGreaterEqual(len(reply["messages"]), 2)
 
+    def test_loading_legacy_session_rehydrates_article_citation_sources(self):
+        from knowledge_storm.paperstorm_chat_agent import PaperStormChatAgent
+
+        service = self.make_service()
+        task = service.submit_research_task(topic="Physical AI", run_mode="fake")
+        run_dir = Path(task["output_dir"])
+        (run_dir / "storm_gen_article_polished.txt").write_text(
+            "# 定义\n\nPhysical AI connects software and the physical world.[1]",
+            encoding="utf-8",
+        )
+        (run_dir / "url_to_info.json").write_text(
+            json.dumps(
+                {
+                    "url_to_unified_index": {"https://example.com/paper": 1},
+                    "url_to_info": {
+                        "https://example.com/paper": {
+                            "title": "Physical AI Paper",
+                            "url": "https://example.com/paper",
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        agent = PaperStormChatAgent(service)
+        session = agent.create_session(task_id=task["task_id"])
+        session["messages"] = [
+            {
+                "role": "assistant",
+                "content": "Physical AI connects both worlds.[1]",
+                "metadata": {
+                    "used_task_id": task["task_id"],
+                    "citations": [
+                        {
+                            "id": 1,
+                            "title": "Generated article paragraph 1",
+                            "url": str(run_dir / "storm_gen_article_polished.txt"),
+                            "source_type": "article",
+                            "chunk_id": "article-1",
+                        }
+                    ],
+                },
+            }
+        ]
+        agent._write_session(session)
+
+        restored = agent.get_session(session["chat_id"])
+        citation = restored["messages"][0]["metadata"]["citations"][0]
+
+        self.assertEqual(citation["title"], "定义 · 第 1 段")
+        self.assertEqual(citation["article_anchor"], "article-paragraph-1")
+        self.assertEqual(citation["original_sources"][0]["title"], "Physical AI Paper")
+
 
 if __name__ == "__main__":
     unittest.main()

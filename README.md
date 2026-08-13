@@ -1,6 +1,7 @@
-# PaperStorm Agent（v5.8）
+# PaperStorm Agent（v5.8.1）
 
-> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v5.8 将研究、
+> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v5.8.1 修复问答引用
+> 的来源展示与文章定位；v5.8 将研究、
 > 对话、证据、运行状态和公开 Benchmark 整合为统一工作台；底层继续使用
 > v5.6 Memory / Context 与 v5.5 公开评测口径，不用 UI 版本虚增算法成绩。
 
@@ -518,7 +519,8 @@ docs/                                # 评测记录 / Benchmark 口径 / 截图
 | v5.5 Public Benchmarks | SciFact / QASPER 公开评测、官方 evaluator 对拍 | 公开检索与 Answer F1 |
 | v5.6 Memory & Context | SQLite temporal memory、五层 Context、LongMemEval-S、QASPER Context 诊断 | 当前算法与评测底座 |
 | v5.7 Workspace | 直角深色工作台、Visio 风格架构图、Benchmark 能力矩阵与正式截图 | 历史版本 |
-| **v5.8 Observability** | Langfuse 可选双写、统一 Trace/Span/Score、递归脱敏与 fail-open 降级 | 当前版本 |
+| v5.8 Observability | Langfuse 可选双写、统一 Trace/Span/Score、递归脱敏与 fail-open 降级 | 历史版本 |
+| **v5.8.1 Citation Fix** | 原始论文来源回填、历史会话兼容迁移、文章段落锚点定位 | 当前版本 |
 
 ## License
 

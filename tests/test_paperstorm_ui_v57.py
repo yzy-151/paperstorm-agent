@@ -11,10 +11,12 @@ class PaperStormUIV57Test(unittest.TestCase):
     def setUpClass(cls):
         cls.html = (FRONTEND / "index.html").read_text(encoding="utf-8")
         cls.css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+        cls.script = (FRONTEND / "app.js").read_text(encoding="utf-8")
+        cls.styles = cls.css
         cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     def test_product_uses_v57_workspace_shell(self):
-        self.assertIn("v5.8", self.html)
+        self.assertIn("v5.8.1", self.html)
         self.assertIn('class="workspace-rail"', self.html)
         self.assertIn('class="workspace-main"', self.html)
         self.assertIn('class="workspace-inspector product-only"', self.html)
@@ -51,6 +53,14 @@ class PaperStormUIV57Test(unittest.TestCase):
         self.assertIn('id="task-forbidden-keyword" placeholder=', self.html)
         self.assertNotIn('id="task-expected-keyword" value=', self.html)
         self.assertNotIn('id="task-forbidden-keyword" value=', self.html)
+
+    def test_citations_link_to_article_anchor_and_original_source_title(self):
+        self.assertIn("renderResearchArticle", self.script)
+        self.assertIn("focusArticleCitation", self.script)
+        self.assertIn('data-article-anchor=', self.script)
+        self.assertIn("original_sources", self.script)
+        self.assertIn("定位文章", self.script)
+        self.assertIn("citation-target", self.styles)
 
     def test_public_copy_does_not_market_an_expert_edition(self):
         forbidden = ("专家版", "专业版", "专业工作台", "professional workspace")

@@ -476,7 +476,45 @@ class PaperStormChatAgent:
         path = self._session_path(chat_id)
         if not path.exists():
             raise KeyError("Unknown chat_id: {0}".format(chat_id))
-        return json.loads(path.read_text(encoding="utf-8"))
+        session = json.loads(path.read_text(encoding="utf-8"))
+        self._rehydrate_article_citations(session)
+        return session
+
+    def _rehydrate_article_citations(self, session: Dict):
+        from .paperstorm_sources import load_article_passages
+
+        passage_cache = {}
+        for message in session.get("messages") or []:
+            metadata = message.get("metadata") or {}
+            task_id = metadata.get("used_task_id") or session.get("task_id") or ""
+            citations = metadata.get("citations") or []
+            if not task_id or not citations:
+                continue
+            if task_id not in passage_cache:
+                passage_cache[task_id] = {
+                    "article-{0}".format(item["paragraph_index"]): item
+                    for item in load_article_passages(
+                        Path(self.task_service.results_dir) / task_id
+                    )
+                }
+            for citation in citations:
+                if citation.get("source_type") != "article":
+                    continue
+                passage = passage_cache[task_id].get(
+                    citation.get("chunk_id") or citation.get("document_id") or ""
+                )
+                if not passage:
+                    continue
+                citation.update(
+                    {
+                        "title": passage["title"],
+                        "url": "",
+                        "article_anchor": passage["article_anchor"],
+                        "paragraph_index": passage["paragraph_index"],
+                        "section": passage["section"],
+                        "original_sources": passage["original_sources"],
+                    }
+                )
 
     def _write_session(self, session: Dict):
         self._session_path(session["chat_id"]).write_text(

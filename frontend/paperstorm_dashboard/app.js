@@ -132,11 +132,50 @@ async function loadResearchResult(taskId) {
     fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/article`),
     fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/scorecard`),
   ]);
-  $("#article-content").textContent = article.content || "任务完成，但没有生成文章。";
+  renderResearchArticle(article.content || "");
   state.lastArticle = article.content || "";
   $("#download-article-md").disabled = !state.lastArticle;
   renderMetricGrid($("#scorecard"), scorecard, 8);
   $("#research-score-section").classList.toggle("hidden", !Object.keys(scorecard).length);
+}
+
+function renderResearchArticle(content) {
+  const container = $("#article-content");
+  container.innerHTML = "";
+  if (!content.trim()) {
+    container.textContent = "任务完成，但没有生成文章。";
+    return;
+  }
+  let paragraphIndex = 0;
+  content.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean).forEach((block) => {
+    if (block.startsWith("#")) {
+      const level = Math.min(4, Math.max(2, (block.match(/^#+/) || ["##"])[0].length + 1));
+      const heading = document.createElement(`h${level}`);
+      heading.textContent = block.replace(/^#+\s*/, "");
+      container.appendChild(heading);
+      return;
+    }
+    paragraphIndex += 1;
+    const paragraph = document.createElement("p");
+    paragraph.id = `article-paragraph-${paragraphIndex}`;
+    paragraph.dataset.articleAnchor = paragraph.id;
+    paragraph.textContent = block;
+    container.appendChild(paragraph);
+  });
+}
+
+async function focusArticleCitation(anchor, taskId) {
+  if (taskId && state.researchTaskId !== taskId) {
+    state.researchTaskId = taskId;
+    await loadResearchResult(taskId);
+  }
+  setMode("research");
+  const target = document.getElementById(anchor);
+  if (!target) return toast("未找到对应文章段落", "error");
+  $$("#article-content .citation-target").forEach((node) => node.classList.remove("citation-target"));
+  target.classList.add("citation-target");
+  target.scrollIntoView({behavior: "smooth", block: "center"});
+  window.setTimeout(() => target.classList.remove("citation-target"), 3200);
 }
 
 async function loadChatSessions() {
@@ -293,14 +332,26 @@ function renderMessageNode(message) {
       const url = citation.url || "";
       const page = citation.page ? ` · 第 ${escapeHtml(citation.page)} 页` : "";
       const chunk = citation.chunk ? ` · ${escapeHtml(citation.chunk)}` : "";
+      const originalSources = Array.isArray(citation.original_sources) ? citation.original_sources : [];
+      const articleLink = citation.article_anchor
+        ? `<button class="citation-locator" type="button" data-article-anchor="${escapeHtml(citation.article_anchor)}" data-task-id="${escapeHtml(metadata.used_task_id || "")}">定位文章</button>`
+        : "";
       const source = url
-        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">来源</a>`
-        : '<b class="missing-badge">失效</b>';
-      return `<li>${title}${source}${page}${chunk}</li>`;
+        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${title}</a>`
+        : articleLink ? `<span class="citation-title">${title}</span>` : `<span class="citation-title">${title}</span><b class="missing-badge">无可用链接</b>`;
+      const originals = originalSources.length ? `<ul class="original-sources">${originalSources.map((item) => {
+        const sourceTitle = escapeHtml(item.title || `来源 ${item.citation_index || ""}`);
+        const sourceUrl = item.url || "";
+        return `<li><span>[${escapeHtml(item.citation_index || "-")}]</span>${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener">${sourceTitle}</a>` : sourceTitle}</li>`;
+      }).join("")}</ul>` : "";
+      return `<li><div class="citation-row">${source}${articleLink}${page}${chunk}</div>${originals}</li>`;
     }).join("");
     citationsHtml = `<details class="citations"><summary>引用 ${citations.length} 条</summary><ul>${items}</ul></details>`;
   }
   node.innerHTML = `<strong>${role === "user" ? "你" : "PaperStorm"}${version}${regenerated}</strong><p>${escapeHtml(message.content)}</p>${citationsHtml}`;
+  node.querySelectorAll("[data-article-anchor]").forEach((button) => {
+    button.addEventListener("click", () => focusArticleCitation(button.dataset.articleAnchor, button.dataset.taskId));
+  });
   return node;
 }
 

@@ -145,6 +145,7 @@ def _run_dir_signature(run_dir):
         "storm_gen_article_polished.txt",
         "storm_gen_article.txt",
         "raw_search_results.json",
+        "url_to_info.json",
     ):
         path = Path(run_dir) / name
         if path.exists():

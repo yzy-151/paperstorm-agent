@@ -7,4 +7,4 @@ from .rm import *
 from .utils import *
 from .dataclass import *
 
-__version__ = "5.8.0"
+__version__ = "5.8.1"

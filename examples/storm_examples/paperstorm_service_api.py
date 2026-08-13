@@ -40,7 +40,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         finally:
             service.observability.flush()
 
-    app = FastAPI(title="PaperStorm Agent Service", version="5.8", lifespan=lifespan)
+    app = FastAPI(title="PaperStorm Agent Service", version="5.8.1", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

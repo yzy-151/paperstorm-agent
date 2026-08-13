@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from .paperstorm_memory import PaperStormMemoryStore
+from .paperstorm_sources import load_article_passages
 
 
 class PaperStormKnowledgeBase:
@@ -16,27 +17,22 @@ class PaperStormKnowledgeBase:
     def from_run_dir(cls, run_dir):
         run_dir = Path(run_dir)
         documents = []
-        article = _read_first_existing(
-            [
-                run_dir / "storm_gen_article_polished.txt",
-                run_dir / "storm_gen_article.txt",
-            ]
-        )
-        if article:
-            for index, paragraph in enumerate(_split_paragraphs(article), start=1):
-                documents.append(
-                    {
-                        "id": "article-{0}".format(index),
-                        "chunk_id": "article-{0}".format(index),
-                        "title": "Generated article paragraph {0}".format(index),
-                        "content": paragraph,
-                        "url": str(run_dir / "storm_gen_article_polished.txt"),
-                        "source": "article",
-                        "source_type": "article",
-                        "score": 0,
-                        "metadata": {"paragraph_index": index},
-                    }
-                )
+        for passage in load_article_passages(run_dir):
+            index = passage["paragraph_index"]
+            paragraph = passage["content"]
+            documents.append(
+                {
+                    "id": "article-{0}".format(index),
+                    "chunk_id": "article-{0}".format(index),
+                    "title": passage["title"],
+                    "content": paragraph,
+                    "url": "",
+                    "source": "article",
+                    "source_type": "article",
+                    "score": 0,
+                    "metadata": passage,
+                }
+            )
 
         raw_results = _read_json(run_dir / "raw_search_results.json", [])
         for index, result in enumerate(raw_results if isinstance(raw_results, list) else [], start=1):
@@ -165,7 +161,8 @@ def _memory_hint(memory_context: Dict):
 
 
 def _citation_from_doc(index: int, doc: Dict):
-    return {
+    metadata = doc.get("metadata") or {}
+    citation = {
         "id": index,
         "title": doc.get("title") or "",
         "url": doc.get("url") or "",
@@ -175,6 +172,16 @@ def _citation_from_doc(index: int, doc: Dict):
         "chunk_id": doc.get("chunk_id") or doc.get("id") or "",
         "score": doc.get("score", 0),
     }
+    if citation["source_type"] == "article":
+        citation.update(
+            {
+                "article_anchor": metadata.get("article_anchor") or "",
+                "paragraph_index": metadata.get("paragraph_index"),
+                "section": metadata.get("section") or "",
+                "original_sources": metadata.get("original_sources") or [],
+            }
+        )
+    return citation
 
 
 def _kb_answer_prompt(question: str, evidence: List[Dict]) -> str:

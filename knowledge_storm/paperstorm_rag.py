@@ -103,20 +103,17 @@ class PaperStormRAGIndex:
     ):
         run_dir = Path(run_dir)
         documents = []
-        article = _read_first_existing(
-            [
-                run_dir / "storm_gen_article_polished.txt",
-                run_dir / "storm_gen_article.txt",
-            ]
-        )
-        if article:
+        from .paperstorm_sources import load_article_passages
+
+        for passage in load_article_passages(run_dir):
             documents.append(
                 {
-                    "document_id": "generated_article",
-                    "title": "Generated PaperStorm Article",
-                    "text": article,
+                    "document_id": "article-{0}".format(passage["paragraph_index"]),
+                    "title": passage["title"],
+                    "text": passage["content"],
                     "source_type": "article",
-                    "url": str(run_dir / "storm_gen_article_polished.txt"),
+                    "url": "",
+                    "metadata": passage,
                 }
             )
         for index, result in enumerate(_read_json(run_dir / "raw_search_results.json", []), start=1):

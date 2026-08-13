@@ -267,7 +267,7 @@ class BenchmarkRunManager:
             trace = self.observability.trace(
                 "paperstorm.benchmark",
                 input={"benchmark_id": benchmark_id, "profile": profile},
-                metadata={"run_id": run_id, "version": "5.8.0"},
+                metadata={"run_id": run_id, "version": "5.8.1"},
                 session_id=run_id,
                 tags=["benchmark", profile],
             )

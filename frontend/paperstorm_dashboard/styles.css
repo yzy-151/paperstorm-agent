@@ -135,7 +135,17 @@ summary { color: var(--muted); font-size: 12px; cursor: pointer; }
 .chat-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
 .session-meta { margin: 0; }.session-meta dt { color: #687583; font-size: 9px; }.session-meta dd { margin: 4px 0 13px; overflow-wrap: anywhere; font-size: 11px; }
 .version-badge, .missing-badge { display: inline-block; margin-left: 5px; padding: 1px 5px; background: #18302d; color: var(--teal); font-size: 9px; }
-.citations summary { color: var(--blue); font-size: 11px; }.citations li { color: var(--muted); font-size: 11px; }
+.citations summary { color: var(--blue); font-size: 11px; }
+.citations > ul { display: grid; gap: 8px; padding-left: 18px; }
+.citations > ul > li { color: var(--muted); font-size: 11px; }
+.citation-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.citation-title { color: var(--text); }
+.citation-locator { min-height: 24px; padding: 2px 8px; border-color: var(--blue); background: transparent; color: var(--blue); font-size: 10px; }
+.original-sources { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 12px; list-style: none; }
+.original-sources li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 5px; }
+.original-sources a { color: var(--teal); overflow-wrap: anywhere; }
+.article p { scroll-margin-top: 92px; border-left: 2px solid transparent; padding-left: 12px; transition: background .2s ease, border-color .2s ease; }
+.article .citation-target { border-left-color: var(--teal); background: rgba(28, 205, 183, .1); }
 
 body[data-mode="developer"] .workspace-shell { grid-template-columns: 208px minmax(0, 1fr); }
 body[data-mode="developer"] .workspace-main { grid-column: 2; }

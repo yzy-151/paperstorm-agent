@@ -101,6 +101,53 @@ class PaperStormMemoryQATest(unittest.TestCase):
         self.assertEqual(answer["citations"][0]["source_type"], "article")
         self.assertIn("chunk_id", answer["citations"][0])
 
+    def test_article_citation_keeps_article_locator_and_original_paper_sources(self):
+        from knowledge_storm.paperstorm_qa import PaperStormKnowledgeBase
+
+        run_dir = self.make_run_dir(
+            {
+                "storm_gen_article_polished.txt": (
+                    "# 定义与核心概念\n\n"
+                    "物理 AI 连接数字空间与物理世界。[1]\n\n"
+                    "# 技术基础\n\n"
+                    "具身智能依赖多模态感知。[2]\n"
+                ),
+                "url_to_info.json": {
+                    "url_to_unified_index": {
+                        "https://arxiv.org/abs/2407.06886": 1,
+                        "https://arxiv.org/abs/2509.12989": 2,
+                    },
+                    "url_to_info": {
+                        "https://arxiv.org/abs/2407.06886": {
+                            "title": "Embodied AI Survey",
+                            "url": "https://arxiv.org/abs/2407.06886",
+                            "meta": {"authors": ["A. Author"], "published": "2024-07-09"},
+                        },
+                        "https://arxiv.org/abs/2509.12989": {
+                            "title": "PANORAMA",
+                            "url": "https://arxiv.org/abs/2509.12989",
+                        },
+                    },
+                },
+                "raw_search_results.json": [],
+            }
+        )
+
+        kb = PaperStormKnowledgeBase.from_run_dir(run_dir)
+        answer = kb.answer_question("物理 AI 如何连接现实世界？", top_k=1)
+        citation = answer["citations"][0]
+
+        self.assertEqual(citation["title"], "定义与核心概念 · 第 1 段")
+        self.assertEqual(citation["article_anchor"], "article-paragraph-1")
+        self.assertEqual(citation["paragraph_index"], 1)
+        self.assertEqual(citation["url"], "")
+        self.assertEqual(citation["original_sources"][0]["title"], "Embodied AI Survey")
+        self.assertEqual(
+            citation["original_sources"][0]["url"],
+            "https://arxiv.org/abs/2407.06886",
+        )
+        self.assertNotIn("Generated article paragraph", json.dumps(citation))
+
     def test_kb_answer_generator_produces_generated_answer(self):
         from knowledge_storm.paperstorm_qa import PaperStormKnowledgeBase
 
