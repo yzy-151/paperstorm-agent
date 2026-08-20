@@ -16,7 +16,7 @@ class PaperStormUIV57Test(unittest.TestCase):
         cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     def test_product_uses_v57_workspace_shell(self):
-        self.assertIn("v5.9", self.html)
+        self.assertIn("v6.0", self.html)
         self.assertIn('class="workspace-rail"', self.html)
         self.assertIn('class="workspace-main"', self.html)
         self.assertIn('class="workspace-inspector product-only"', self.html)
@@ -28,7 +28,7 @@ class PaperStormUIV57Test(unittest.TestCase):
 
     def test_readme_presents_new_screenshots_diagram_and_benchmark_icons(self):
         for marker in (
-            "dashboard-research-v59.png",
+            "dashboard-research-v60.png",
             "dashboard-developer-v57.png",
             "paperstorm-executive-overview-v57.svg",
             "benchmark-icon-retrieval.svg",

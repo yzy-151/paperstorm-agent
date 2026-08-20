@@ -1,9 +1,82 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 class PaperStormRouterLLMTest(unittest.TestCase):
+    def test_dynamic_output_budget_scales_with_response_contract(self):
+        from knowledge_storm.paperstorm_router_llm import select_output_budget
+
+        self.assertEqual(select_output_budget("你好", {}), 2048)
+        self.assertEqual(
+            select_output_budget(
+                "继续写下去", {"continue_previous": True, "task": "续写长篇故事"}
+            ),
+            16384,
+        )
+        self.assertGreaterEqual(
+            select_output_budget("请写一篇一万字的报告", {"task": "长篇报告"}),
+            20000,
+        )
+        self.assertLessEqual(
+            select_output_budget("请写一篇十万字小说", {"task": "超长小说"}),
+            65536,
+        )
+
+    def test_length_finish_reason_continues_once_and_aggregates_telemetry(self):
+        from knowledge_storm.paperstorm_router_llm import complete_chat_with_telemetry
+
+        calls = []
+
+        def completion(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return {
+                    "choices": [{"finish_reason": "length", "message": {"content": "第一段"}}],
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
+                }
+            return {
+                "choices": [{"finish_reason": "stop", "message": {"content": "第二段"}}],
+                "usage": {"prompt_tokens": 40, "completion_tokens": 10, "total_tokens": 50},
+            }
+
+        result = complete_chat_with_telemetry(
+            completion=completion,
+            model="openai/deepseek-v4-flash",
+            prompt="请续写",
+            api_key="test",
+            api_base="https://example.invalid",
+            output_budget=16384,
+            timeout=25,
+        )
+
+        self.assertEqual(result["content"], "第一段第二段")
+        self.assertEqual(result["segments"], 2)
+        self.assertFalse(result["truncated"])
+        self.assertEqual(result["usage"]["total_tokens"], 170)
+        self.assertIn("不要重复开头", calls[1]["messages"][0]["content"])
+
+    def test_provider_failure_returns_typed_error_instead_of_greeting(self):
+        from knowledge_storm.paperstorm_router_llm import complete_chat_with_telemetry
+
+        def completion(**_kwargs):
+            raise TimeoutError("provider timed out")
+
+        result = complete_chat_with_telemetry(
+            completion=completion,
+            model="openai/deepseek-v4-flash",
+            prompt="继续故事",
+            api_key="test",
+            api_base="https://example.invalid",
+            output_budget=16384,
+            timeout=25,
+        )
+
+        self.assertEqual(result["error"]["type"], "timeout")
+        self.assertEqual(result["content"], "")
+        self.assertNotIn("你好", result["content"])
+
     def make_service(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

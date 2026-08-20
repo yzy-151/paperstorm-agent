@@ -2,6 +2,61 @@ import unittest
 
 
 class PaperStormIntentRouterTest(unittest.TestCase):
+    def test_planner_routes_response_action_without_creative_intent_enum(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        def fake_llm(_prompt):
+            return {
+                "content": (
+                    '{"action":"respond","tool_calls":[],"rewritten_query":"继续写故事",'
+                    '"working_subject":"","confidence":0.98,"reason":"continue current text",'
+                    '"response_contract":{"task":"续写用户未完成的故事",'
+                    '"continue_previous":true,"requires_citations":false,'
+                    '"style_notes":["保持原文风格","不要自我介绍"]}}'
+                ),
+                "finish_reason": "stop",
+                "usage": {"prompt_tokens": 80, "completion_tokens": 42},
+                "cost_usd": 0.0001,
+                "error": None,
+            }
+
+        decision = PaperStormIntentRouter(llm_router=fake_llm).route(
+            message="继续写下去",
+            session={"topic": "PIM 无源互调", "task_id": "task-pim"},
+            context_window=[{"role": "user", "content": "从前有一座城……"}],
+        )
+
+        self.assertEqual(decision["action"], "respond")
+        self.assertEqual(decision["tool_calls"], [])
+        self.assertTrue(decision["response_contract"]["continue_previous"])
+        self.assertEqual(decision["planner_status"], "success")
+        self.assertNotIn("story", decision.get("intent", ""))
+
+    def test_invalid_planner_json_exposes_typed_error_on_safe_fallback(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        decision = PaperStormIntentRouter(llm_router=lambda _prompt: "not-json").route(
+            message="继续写下去",
+            session={},
+            context_window=[{"role": "user", "content": "从前有一座城……"}],
+        )
+
+        self.assertEqual(decision["action"], "respond")
+        self.assertEqual(decision["planner_status"], "fallback")
+        self.assertEqual(decision["planner_error"]["type"], "invalid_response")
+
+    def test_rule_fallback_routes_registered_tools_not_content_types(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        router = PaperStormIntentRouter()
+        evidence = router.route("PIM 是什么？", session={}, context_window=[])
+        research = router.route("请调研 PIM 相关论文", session={}, context_window=[])
+
+        self.assertEqual(evidence["action"], "tool_call")
+        self.assertEqual(evidence["tool_calls"][0]["name"], "evidence.search")
+        self.assertEqual(research["action"], "tool_call")
+        self.assertEqual(research["tool_calls"][0]["name"], "research.start")
+
     def test_llm_planner_is_not_vetoed_by_topic_biased_keyword_rules(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
 

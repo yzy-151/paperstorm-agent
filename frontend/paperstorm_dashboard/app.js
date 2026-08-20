@@ -130,13 +130,64 @@ function resetPipelineGraph() {
   Object.keys(pipelineNodes).forEach((nodeId) => setPipelineNodeStatus(nodeId, "waiting", "尚未运行"));
 }
 
-function setPipelineNodeStatus(nodeId, status, detail = "") {
-  state.pipelineStatus[nodeId] = {status, detail: detail || state.pipelineStatus[nodeId]?.detail || ""};
+function formatDuration(milliseconds) {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "-";
+  return milliseconds < 1000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1000).toFixed(2)} s`;
+}
+
+function formatPipelineTelemetry(trace = {}) {
+  const details = trace.details && typeof trace.details === "object" ? trace.details : {};
+  const usage = trace.usage || trace.token_usage || details.usage || {};
+  const durationMs = Number(trace.duration_ms ?? trace.latency_ms ?? details.duration_ms ?? details.latency_ms);
+  const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? trace.prompt_tokens ?? details.prompt_tokens ?? 0);
+  const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? trace.completion_tokens ?? details.completion_tokens ?? 0);
+  const totalTokens = Number(usage.total_tokens ?? trace.total_tokens ?? details.total_tokens ?? (promptTokens + completionTokens));
+  const costUsd = Number(trace.cost_usd ?? details.cost_usd);
+  return {
+    input: trace.input ?? details.input,
+    activity: trace.activity ?? details.activity ?? trace.message,
+    output: trace.output ?? details.output,
+    durationMs: Number.isFinite(durationMs) ? durationMs : undefined,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    costUsd: Number.isFinite(costUsd) ? costUsd : undefined,
+    finishReason: trace.finish_reason ?? details.finish_reason,
+    error: trace.error?.message ?? trace.error_message ?? details.error?.message ?? details.error,
+  };
+}
+
+function setPipelineNodeStatus(nodeId, status, detail = "", telemetry = {}) {
+  const previous = state.pipelineStatus[nodeId] || {};
+  const now = performance.now();
+  const startedAt = status === "active" && previous.status !== "active" ? now : previous.startedAt;
+  const measuredDuration = status === "complete" || status === "failed"
+    ? telemetry.durationMs ?? (startedAt ? now - startedAt : previous.durationMs)
+    : telemetry.durationMs ?? previous.durationMs;
+  state.pipelineStatus[nodeId] = {
+    ...previous,
+    ...telemetry,
+    status,
+    startedAt,
+    durationMs: measuredDuration,
+    detail: detail || telemetry.activity || previous.detail || "",
+  };
   const node = $(`.pipeline-node[data-node="${nodeId}"]`);
   if (!node) return;
   node.classList.remove("waiting", "active", "complete", "failed");
   node.classList.add(status);
   node.querySelector("em").textContent = {waiting: "WAIT", active: "RUN", complete: "DONE", failed: "ERR"}[status] || status;
+  let time = node.querySelector(".node-time");
+  if ((status === "complete" || status === "failed") && Number.isFinite(measuredDuration)) {
+    if (!time) {
+      time = document.createElement("time");
+      time.className = "node-time";
+      node.appendChild(time);
+    }
+    time.textContent = formatDuration(measuredDuration);
+  } else {
+    time?.remove();
+  }
   updatePipelineWires();
   if (node.classList.contains("selected")) showPipelineNode(nodeId);
 }
@@ -193,9 +244,17 @@ function showPipelineNode(nodeId) {
   const runtime = state.pipelineStatus[nodeId] || {status: "waiting", detail: "尚未运行"};
   $("#pipeline-node-title").textContent = definition.title;
   $("#pipeline-node-description").textContent = definition.description;
-  $("#pipeline-node-input").textContent = definition.input;
-  $("#pipeline-node-output").textContent = definition.output;
+  $("#pipeline-node-input").textContent = runtime.input ? JSON.stringify(runtime.input, null, 2) : definition.input;
+  $("#pipeline-node-activity").textContent = runtime.activity || runtime.detail || "等待运行";
+  $("#pipeline-node-output").textContent = runtime.output ? JSON.stringify(runtime.output, null, 2) : definition.output;
   $("#pipeline-node-detail").textContent = runtime.detail || "等待 Trace 事件";
+  $("#pipeline-node-duration").textContent = formatDuration(runtime.durationMs);
+  $("#pipeline-node-tokens").textContent = runtime.totalTokens
+    ? `${runtime.totalTokens.toLocaleString()} (${runtime.promptTokens || 0} in / ${runtime.completionTokens || 0} out)`
+    : "-";
+  $("#pipeline-node-cost").textContent = Number.isFinite(runtime.costUsd) ? `$${runtime.costUsd.toFixed(6)}` : "-";
+  $("#pipeline-node-finish").textContent = runtime.finishReason || "-";
+  $("#pipeline-node-error").textContent = runtime.error || "-";
   $("#pipeline-node-status").textContent = runtime.status.toUpperCase();
   $("#pipeline-node-status").className = runtime.status;
 }
@@ -228,28 +287,33 @@ function applyPipelineTrace(trace) {
   const eventName = String(trace.event || trace.node || "").toLowerCase();
   const path = String(trace.path || "").toLowerCase();
   const detail = trace.tool_name || trace.tool || trace.retriever || trace.path || eventName;
+  const telemetry = formatPipelineTelemetry(trace);
   if (eventName === "run_start") {
-    setPipelineNodeStatus("request", "complete", "运行配置已冻结");
-    setPipelineNodeStatus("persona", "active", "生成调研角色与视角");
+    setPipelineNodeStatus("request", "complete", "运行配置已冻结", telemetry);
+    setPipelineNodeStatus("persona", "active", "生成调研角色与视角", telemetry);
   } else if (eventName.includes("retrieval_start") || eventName === "tool_start") {
     ["persona", "dialogue", "query"].forEach((nodeId) => setPipelineNodeStatus(nodeId, "complete"));
-    setPipelineNodeStatus("retrieval", "active", detail);
+    setPipelineNodeStatus("retrieval", "active", detail, telemetry);
   } else if (eventName.includes("retrieval_end") || eventName === "tool_end") {
-    setPipelineNodeStatus("retrieval", "complete", detail);
-    setPipelineNodeStatus("evidence", "active", `${trace.result_count ?? "-"} 条候选证据`);
+    setPipelineNodeStatus("retrieval", "complete", detail, telemetry);
+    setPipelineNodeStatus("evidence", "active", `${trace.result_count ?? "-"} 条候选证据`, telemetry);
   } else if (eventName === "artifact_written" && path.includes("outline")) {
     setPipelineNodeStatus("evidence", "complete", "证据索引已建立");
-    setPipelineNodeStatus("outline", "complete", detail);
+    setPipelineNodeStatus("outline", "complete", detail, telemetry);
     setPipelineNodeStatus("writer", "active", "按章节生成内容");
   } else if (eventName === "artifact_written" && path.includes("article_polished")) {
     setPipelineNodeStatus("writer", "complete", "文章草稿已生成");
-    setPipelineNodeStatus("polish", "complete", detail);
+    setPipelineNodeStatus("polish", "complete", detail, telemetry);
     setPipelineNodeStatus("evaluate", "active", "检查引用与质量指标");
   } else if (eventName === "artifact_written" && path.includes("article")) {
-    setPipelineNodeStatus("writer", "complete", detail);
+    setPipelineNodeStatus("writer", "complete", detail, telemetry);
     setPipelineNodeStatus("polish", "active", "去重并统一结构");
   } else if (eventName === "run_end") {
-    Object.keys(pipelineNodes).forEach((nodeId) => setPipelineNodeStatus(nodeId, trace.success === false ? "failed" : "complete", detail));
+    const activeNode = Object.keys(state.pipelineStatus).find((nodeId) => state.pipelineStatus[nodeId]?.status === "active");
+    Object.keys(pipelineNodes).forEach((nodeId) => {
+      const failed = trace.success === false && nodeId === (activeNode || "deliver");
+      setPipelineNodeStatus(nodeId, failed ? "failed" : "complete", detail, nodeId === "deliver" || failed ? telemetry : {});
+    });
   }
 }
 
@@ -386,6 +450,7 @@ async function createChat() {
         topic: $("#task-topic").value.trim(),
         run_mode: $("#chat-run-mode").value,
         retriever: $("#chat-retriever").value,
+        memory_retrieval_mode: $("#chat-memory-mode").value,
         output_language: "zh",
         memory_enabled: true,
       }),

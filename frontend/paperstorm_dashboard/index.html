@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PaperStorm Agent Workspace</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2300c2a8'/%3E%3Cpath d='M8 24V8h15v4H13v3h8v4h-8v5z' fill='%23060a0e'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="styles.css?v=5.9.0" />
+    <link rel="stylesheet" href="styles.css?v=6.0.0" />
   </head>
   <body data-mode="research">
     <header class="topbar">
@@ -16,7 +16,7 @@
       <div class="topbar-context"><span>WORKSPACE</span><strong id="workspace-title">论文调研</strong></div>
       <div class="topbar-actions">
         <span class="service-pill" id="service-state"><i class="status-dot"></i><span>连接中</span></span>
-        <span class="release-pill"><small>release</small><strong>v5.9</strong></span>
+        <span class="release-pill"><small>release</small><strong>v6.0</strong></span>
       </div>
     </header>
 
@@ -82,7 +82,17 @@
                 <div><span>NODE INSPECTOR</span><b id="pipeline-node-status">WAITING</b></div>
                 <h3 id="pipeline-node-title">选择一个节点</h3>
                 <p id="pipeline-node-description">点击节点查看职责、输入输出和当前运行信息。</p>
-                <dl><dt>INPUT</dt><dd id="pipeline-node-input">-</dd><dt>OUTPUT</dt><dd id="pipeline-node-output">-</dd><dt>LIVE DETAIL</dt><dd id="pipeline-node-detail">尚未运行</dd></dl>
+                <dl>
+                  <dt>INPUT</dt><dd id="pipeline-node-input">-</dd>
+                  <dt>ACTIVITY</dt><dd id="pipeline-node-activity">等待运行</dd>
+                  <dt>OUTPUT</dt><dd id="pipeline-node-output">-</dd>
+                  <dt>LIVE DETAIL</dt><dd id="pipeline-node-detail">尚未运行</dd>
+                  <dt>DURATION</dt><dd id="pipeline-node-duration">-</dd>
+                  <dt>TOKENS</dt><dd id="pipeline-node-tokens">-</dd>
+                  <dt>COST</dt><dd id="pipeline-node-cost">-</dd>
+                  <dt>FINISH</dt><dd id="pipeline-node-finish">-</dd>
+                  <dt>ERROR</dt><dd id="pipeline-node-error">-</dd>
+                </dl>
               </aside>
             </div>
           </section>
@@ -164,6 +174,7 @@
           <span class="rail-label">运行配置</span>
           <label>问答模式<select id="chat-run-mode"><option value="paperstorm" selected>真实 API</option><option value="fake">本地演示</option></select></label>
           <label>检索器<select id="chat-retriever"><option value="arxiv">arXiv</option><option value="local-pdf">本地 PDF</option></select></label>
+          <label>记忆召回<select id="chat-memory-mode"><option value="lexical" selected>FTS / BM25（轻量）</option><option value="semantic">真实 Embedding（语义）</option></select></label>
         </div>
         <div class="inspector-block"><span class="rail-label">当前上下文</span><dl class="session-meta"><dt>SESSION</dt><dd id="chat-session-id">尚未创建</dd><dt>CONTEXT</dt><dd id="chat-context-summary">等待消息</dd></dl></div>
         <div class="inspector-block"><span class="rail-label">能力栈</span><ul class="capability-list"><li><i class="teal"></i>Hybrid Retrieval</li><li><i class="blue"></i>Evidence Rerank</li><li><i class="violet"></i>Temporal Memory</li><li><i class="amber"></i>Context Compaction</li></ul></div>
@@ -172,6 +183,6 @@
     </div>
 
     <div class="toast hidden" id="toast" role="status"></div>
-    <script src="app.js?v=5.9.0"></script>
+    <script src="app.js?v=6.0.0"></script>
   </body>
 </html>

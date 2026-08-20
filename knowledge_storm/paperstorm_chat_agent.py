@@ -38,11 +38,15 @@ class PaperStormChatAgent:
         user_id: str = "local-user",
         tenant_id: str = "local",
         memory_enabled: bool = True,
+        memory_retrieval_mode: str = "lexical",
         **options,
     ) -> Dict:
         chat_id = uuid.uuid4().hex
         memory_namespace = _memory_namespace(user_id)
-        self._long_term_memory().set_enabled(memory_namespace, memory_enabled)
+        memory_retrieval_mode = _memory_retrieval_mode(memory_retrieval_mode)
+        self._long_term_memory(memory_retrieval_mode).set_enabled(
+            memory_namespace, memory_enabled
+        )
         session = {
             "chat_id": chat_id,
             "title": title or topic or "PaperStorm Chat",
@@ -59,6 +63,7 @@ class PaperStormChatAgent:
             "tenant_id": str(tenant_id or "local"),
             "memory_namespace": memory_namespace,
             "memory_enabled": bool(memory_enabled),
+            "memory_retrieval_mode": memory_retrieval_mode,
             "task_id": options.pop("task_id", "") or "",
             "messages": [],
             "compressed_context": {},
@@ -413,13 +418,17 @@ class PaperStormChatAgent:
         namespace = session.get("memory_namespace") or _memory_namespace(
             session.get("user_id") or "local-user"
         )
-        return self._long_term_memory().search(namespace, query, top_k=5)
+        return self._long_term_memory(
+            session.get("memory_retrieval_mode") or "lexical"
+        ).search(namespace, query, top_k=5)
 
     def _write_long_term_memory(self, session: Dict, user_message: Dict):
         namespace = session.get("memory_namespace") or _memory_namespace(
             session.get("user_id") or "local-user"
         )
-        service = self._long_term_memory()
+        service = self._long_term_memory(
+            session.get("memory_retrieval_mode") or "lexical"
+        )
         if not service.is_enabled(namespace):
             return {"status": "disabled", "reason": "namespace memory is disabled"}
         return service.ingest_message(
@@ -429,8 +438,11 @@ class PaperStormChatAgent:
             subject=session.get("user_id") or "local-user",
         )
 
-    def _long_term_memory(self):
-        return LongTermMemoryService(Path(self.task_service.root_dir) / "memory_service_v56")
+    def _long_term_memory(self, retrieval_mode="lexical"):
+        return LongTermMemoryService(
+            Path(self.task_service.root_dir) / "memory_service_v56",
+            retrieval_mode=_memory_retrieval_mode(retrieval_mode),
+        )
 
     def _session_recall_store(self):
         return SessionRecallStore(Path(self.task_service.root_dir) / "session_recall.sqlite3")
@@ -451,6 +463,7 @@ class PaperStormChatAgent:
             forbidden_keywords=session.get("forbidden_keywords") or [],
             context_window=context_window or [],
             source_message_id=user_message["id"],
+            memory_retrieval_mode=session.get("memory_retrieval_mode") or "lexical",
         )
 
     def _answer_message(
@@ -892,6 +905,13 @@ def _tool_decision(router_decision: Dict, answer: Dict):
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _memory_retrieval_mode(value):
+    mode = str(value or "lexical").strip().lower()
+    if mode not in {"lexical", "semantic"}:
+        raise ValueError("memory_retrieval_mode must be lexical or semantic")
+    return mode
 
 
 def _safe_user_id(user_id: str):

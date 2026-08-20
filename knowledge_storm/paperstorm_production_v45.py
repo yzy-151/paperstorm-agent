@@ -694,6 +694,7 @@ class PaperStormProductionRuntimeV45:
                 memory_service = LongTermMemoryService(
                     Path(self.task_service.root_dir) / "memory_service_v56",
                     candidate_extractor=build_memory_extractor_callable(enabled=real_mode),
+                    retrieval_mode=payload.get("memory_retrieval_mode") or "lexical",
                 )
                 runtime = self.graph_runtime_class(
                     self.root_dir / "langgraph_v44",

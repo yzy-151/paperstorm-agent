@@ -33,6 +33,65 @@ class CountingEmbedding(KeywordEmbedding):
 
 
 class PaperStormMemoryV56Tests(unittest.TestCase):
+    def test_lexical_mode_never_calls_embedding_provider(self):
+        from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = CountingEmbedding()
+            service = LongTermMemoryServiceV56(
+                Path(temp_dir) / "memory",
+                embedding_provider=provider,
+                retrieval_mode="lexical",
+            )
+            service.upsert(
+                namespace="tenant:user",
+                memory_type="fact",
+                subject="pim",
+                content="PIM 指无源互调",
+                canonical_key="pim",
+            )
+            result = service.search("tenant:user", "PIM", top_k=1)
+
+        self.assertEqual(provider.embed_calls, 0)
+        self.assertEqual(provider.embed_query_calls, 0)
+        self.assertEqual(result["retrieval_mode"], "lexical")
+        self.assertEqual(result["embedding_backend"], "disabled")
+        self.assertNotIn("dense", result["results"][0]["scores"])
+
+    def test_semantic_mode_rejects_hash_embedding(self):
+        from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
+        from knowledge_storm.paperstorm_rag import HashEmbeddingProvider
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(ValueError, "real semantic embedding"):
+                LongTermMemoryServiceV56(
+                    Path(temp_dir) / "memory",
+                    embedding_provider=HashEmbeddingProvider(64),
+                    retrieval_mode="semantic",
+                )
+
+    def test_semantic_mode_reports_real_provider_name(self):
+        from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = LongTermMemoryServiceV56(
+                Path(temp_dir) / "memory",
+                embedding_provider=KeywordEmbedding(),
+                retrieval_mode="semantic",
+            )
+            service.upsert(
+                namespace="tenant:user",
+                memory_type="fact",
+                subject="pim",
+                content="PIM 指无源互调",
+                canonical_key="pim",
+            )
+            result = service.search("tenant:user", "无源互调", top_k=1)
+
+        self.assertEqual(result["retrieval_mode"], "semantic")
+        self.assertEqual(result["embedding_backend"], "keyword-test")
+        self.assertIn("dense", result["results"][0]["scores"])
+
     def test_llm_candidate_extractor_is_validated_before_durable_write(self):
         from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
 

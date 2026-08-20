@@ -15,6 +15,17 @@ from unittest import mock
     },
 )
 class PaperStormChatAgentTest(unittest.TestCase):
+    def test_chat_session_persists_explicit_memory_retrieval_mode(self):
+        service = self.make_service()
+        session = service.create_chat_session(
+            run_mode="fake",
+            memory_retrieval_mode="lexical",
+        )
+
+        self.assertEqual(session["memory_retrieval_mode"], "lexical")
+        loaded = service.get_chat_session(session["chat_id"])
+        self.assertEqual(loaded["memory_retrieval_mode"], "lexical")
+
     def make_service(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

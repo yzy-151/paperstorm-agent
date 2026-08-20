@@ -40,6 +40,7 @@ class ConversationRequestV44(BaseModel):
     context_window: List[Dict] = Field(default_factory=list)
     allow_deep_research: bool = True
     source_message_id: str = ""
+    memory_retrieval_mode: str = "lexical"
 
 
 class ConversationStateV44(TypedDict, total=False):
@@ -58,6 +59,7 @@ class ConversationStateV44(TypedDict, total=False):
     context_window: List[Dict]
     allow_deep_research: bool
     source_message_id: str
+    memory_retrieval_mode: str
     router_decision: Dict
     memory_recall: Dict
     memory_write: Dict
@@ -79,6 +81,8 @@ class ConversationStateV44(TypedDict, total=False):
     retrieval_stack: str
     retrieval_mode: str
     escalate_to_retrieval: bool
+    llm_call: Dict
+    llm_error: Dict
 
 
 class StormDeepResearchToolV44:
@@ -177,6 +181,8 @@ class StormDeepResearchToolV44:
             "decision": result.get("decision") or {},
             "retrieval_stack": "storm_deep_research_tool",
             "retrieval_mode": "",
+            "llm_call": {},
+            "llm_error": {},
         }
 
 
@@ -372,7 +378,13 @@ class PaperStormLangGraphRuntime:
         builder.add_conditional_edges(
             "classify",
             self._after_classify,
-            {"memory_recall": "memory_recall", "refuse_or_clarify": "refuse_or_clarify"},
+            {
+                "casual_chat": "casual_chat",
+                "memory_recall": "memory_recall",
+                "knowledge_retrieval": "knowledge_retrieval",
+                "deep_research": "deep_research",
+                "refuse_or_clarify": "refuse_or_clarify",
+            },
         )
         builder.add_conditional_edges(
             "memory_recall",
@@ -452,6 +464,10 @@ class PaperStormLangGraphRuntime:
                 started,
                 {"memory_recall": recalled},
                 result_count=len(recalled.get("results") or []),
+                input=str(state.get("message") or "")[:500],
+                activity="检索跨会话长期记忆",
+                retrieval_mode=recalled.get("retrieval_mode", ""),
+                embedding_backend=recalled.get("embedding_backend", ""),
             )
         except Exception as error:
             self._error_event(state, "memory_recall", started, error)
@@ -461,6 +477,8 @@ class PaperStormLangGraphRuntime:
         started = time.perf_counter()
         decision = state.get("router_decision") or {}
         escalate = False
+        llm_call = {}
+        llm_error = {}
         if _is_explicit_memory_write(state["message"]):
             answer = _casual_answer(state["message"], state.get("memory_recall") or {})
             decision = {
@@ -485,7 +503,11 @@ class PaperStormLangGraphRuntime:
             }
         else:
             guard = _rule_guard(state)
-            answer = self._casual_answer(state)
+            llm_call = self._casual_answer(state)
+            answer = str(llm_call.get("content") or "")
+            llm_error = llm_call.get("error") or {}
+            if llm_error:
+                answer = _llm_failure_message(llm_error)
             if answer == RETRIEVE_MARKER:
                 if guard and guard.get("intent") in {"system_help", "clarify"}:
                     # Meta/system questions must be answered, never escalated.
@@ -496,9 +518,23 @@ class PaperStormLangGraphRuntime:
                 else:
                     answer = ""
                     escalate = True
-            elif not answer:
+            elif not answer and not llm_error:
                 answer = _casual_answer(state["message"], state.get("memory_recall") or {})
                 escalate = _needs_research_fallback(state)
+        telemetry = {
+            key: llm_call.get(key)
+            for key in (
+                "finish_reason",
+                "usage",
+                "cost_usd",
+                "latency_ms",
+                "output_budget",
+                "segments",
+                "truncated",
+                "error",
+            )
+            if key in llm_call
+        }
         return self._success_update(
             state,
             "casual_chat",
@@ -512,25 +548,82 @@ class PaperStormLangGraphRuntime:
                 "route": "casual_chat",
                 "router_decision": decision,
                 "escalate_to_retrieval": escalate,
+                "llm_call": telemetry,
+                "llm_error": llm_error,
             },
+            input=str(state.get("message") or "")[:500],
+            activity=(decision.get("response_contract") or {}).get("task", "直接回复"),
+            **telemetry,
         )
 
-    def _casual_answer(self, state: ConversationStateV44) -> str:
-        """Generate the casual reply: LLM first when available, local fallback."""
+    def _casual_answer(self, state: ConversationStateV44) -> Dict:
+        """Generate a typed reply result; never hide provider failures."""
         if self.chat_llm is not None:
             try:
                 reply = self._chat_llm_answer(state)
-                if reply:
+                if reply.get("content") or reply.get("error"):
                     return reply
-            except Exception:
-                pass
-        return _casual_answer(
-            state.get("message") or "",
-            state.get("memory_recall") or {},
-        )
+            except Exception as error:
+                from .paperstorm_router_llm import classify_llm_error
 
-    def _chat_llm_answer(self, state: ConversationStateV44) -> str:
-        return str(self.chat_llm(_casual_chat_prompt(state)) or "").strip()
+                return {
+                    "content": "",
+                    "finish_reason": "error",
+                    "usage": {},
+                    "cost_usd": 0.0,
+                    "latency_ms": 0.0,
+                    "output_budget": 0,
+                    "segments": 0,
+                    "truncated": False,
+                    "error": {
+                        "type": classify_llm_error(error),
+                        "message": str(error),
+                        "recoverable": True,
+                    },
+                }
+        return {
+            "content": _casual_answer(
+                state.get("message") or "", state.get("memory_recall") or {}
+            ),
+            "finish_reason": "local_fallback",
+            "usage": {},
+            "cost_usd": 0.0,
+            "latency_ms": 0.0,
+            "output_budget": 0,
+            "segments": 1,
+            "truncated": False,
+            "error": None,
+        }
+
+    def _chat_llm_answer(self, state: ConversationStateV44) -> Dict:
+        from .paperstorm_router_llm import select_output_budget
+
+        contract = (state.get("router_decision") or {}).get("response_contract") or {}
+        budget = select_output_budget(state.get("message") or "", contract)
+        try:
+            value = self.chat_llm(
+                _casual_chat_prompt(state),
+                response_contract=contract,
+                user_message=state.get("message") or "",
+                output_budget=budget,
+            )
+        except TypeError:
+            value = self.chat_llm(_casual_chat_prompt(state))
+        if isinstance(value, dict):
+            result = dict(value)
+            result.setdefault("output_budget", budget)
+            return result
+        return {
+            "content": str(value or "").strip(),
+            "finish_reason": "unknown",
+            "usage": {},
+            "cost_usd": 0.0,
+            "latency_ms": 0.0,
+            "output_budget": budget,
+            "segments": 1,
+            "truncated": False,
+            "error": None,
+        }
 
     @staticmethod
     def _after_casual_chat(state: ConversationStateV44):
@@ -750,9 +843,18 @@ class PaperStormLangGraphRuntime:
 
     @staticmethod
     def _after_classify(state: ConversationStateV44):
-        if (state.get("router_decision") or {}).get("tool") == "clarify":
+        decision = state.get("router_decision") or {}
+        action = decision.get("action")
+        if action == "clarify":
             return "refuse_or_clarify"
-        return "memory_recall"
+        if action == "respond":
+            return "casual_chat"
+        tool_name = _first_tool_name(decision)
+        return {
+            "memory.search": "memory_recall",
+            "evidence.search": "knowledge_retrieval",
+            "research.start": "deep_research",
+        }.get(tool_name, "refuse_or_clarify")
 
     @staticmethod
     def _after_memory_recall(state: ConversationStateV44):
@@ -763,11 +865,9 @@ class PaperStormLangGraphRuntime:
             return "memory_answer" if results else "casual_chat"
         if _is_explicit_memory_write(message):
             return "casual_chat"
-        if decision.get("tool") == "chat_fallback":
-            return "casual_chat"
-        if decision.get("tool") == "clarify":
-            return "refuse_or_clarify"
-        return "knowledge_retrieval"
+        if _first_tool_name(decision) == "memory.search":
+            return "memory_answer" if results else "casual_chat"
+        return "refuse_or_clarify"
 
     @staticmethod
     def _after_evidence_grade(state: ConversationStateV44):
@@ -832,6 +932,8 @@ class PaperStormLangGraphRuntime:
             "idempotent_replay": False,
             "retrieval_stack": state.get("retrieval_stack", ""),
             "retrieval_mode": state.get("retrieval_mode", ""),
+            "llm_call": state.get("llm_call") or {},
+            "llm_error": state.get("llm_error") or {},
         }
 
     def _request_trace_events(self, thread_id: str, request_id: str):
@@ -932,7 +1034,11 @@ def _casual_answer(message: str, memory_recall: Dict):
         )
     if _is_greeting(message):
         return _greeting_reply(message)
-    return "你好，我是 PaperStorm Research Agent。你可以聊天、查询长期记忆、问已有知识库，或启动论文调研与深度研究。"
+    if str(message or "").strip().lower().startswith(
+        ("继续", "接着", "续写", "往下写", "continue")
+    ):
+        return "当前未连接可用的文本生成模型，无法可靠续写。请切换到真实 API 后重试；已有上下文不会被清空。"
+    return "当前本地回退模式无法可靠生成这类开放回答。请切换到真实 API，或更明确地说明需要检索的资料。"
 
 
 def _casual_chat_prompt(state: ConversationStateV44) -> str:
@@ -952,11 +1058,14 @@ def _casual_chat_prompt(state: ConversationStateV44) -> str:
             label = "系统"
         content = str(item.get("content") or "")[:1200]
         history_lines.append("{0}: {1}".format(label, content))
+    decision = state.get("router_decision") or {}
+    contract = decision.get("response_contract") or {}
     return (
         "你是 PaperStorm Research Agent 的聊天回复生成器。用户可能在聊天、问系统能力，"
         "也可能要求创作或讨论技术。请用自然、简洁、有温度的中文回复，不要提内部实现"
         "细节；用户问到算法/实现细节时，按【系统事实】如实简要回答，不要编造，"
-        "也不要主动展开未问到的内容。不要编造不存在的功能。"
+        "也不要主动展开未问到的内容。不要编造不存在的功能。除非用户明确询问身份，"
+        "禁止用‘你好，我是 PaperStorm’或类似自我介绍作为回答或错误回退。"
         "用户问系统自身（算法、知识库逻辑、实现细节）时，必须直接按【系统事实】回答，"
         "禁止使用检索标记。\n"
         "【系统事实】\n"
@@ -974,15 +1083,46 @@ def _casual_chat_prompt(state: ConversationStateV44) -> str:
         "才只回复一行：{0}\n"
         "最近对话记录：\n{1}\n"
         "跨会话记忆（仅供参考）：{2}\n"
-        "用户消息：{3}\n"
+        "本轮响应契约：{3}\n"
+        "用户消息：{4}\n"
         "回复：".format(
             RETRIEVE_MARKER,
             "\n".join(history_lines) or "（无）",
             "\n".join(memory_lines) or "无",
+            json.dumps(contract, ensure_ascii=False),
             str(state.get("message") or ""),
             run_mode=str(state.get("run_mode") or "fake"),
         )
     )
+
+
+def _first_tool_name(decision: Dict) -> str:
+    calls = (decision or {}).get("tool_calls") or []
+    if calls and isinstance(calls[0], dict):
+        return str(calls[0].get("name") or "")
+    legacy = str((decision or {}).get("tool") or "")
+    return {
+        "memory_search": "memory.search",
+        "research_qa": "evidence.search",
+        "kb_qa": "evidence.search",
+        "paper_research": "research.start",
+    }.get(legacy, "")
+
+
+def _llm_failure_message(error: Dict) -> str:
+    error_type = str((error or {}).get("type") or "provider_error")
+    labels = {
+        "timeout": "模型调用超时",
+        "rate_limit": "模型服务触发限流",
+        "authentication": "模型 API 认证失败",
+        "provider_unavailable": "模型服务当前不可用",
+        "invalid_response": "模型返回格式无效",
+        "provider_error": "模型调用失败",
+    }
+    suggestion = "请稍后重试；当前会话和上下文已保留。"
+    if error_type == "authentication":
+        suggestion = "请检查 API Key 与服务地址；当前会话和上下文已保留。"
+    return "{0}。{1}".format(labels.get(error_type, labels["provider_error"]), suggestion)
 
 
 def _evidence_judge_prompt(

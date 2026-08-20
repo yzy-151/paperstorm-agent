@@ -40,7 +40,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         finally:
             service.observability.flush()
 
-    app = FastAPI(title="PaperStorm Agent Service", version="5.9.0", lifespan=lifespan)
+    app = FastAPI(title="PaperStorm Agent Service", version="6.0.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -127,6 +127,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         user_id: str = "local-user"
         tenant_id: str = "local"
         memory_enabled: bool = True
+        memory_retrieval_mode: str = Field(default="lexical", pattern="^(lexical|semantic)$")
 
     class ChatMessageRequest(BaseModel):
         message: str
@@ -146,6 +147,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         forbidden_keywords: list[str] = []
         context_window: list[dict] = []
         source_message_id: str = ""
+        memory_retrieval_mode: str = Field(default="lexical", pattern="^(lexical|semantic)$")
 
     class CompactContextRequest(BaseModel):
         force: bool = True

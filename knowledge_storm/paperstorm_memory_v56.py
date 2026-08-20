@@ -6,8 +6,10 @@ users to operate a graph database.
 """
 
 import hashlib
+import functools
 import json
 import math
+import os
 import re
 import sqlite3
 import time
@@ -21,17 +23,34 @@ from typing import Dict, Iterable, List, Optional
 import numpy as np
 
 from .paperstorm_memory_v43 import MemoryCandidateV43, MemoryWritePolicy, _model_dump
-from .paperstorm_rag import HashEmbeddingProvider
-
-
 class LongTermMemoryServiceV56:
     """SQLite-backed episodic and long-term memory with temporal retrieval."""
 
-    def __init__(self, root_dir, embedding_provider=None, candidate_extractor=None):
+    def __init__(
+        self,
+        root_dir,
+        embedding_provider=None,
+        candidate_extractor=None,
+        retrieval_mode=None,
+    ):
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.root_dir / "memory_v56.sqlite3"
-        self.embedding_provider = embedding_provider or HashEmbeddingProvider(64)
+        explicit_mode = retrieval_mode is not None
+        self.retrieval_mode = str(
+            retrieval_mode or ("semantic" if embedding_provider is not None else "lexical")
+        ).strip().lower()
+        if self.retrieval_mode not in {"lexical", "semantic"}:
+            raise ValueError("memory retrieval_mode must be lexical or semantic")
+        if self.retrieval_mode == "lexical":
+            self.embedding_provider = None
+        else:
+            self.embedding_provider = embedding_provider or build_memory_embedding_provider()
+            if explicit_mode and _is_hash_provider(self.embedding_provider):
+                raise ValueError(
+                    "semantic memory requires a real semantic embedding model; "
+                    "hash embeddings are allowed only in explicit offline benchmark fixtures"
+                )
         self.candidate_extractor = candidate_extractor
         self._initialize()
 
@@ -320,7 +339,13 @@ class LongTermMemoryServiceV56:
             self._event(connection, namespace, "memory_upserted", {"memory_id": memory_id, "supersedes_id": supersedes_id})
             row = connection.execute("SELECT * FROM memory_facts WHERE id=?", (memory_id,)).fetchone()
             result = self._fact_dict(connection, row)
-            self._store_vector(connection, memory_id, namespace, self._embed_text(_search_text(result)))
+            if self.embedding_provider is not None:
+                self._store_vector(
+                    connection,
+                    memory_id,
+                    namespace,
+                    self._embed_text(_search_text(result)),
+                )
         result["deduplicated"] = False
         return result
 
@@ -375,8 +400,28 @@ class LongTermMemoryServiceV56:
             "top_k": max(1, int(top_k or 5)),
             "candidate_count": len(records),
             "results": _mmr_select(ranked, max(1, int(top_k or 5))),
-            "embedding_backend": str(getattr(self.embedding_provider, "name", "unknown")),
-            "retrieval": "namespace+time filter -> BM25+dense+entity -> RRF -> importance+recency -> MMR",
+            "retrieval_mode": self.retrieval_mode,
+            "embedding_backend": str(
+                getattr(self.embedding_provider, "name", "disabled")
+                if self.embedding_provider is not None
+                else "disabled"
+            ),
+            "embedding_kind": (
+                "disabled"
+                if self.embedding_provider is None
+                else "test_hash"
+                if _is_hash_provider(self.embedding_provider)
+                else "semantic_model"
+            ),
+            "retrieval": (
+                "namespace+time filter -> BM25+{0}+entity -> RRF -> importance+recency -> MMR".format(
+                    "test-hash-dense"
+                    if _is_hash_provider(self.embedding_provider)
+                    else "real-dense"
+                )
+                if self.embedding_provider is not None
+                else "namespace+time filter -> BM25+entity -> RRF -> importance+recency -> MMR"
+            ),
             "latency_ms": _elapsed(started),
         }
 
@@ -456,12 +501,18 @@ class LongTermMemoryServiceV56:
         query_tokens = _tokenize(query)
         corpus = [_tokenize(_search_text(item)) for item in records]
         lexical = _bm25_scores(corpus, query_tokens)
-        query_vector = self.embedding_provider.embed_query(query)
-        vectors = self._load_vectors(records)
-        dense = [float(_cosine(query_vector, vector)) for vector in vectors]
+        dense = None
+        vectors = [[] for _ in records]
+        if self.embedding_provider is not None:
+            query_vector = self.embedding_provider.embed_query(query)
+            vectors = self._load_vectors(records)
+            dense = [float(_cosine(query_vector, vector)) for vector in vectors]
         query_entities = {item.lower() for item in _entities(query, {})}
         entity = [len(query_entities.intersection({item.lower() for item in record.get("entities", [])})) / max(1, len(query_entities)) for record in records]
-        ranks = [_ranks(signal) for signal in (lexical, dense, entity)]
+        signals = [lexical, entity]
+        if dense is not None:
+            signals.insert(1, dense)
+        ranks = [_ranks(signal) for signal in signals]
         reference = _parse_datetime(as_of)
         output = []
         for index, record in enumerate(records):
@@ -472,9 +523,13 @@ class LongTermMemoryServiceV56:
             recency = 1.0 / (1.0 + age_days / 30.0)
             final = rrf + 0.02 * float(record["importance"]) + 0.015 * entity[index] + 0.01 * temporal + 0.005 * recency
             item = dict(record)
-            item["scores"] = {"lexical": round(lexical[index], 6), "dense": round(dense[index], 6), "entity": round(entity[index], 6), "temporal": temporal, "rrf": round(rrf, 6), "importance": record["importance"], "recency": round(recency, 6), "final": round(final, 6)}
-            item["retrieval_reasons"] = [name for name, score in (("lexical", lexical[index]), ("dense", dense[index]), ("entity", entity[index]), ("temporal", temporal)) if score > 0]
-            item["_vector"] = vectors[index].tolist()
+            item["scores"] = {"lexical": round(lexical[index], 6), "entity": round(entity[index], 6), "temporal": temporal, "rrf": round(rrf, 6), "importance": record["importance"], "recency": round(recency, 6), "final": round(final, 6)}
+            reasons = [("lexical", lexical[index]), ("entity", entity[index]), ("temporal", temporal)]
+            if dense is not None:
+                item["scores"]["dense"] = round(dense[index], 6)
+                reasons.insert(1, ("dense", dense[index]))
+                item["_vector"] = vectors[index].tolist()
+            item["retrieval_reasons"] = [name for name, score in reasons if score > 0]
             output.append(item)
         output.sort(key=lambda item: item["scores"]["final"], reverse=True)
         return output
@@ -529,7 +584,6 @@ class LongTermMemoryServiceV56:
             for record, vector in zip(missing, encoded):
                 vectors_by_id[str(record["id"])] = np.asarray(vector, dtype=np.float32).reshape(-1)
         return [vectors_by_id[str(record["id"])] for record in records]
-
     def _attach_sources(self, connection, fact_id, namespace, source_ids, episode_id):
         for source_id in source_ids:
             linked = episode_id
@@ -563,6 +617,26 @@ class LongTermMemoryServiceV56:
         with self._connect() as connection:
             connection.execute("INSERT INTO memory_candidates(candidate_id, namespace, payload_json, status, created_at) VALUES (?, ?, ?, 'pending', ?)", (candidate_id, namespace, _json(payload), _now()))
         return dict(payload, candidate_id=candidate_id, namespace=namespace, status="pending")
+
+
+@functools.lru_cache(maxsize=4)
+def build_memory_embedding_provider(model_name=None, cache_folder=None):
+    """Load the real local semantic model used by opt-in memory retrieval."""
+    from .paperstorm_retrieval_v41 import SentenceTransformerProvider
+
+    model = (
+        model_name
+        or os.getenv("PAPERSTORM_MEMORY_EMBEDDING_MODEL")
+        or os.getenv("PAPERSTORM_EMBEDDING_MODEL")
+        or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    )
+    cache = cache_folder or os.getenv("PAPERSTORM_MODEL_CACHE") or os.getenv("HF_HOME")
+    return SentenceTransformerProvider(model_name=model, cache_folder=cache)
+
+
+def _is_hash_provider(provider):
+    name = str(getattr(provider, "name", "") or type(provider).__name__).lower()
+    return "hash" in name
 
 
 def _mmr_select(ranked, top_k, diversity=0.2):

@@ -1,10 +1,10 @@
-# PaperStorm Agent（v5.9）
+# PaperStorm Agent（v6.0）
 
-> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v5.9 引入
-> LLM-first Turn Planner、可检索的跨会话历史、结构化上下文压缩、DeepSeek V4
-> 百万 token 硬上限适配，以及可实时追踪的节点式 Multi-Agent 执行图。
+> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v6.0 将路由
+> 升级为 Action Planner，引入动态输出预算、显式模型错误、可选真实语义记忆，
+> 并补齐节点级运行遥测与 Context / LongMemEval-S 端到端评测入口。
 
-![PaperStorm v5.9 调研工作台](docs/screenshots/dashboard-research-v59.png)
+![PaperStorm v6.0 调研工作台](docs/screenshots/dashboard-research-v60.png)
 
 **论文调研** · **智能问答** · **混合检索** · **长期记忆** · **上下文治理** ·
 **Multi-Agent Research** · **公开 Benchmark** · **Langfuse Observability**
@@ -17,22 +17,38 @@ Agent 平台原型：
 
 - **RAG 检索链路**：arXiv / 本地 PDF / Zotero 论文检索，query 清洗、PIM 领域消歧、
   BM25 + Dense + RRF 混合召回、可选 Cross-Encoder 重排、引用回答。
-- **Agent Runtime**：LangGraph 状态图编排（意图分类 → 记忆 → 检索 → 证据门控 →
-  深度调研 → 引用回答），SQLite checkpoint、节点级重试、span trace。
+- **Agent Runtime v6.0**：LLM 规划 `respond / tool_call / clarify`，工具能力为
+  `memory.search / evidence.search / research.start`；输出形式不再被硬编码成“闲聊、
+  故事”等有限意图。LangGraph 负责状态转移、SQLite checkpoint、节点级重试和 span trace。
 - **Context v5.9**：Pinned / Active / Summary / Memory / Evidence / Artifact
   六类工作集，按 chat / QA / research 动态分配预算；128K / 256K / 512K 软工作集
   共享 DeepSeek V4 1M 硬窗口，支持结构化递归摘要和 `compaction_id` 精确恢复。
 - **Memory v5.6**：SQLite WAL 规范化存储 episode / fact / source provenance /
   entity / audit event，事实带 `valid_from / valid_to / supersedes_id` 支持历史
   `as_of` 查询，检索融合 BM25、真实 embedding、entity、time、importance/recency、
-  RRF 与 MMR。
+  RRF 与 MMR。聊天可选择轻量 FTS/BM25 或真实 SentenceTransformer 语义召回；
+  Hash embedding 仅允许用于离线测试，不会伪装成语义检索。
 - **生产治理**：SQLite WAL 控制面，ACL / 审计 / 事务幂等 / TTL 缓存 / 持久任务 /
   熔断 / 层级 span。
 - **v5.8 可观测性**：Research / Chat / Benchmark 统一 Trace 模型，本地 JSONL
   镜像与 Langfuse 可选双写；递归脱敏、用户 ID 哈希、失败降级、Trace Score 回传。
-- **工作台**：直角深色信息架构，左侧任务导航、中部节点式执行工作区、右侧
-  Context / Memory 检查器；开发者控制台独立承载数据集就绪度、实验命令、日志、
-  指标与 Runtime Trace。
+- **工作台**：调研模式释放右侧配置栏；节点显示输入、当前活动、输出、耗时、
+  Token、费用、结束原因和错误，运行中提供流动边框与呼吸反馈。开发者控制台注册
+  SciFact、QASPER、LongMemEval-S 与 Context Pareto 实验。
+
+## v6.0 核心变化
+
+| 原因 | 旧行为造成的问题 | v6.0 改动 | 当前结果 |
+| --- | --- | --- | --- |
+| 把内容类型当成路由枚举 | 新增写作形式就要扩充 intent；失败时可能回退成自我介绍 | LLM 输出动作、工具调用与响应契约，旧 intent 仅作兼容视图 | 普通生成不受有限内容标签约束，工具边界明确 |
+| 固定输出上限 | 长文和续写可能在半句处结束 | 按短答、知识回答、详细回答、创作续写动态分配 2K-16K，显式长度最高 64K；`finish_reason=length` 自动续接一次 | 避免为所有请求支付大输出预算，同时降低长内容截断概率 |
+| 模型异常被当作普通回复 | 用户看到“你好/我是 PaperStorm”，无法判断真实故障 | 统一返回 timeout、rate_limit、authentication、provider_unavailable、provider_error | 前端与 Trace 可定位失败类型，会话状态仍保留 |
+| Memory dense 边界不清 | Hash 向量可能被误解为真实语义效果 | 默认 lexical；semantic 必须加载真实 SentenceTransformer，显式拒绝 Hash provider | 运行配置可选择，报告包含 retrieval mode 与 embedding backend |
+| 节点图只有 WAIT/RUN/DONE | 无法判断输入、耗时和成本 | SSE Trace 归一化为节点遥测，完成节点显示耗时徽标 | UI 契约测试已覆盖字段与状态动画 |
+| Context/Memory 缺少同条件端到端对比 | 只能看单点召回指标，不能做质量/成本决策 | 新增 128K/256K/512K Pareto 与 LongMemEval-S Reader/Judge 三模式评测 | Harness 与 checkpoint 已通过离线测试；付费全量分数待正式运行 |
+
+完整设计边界、动态预算和复现实验命令见
+[v6.0 Agent Harness 发布说明](docs/PAPERSTORM_V60_AGENT_HARNESS.md)。
 
 ## 最终能力地图与系统架构图
 
@@ -183,7 +199,7 @@ Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长�
 
 ### 1. 论文调研模式（默认工作台）
 
-![V5.9 论文调研工作台](docs/screenshots/dashboard-research-v59.png)
+![v6.0 论文调研工作台](docs/screenshots/dashboard-research-v60.png)
 
 - 调研文章支持一键**下载 Markdown**，便于本地保存与二次整理。
 - 输入主题后一次点击完成任务创建、运行、状态追踪和结果刷新；节点图展开任务编排、
@@ -517,7 +533,7 @@ knowledge_storm/
   paperstorm_langgraph_v44.py        # LangGraph 会话运行时
   paperstorm_production_v45.py       # SQLite WAL 生产控制面
   paperstorm_benchmarks.py           # 公开 Benchmark 契约与指标
-  paperstorm_intent_router.py        # 意图路由（规则+LLM）
+  paperstorm_intent_router.py        # Action Planner（规则护栏+LLM）
   evaluation/public_benchmarks/      # BEIR / QASPER / LongMemEval adapter
 examples/storm_examples/             # FastAPI 服务 / MCP server / 评测 CLI
 frontend/paperstorm_dashboard/       # 网页端 Dashboard（两模式 + 评测工作台）
@@ -543,7 +559,8 @@ v5.9 的边界定义、根因分析和逐项验收见
 | v5.7 Workspace | 直角深色工作台、Visio 风格架构图、Benchmark 能力矩阵与正式截图 | 历史版本 |
 | v5.8 Observability | Langfuse 可选双写、统一 Trace/Span/Score、递归脱敏与 fail-open 降级 | 历史版本 |
 | v5.8.1 Citation Fix | 原始论文来源回填、历史会话兼容迁移、文章段落锚点定位 | 历史版本 |
-| **v5.9 Context & Agent Graph** | LLM-first Turn Planner、跨会话 FTS5、结构化压缩、1M 模型窗口适配、实时节点执行图 | 当前版本 |
+| v5.9 Context & Agent Graph | LLM-first Turn Planner、跨会话 FTS5、结构化压缩、1M 模型窗口适配、实时节点执行图 | 历史版本 |
+| **v6.0 Action & Evaluation** | Action Planner、动态输出续接、显式 LLM 错误、真实语义记忆开关、节点遥测、Context Pareto、LongMemEval-S E2E | 当前版本 |
 
 ## License
 

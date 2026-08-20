@@ -108,6 +108,32 @@ DEFINITIONS = (
         "尚未具备可发布输入",
         blocked_reason="缺少冻结的同模型配对预测文件",
     ),
+    BenchmarkDefinition(
+        "context-pareto-v60",
+        "LongBench 128K/256K/512K Pareto",
+        "v6.0",
+        "Context",
+        "public_official_llm_ablation",
+        "同模型、同数据、同提示词下比较质量、输入 Token、TTFT、延迟与成本，并计算 Pareto 前沿。",
+        "run_context_profile_pareto.py",
+        ("longbench_json",),
+        ("Accuracy", "Input tokens", "TTFT P50/P95", "Cost", "Pareto frontier"),
+        "Smoke 约 5-15 分钟；完整运行取决于长上下文模型并产生 API 成本",
+        requires_llm=True,
+    ),
+    BenchmarkDefinition(
+        "longmemeval-e2e-v60",
+        "LongMemEval-S 端到端 Reader/Judge",
+        "v6.0",
+        "Memory",
+        "public_official_llm",
+        "全量对比 Recent、FTS Session 与 v5.6 Memory，统一 Reader 和 LLM Judge。",
+        "run_longmemeval_e2e_v60.py",
+        ("longmemeval_json",),
+        ("Judge accuracy", "Recall@5", "P50 latency", "Token usage", "Cost"),
+        "Smoke 约 5-15 分钟；完整 500 题会产生 Reader 与 Judge API 成本",
+        requires_llm=True,
+    ),
 )
 
 
@@ -119,7 +145,7 @@ class BenchmarkRegistry:
 
     def catalog(self):
         benchmarks = []
-        for definition in DEFINITIONS:
+        for definition in sorted(DEFINITIONS, key=lambda item: bool(item.blocked_reason)):
             inputs = [
                 {
                     "key": key,
@@ -186,7 +212,9 @@ class BenchmarkRegistry:
             if not allow_paid_llm:
                 raise ValueError("付费 LLM Benchmark 必须显式确认")
             if not os.getenv("DEEPSEEK_API_KEY"):
-                raise ValueError("运行 QASPER Answer F1 需要 DEEPSEEK_API_KEY")
+                raise ValueError("运行付费生成评测需要 DEEPSEEK_API_KEY")
+            if benchmark_id == "longmemeval-e2e-v60" and not os.getenv("OPENAI_API_KEY"):
+                raise ValueError("官方 LongMemEval Judge 需要 OPENAI_API_KEY")
 
         runner = PROJECT_ROOT / "examples" / "storm_examples" / definition.runner
         command = [sys.executable, str(runner)]
@@ -223,6 +251,22 @@ class BenchmarkRegistry:
                 "--dataset", str(self.inputs["qasper_json"]), "--rankings", str(self.inputs["qasper_rankings"]),
                 "--output-dir", str(output_dir), "--mode", "hybrid_rerank",
             ]
+        elif benchmark_id == "context-pareto-v60":
+            command += [
+                "--dataset", str(self.inputs["longbench_json"]),
+                "--output-dir", str(output_dir),
+            ]
+            if profile == "smoke":
+                command += ["--limit", "3"]
+        elif benchmark_id == "longmemeval-e2e-v60":
+            command += [
+                "--dataset", str(self.inputs["longmemeval_json"]),
+                "--output-dir", str(output_dir),
+                "--model-cache", str(self.root / "models"),
+                "--top-k", "5",
+            ]
+            if profile == "smoke":
+                command += ["--limit", "3"]
         else:
             raise ValueError("benchmark is not runnable")
         return command
@@ -267,7 +311,7 @@ class BenchmarkRunManager:
             trace = self.observability.trace(
                 "paperstorm.benchmark",
                 input={"benchmark_id": benchmark_id, "profile": profile},
-                metadata={"run_id": run_id, "version": "5.9.0"},
+                metadata={"run_id": run_id, "version": "6.0.0"},
                 session_id=run_id,
                 tags=["benchmark", profile],
             )
@@ -437,6 +481,8 @@ def _latest_result_path(benchmark_id, root):
         "qasper-answer-v55": [PROJECT_ROOT / "results/public_benchmarks/v55_qasper_answer_test_real/metrics.json"],
         "longmemeval-retrieval-v56": [root / "v56/runs/longmemeval-s-minilm/metrics.json"],
         "qasper-context-v56": [root / "v56/runs/qasper-context-v56/metrics.json"],
+        "context-pareto-v60": [root / "v60/runs/context-pareto-v60/metrics.json"],
+        "longmemeval-e2e-v60": [root / "v60/runs/longmemeval-e2e-v60/metrics.json"],
     }.get(benchmark_id, [])
     return next((path.resolve() for path in candidates if path.exists()), None)
 

@@ -38,6 +38,81 @@ class FlakyDeepResearchTool:
     },
 )
 class PaperStormLangGraphV44Test(unittest.TestCase):
+    def test_continuation_uses_respond_action_and_exposes_llm_telemetry(self):
+        def chat_llm(_prompt, **_kwargs):
+            return {
+                "content": "城门在雨中缓缓打开。",
+                "finish_reason": "stop",
+                "usage": {"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150},
+                "cost_usd": 0.000065,
+                "latency_ms": 42.5,
+                "output_budget": 16384,
+                "segments": 1,
+                "truncated": False,
+                "error": None,
+            }
+
+        def planner(_prompt):
+            return (
+                '{"action":"respond","tool_calls":[],"rewritten_query":"继续写下去",'
+                '"working_subject":"","confidence":0.99,"reason":"continuation",'
+                '"response_contract":{"task":"续写故事","continue_previous":true,'
+                '"requires_citations":false,"style_notes":["不要自我介绍"]}}'
+            )
+
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                intent_router=PaperStormIntentRouter(llm_router=planner),
+                chat_llm=chat_llm,
+            )
+            result = runtime.invoke(
+                thread_id="thread-story",
+                request_id="request-story",
+                user_id="alice",
+                message="继续写下去",
+                run_mode="fake",
+                context_window=[{"role": "user", "content": "从前有一座城……"}],
+            )
+
+        self.assertEqual(result["router_decision"]["action"], "respond")
+        self.assertEqual(result["answer"], "城门在雨中缓缓打开。")
+        chat_event = next(item for item in result["node_events"] if item["node"] == "casual_chat")
+        self.assertEqual(chat_event["details"]["usage"]["total_tokens"], 150)
+        self.assertEqual(chat_event["details"]["finish_reason"], "stop")
+        self.assertEqual(chat_event["details"]["output_budget"], 16384)
+
+    def test_chat_provider_error_is_explicit_and_never_becomes_self_introduction(self):
+        def chat_llm(_prompt, **_kwargs):
+            return {
+                "content": "",
+                "finish_reason": "error",
+                "usage": {},
+                "cost_usd": 0.0,
+                "latency_ms": 5.0,
+                "output_budget": 16384,
+                "segments": 0,
+                "truncated": False,
+                "error": {"type": "timeout", "message": "provider timed out", "recoverable": True},
+            }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(temp_dir, chat_llm=chat_llm)
+            result = runtime.invoke(
+                thread_id="thread-timeout",
+                request_id="request-timeout",
+                user_id="alice",
+                message="继续写下去",
+                run_mode="fake",
+                context_window=[{"role": "user", "content": "从前有一座城……"}],
+            )
+
+        self.assertIn("模型调用超时", result["answer"])
+        self.assertNotIn("我是 PaperStorm", result["answer"])
+        self.assertEqual(result["llm_error"]["type"], "timeout")
+
     def make_runtime(self, root, **kwargs):
         from knowledge_storm.paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
         from knowledge_storm.paperstorm_service import PaperStormTaskService

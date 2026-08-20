@@ -12,14 +12,28 @@ from typing import Callable, Dict, List, Optional
 
 
 ROUTER_SCHEMA = {
-    "intent": "casual_chat | system_help | research_qa | run_research | clarify",
-    "need_retrieval": "boolean",
-    "tool": "chat_fallback | kb_qa | research_qa | paper_research | clarify",
+    "action": "respond | tool_call | clarify",
+    "tool_calls": [
+        {
+            "name": "memory.search | evidence.search | research.start",
+            "arguments": "JSON object",
+        }
+    ],
     "rewritten_query": "standalone Chinese or English query",
     "working_subject": "current subject or empty string; never inherit stale topic",
+    "response_contract": {
+        "task": "free-form description of the requested response",
+        "continue_previous": "boolean",
+        "requires_citations": "boolean",
+        "requested_output_tokens": "integer or zero",
+        "style_notes": ["free-form generation constraints"],
+    },
     "confidence": "0.0-1.0",
     "reason": "short routing reason",
 }
+
+ALLOWED_ACTIONS = {"respond", "tool_call", "clarify"}
+ALLOWED_TOOLS = {"memory.search", "evidence.search", "research.start"}
 
 
 class PaperStormIntentRouter:
@@ -57,14 +71,31 @@ class PaperStormIntentRouter:
                 evidence_sufficiency=evidence_sufficiency or {},
             )
             try:
-                decision = parse_llm_router_json(self.llm_router(prompt))
+                raw_result = self.llm_router(prompt)
+                content, telemetry = _planner_content(raw_result)
+                if telemetry.get("error"):
+                    raise PlannerProviderError(telemetry["error"])
+                decision = parse_llm_router_json(content)
                 decision = normalize_decision(decision, message, session, context_window)
                 if decision["confidence"] >= self.confidence_threshold:
                     decision["router"] = "llm_planner"
+                    decision["planner_status"] = "success"
+                    decision["planner_telemetry"] = telemetry
                     return decision
-            except Exception as exc:  # pragma: no cover - defensive trace path.
                 fallback = route_by_rules(message, session, context_window)
-                fallback["router_error"] = str(exc)
+                fallback["planner_status"] = "fallback"
+                fallback["planner_error"] = {
+                    "type": "low_confidence",
+                    "message": "planner confidence below threshold",
+                    "recoverable": True,
+                }
+                fallback["planner_telemetry"] = telemetry
+                return fallback
+            except Exception as exc:
+                fallback = route_by_rules(message, session, context_window)
+                fallback["planner_status"] = "fallback"
+                fallback["planner_error"] = _planner_error(exc)
+                fallback["router_error"] = str(exc)  # compatibility
                 return fallback
 
         guard_decision = route_high_confidence_rules(message, session, context_window)
@@ -100,12 +131,15 @@ def build_router_prompt(
     }
     return (
         "你是 PaperStorm 的 Turn Planner。只输出一个符合 Schema 的 JSON 对象。\n"
-        "为当前这一轮选择动作：直接回复、查询会话历史、查询长期记忆、查询论文证据、"
-        "启动深度调研或请求澄清。不要生成最终答案。\n"
+        "为当前这一轮选择动作。普通对话、续写、翻译、代码和改写都使用 respond，"
+        "并通过 response_contract 描述生成约束；它们不是新的路由类型。只有确实需要"
+        "外部能力时才使用 tool_call。不要生成最终答案。\n"
         "旧任务主题不得自动继承。只有当前消息或最近对话明确承接旧主题时，才设置 "
         "working_subject；创作、闲聊、系统问题默认不检索。\n"
         "短追问必须根据最近对话改写，不能仅凭 task_id 猜测主题。论文事实需要证据，"
-        "用户偏好和历史决定查长期记忆，‘之前聊过’优先查会话历史。\n"
+        "用户偏好和稳定事实查 memory.search，论文事实查 evidence.search，明确要求完整"
+        "调研或现有证据不足时用 research.start。续写必须设置 continue_previous=true，"
+        "并要求保持原风格、禁止自我介绍。\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )
 
@@ -124,25 +158,32 @@ def normalize_decision(
     session: Dict,
     context_window: List[Dict],
 ) -> Dict:
-    intent = str(decision.get("intent") or "").strip()
-    if intent not in {"casual_chat", "system_help", "research_qa", "run_research", "clarify"}:
-        intent = "clarify"
-    tool = str(decision.get("tool") or "").strip()
-    if tool not in {"chat_fallback", "kb_qa", "research_qa", "paper_research", "clarify"}:
-        tool = _tool_for_intent(intent)
-    need_retrieval = bool(decision.get("need_retrieval"))
-    if tool in {"research_qa", "paper_research", "kb_qa"}:
-        need_retrieval = True
-    if tool in {"chat_fallback", "clarify"}:
-        need_retrieval = False
+    action = str(decision.get("action") or "").strip()
+    tool_calls = _normalize_tool_calls(decision.get("tool_calls"))
+    if not action:
+        action, tool_calls = _legacy_action(decision)
+    if action not in ALLOWED_ACTIONS:
+        action = "clarify"
+        tool_calls = []
+    if action == "respond":
+        tool_calls = []
+    elif action == "clarify":
+        tool_calls = []
+    elif not tool_calls:
+        action = "clarify"
     confidence = _to_float(decision.get("confidence"), 0.7)
     rewritten_query = str(decision.get("rewritten_query") or "").strip()
     if not rewritten_query:
         rewritten_query = rewrite_query(message, session, context_window)
+    response_contract = _response_contract(
+        decision.get("response_contract"), message
+    )
+    legacy = _legacy_view(action, tool_calls, message)
     return {
-        "intent": intent,
-        "need_retrieval": need_retrieval,
-        "tool": tool,
+        "action": action,
+        "tool_calls": tool_calls,
+        "response_contract": response_contract,
+        **legacy,
         "rewritten_query": rewritten_query,
         "working_subject": str(decision.get("working_subject") or "").strip(),
         "confidence": max(0.0, min(1.0, confidence)),
@@ -171,6 +212,15 @@ def route_high_confidence_rules(
     if not message:
         return _decision(
             "clarify", "clarify", False, "", 1.0, "empty message needs clarification"
+        )
+    if is_memory_query(message):
+        return _decision(
+            "memory_recall",
+            "memory_search",
+            False,
+            rewrite_query(message, session, context_window),
+            0.9,
+            "message explicitly asks about prior conversation or durable memory",
         )
     if is_system_help(message):
         return _decision(
@@ -333,6 +383,22 @@ def is_system_help(message: str) -> bool:
     return False
 
 
+def is_memory_query(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    return any(
+        marker in text
+        for marker in (
+            "你记得",
+            "还记得",
+            "之前聊过",
+            "以前聊过",
+            "我的偏好",
+            "记忆里",
+            "我之前说",
+        )
+    )
+
+
 def is_casual_chat(message: str) -> bool:
     text = str(message or "").strip().lower()
     social_phrases = [
@@ -411,7 +477,13 @@ def _tool_for_intent(intent: str) -> str:
 
 
 def _decision(intent, tool, need_retrieval, rewritten_query, confidence, reason):
+    action, tool_calls = _legacy_action(
+        {"intent": intent, "tool": tool, "need_retrieval": need_retrieval}
+    )
     return {
+        "action": action,
+        "tool_calls": tool_calls,
+        "response_contract": _response_contract(None, rewritten_query),
         "intent": intent,
         "need_retrieval": need_retrieval,
         "tool": tool,
@@ -419,7 +491,107 @@ def _decision(intent, tool, need_retrieval, rewritten_query, confidence, reason)
         "confidence": confidence,
         "reason": reason,
         "router": "rule_fallback",
+        "planner_status": "offline_fallback",
     }
+
+
+class PlannerProviderError(RuntimeError):
+    def __init__(self, error):
+        self.error = error or {}
+        super().__init__(str(self.error.get("message") or "planner provider failed"))
+
+
+def _planner_content(result):
+    if isinstance(result, dict) and "content" in result:
+        telemetry = {
+            key: result.get(key)
+            for key in ("finish_reason", "usage", "cost_usd", "latency_ms", "error")
+        }
+        return str(result.get("content") or ""), telemetry
+    return str(result or ""), {}
+
+
+def _planner_error(error):
+    if isinstance(error, PlannerProviderError):
+        payload = dict(error.error)
+        payload.setdefault("type", "provider_error")
+        payload.setdefault("message", str(error))
+        payload.setdefault("recoverable", True)
+        return payload
+    if isinstance(error, (ValueError, json.JSONDecodeError)):
+        error_type = "invalid_response"
+    elif isinstance(error, TimeoutError):
+        error_type = "timeout"
+    else:
+        error_type = "provider_error"
+    return {"type": error_type, "message": str(error), "recoverable": True}
+
+
+def _normalize_tool_calls(value):
+    output = []
+    for item in value or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name not in ALLOWED_TOOLS:
+            continue
+        arguments = item.get("arguments")
+        output.append({"name": name, "arguments": arguments if isinstance(arguments, dict) else {}})
+    return output
+
+
+def _legacy_action(decision):
+    tool = str(decision.get("tool") or "").strip()
+    intent = str(decision.get("intent") or "").strip()
+    if tool in {"paper_research"} or intent == "run_research":
+        return "tool_call", [{"name": "research.start", "arguments": {}}]
+    if tool in {"research_qa", "kb_qa"} or intent == "research_qa":
+        return "tool_call", [{"name": "evidence.search", "arguments": {}}]
+    if tool == "memory_search" or intent == "memory_recall":
+        return "tool_call", [{"name": "memory.search", "arguments": {}}]
+    if tool == "clarify" or intent == "clarify":
+        return "clarify", []
+    return "respond", []
+
+
+def _legacy_view(action, tool_calls, message):
+    tool_name = tool_calls[0]["name"] if tool_calls else ""
+    if action == "clarify":
+        return {"intent": "clarify", "tool": "clarify", "need_retrieval": False}
+    if tool_name == "research.start":
+        return {"intent": "run_research", "tool": "paper_research", "need_retrieval": True}
+    if tool_name == "evidence.search":
+        return {"intent": "research_qa", "tool": "research_qa", "need_retrieval": True}
+    if tool_name == "memory.search":
+        return {"intent": "memory_recall", "tool": "memory_search", "need_retrieval": False}
+    intent = "system_help" if is_system_help(message) else "casual_chat"
+    return {"intent": intent, "tool": "chat_fallback", "need_retrieval": False}
+
+
+def _response_contract(value, message):
+    value = value if isinstance(value, dict) else {}
+    continuation = bool(value.get("continue_previous")) or _looks_like_continuation(message)
+    notes = [str(item).strip() for item in value.get("style_notes") or [] if str(item).strip()]
+    if continuation:
+        for note in ("保持上一段的叙事、人物和语言风格", "不要自我介绍", "不要重复开头"):
+            if note not in notes:
+                notes.append(note)
+    try:
+        requested = max(0, int(value.get("requested_output_tokens") or 0))
+    except (TypeError, ValueError):
+        requested = 0
+    return {
+        "task": str(value.get("task") or message or "直接回答用户").strip(),
+        "continue_previous": continuation,
+        "requires_citations": bool(value.get("requires_citations")),
+        "requested_output_tokens": requested,
+        "style_notes": notes,
+    }
+
+
+def _looks_like_continuation(message):
+    text = str(message or "").strip().lower()
+    return text.startswith(("继续", "接着", "续写", "往下写", "continue"))
 
 
 def _to_float(value, default: float) -> float:
