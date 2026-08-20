@@ -48,6 +48,15 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def disable_dashboard_asset_cache(request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path in {"/styles.css", "/app.js", "/sample_data.js"} or path.startswith("/dashboard"):
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
     @app.exception_handler(PermissionError)
     async def permission_error_handler(_request, error):
         return JSONResponse(status_code=403, content={"detail": str(error)})

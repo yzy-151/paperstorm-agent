@@ -205,10 +205,12 @@ class PaperStormServiceTest(unittest.TestCase):
             styles = client.get("/styles.css")
             self.assertEqual(styles.status_code, 200)
             self.assertIn("workspace-shell", styles.text)
+            self.assertIn("no-store", styles.headers["cache-control"])
 
             app_js = client.get("/app.js")
             self.assertEqual(app_js.status_code, 200)
             self.assertIn("loadBenchmarkCatalog", app_js.text)
+            self.assertIn("no-store", app_js.headers["cache-control"])
 
             with client.stream("GET", "/events?once=true") as response:
                 self.assertEqual(response.status_code, 200)
