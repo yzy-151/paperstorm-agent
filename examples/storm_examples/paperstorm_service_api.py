@@ -40,7 +40,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         finally:
             service.observability.flush()
 
-    app = FastAPI(title="PaperStorm Agent Service", version="6.0.0", lifespan=lifespan)
+    app = FastAPI(title="PaperStorm Agent Service", version="6.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -68,6 +68,11 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.exception_handler(ValueError)
     async def validation_error_handler(_request, error):
         return JSONResponse(status_code=400, content={"detail": str(error)})
+
+    @app.exception_handler(FileNotFoundError)
+    async def file_not_found_error_handler(_request, error):
+        return JSONResponse(status_code=404, content={"detail": str(error)})
+
     if dashboard_dir.exists():
         app.mount(
             "/dashboard",
@@ -93,6 +98,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         do_generate_article: bool = True
         do_polish_article: bool = True
         remove_duplicate: bool = False
+        generate_pdf: bool = False
         disable_trace: bool = False
         verbose: bool = False
         expected_keywords: list[str] = []
@@ -320,11 +326,10 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
                         task = service.get_task(task_id)
                         payload["task_status"] = task.get("status", "")
                         payload["topic"] = task.get("topic", "")
+                        payload["error"] = task.get("error", "")
+                        payload["artifacts"] = task.get("artifacts", {})
                     except KeyError:
                         payload["task_status"] = "unknown"
-                    if payload.get("task_status") != last_status:
-                        last_status = payload.get("task_status")
-                        yield _sse_event("task_status", payload)
                     try:
                         trace_events = service.get_trace(task_id).get("events") or []
                     except (KeyError, FileNotFoundError):
@@ -335,6 +340,9 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
                             {"task_id": task_id, "trace": trace_event},
                         )
                     seen_trace_events = len(trace_events)
+                    if payload.get("task_status") != last_status:
+                        last_status = payload.get("task_status")
+                        yield _sse_event("task_status", payload)
                 yield _sse_event("heartbeat", payload)
                 if once:
                     break
@@ -373,6 +381,13 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     @app.get("/research-tasks/{task_id}/dashboard")
     def get_research_dashboard(task_id: str):
         return service.get_dashboard_bundle(task_id)
+
+    @app.get("/research-tasks/{task_id}/artifacts/{artifact_name}")
+    def get_research_artifact(task_id: str, artifact_name: str):
+        return FileResponse(
+            service.get_artifact_path(task_id, artifact_name),
+            filename=artifact_name,
+        )
 
     @app.post("/knowledge-bases/{task_id}/query")
     def query_knowledge_base(task_id: str, request: KnowledgeBaseQueryRequest):

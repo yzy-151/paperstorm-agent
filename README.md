@@ -1,10 +1,10 @@
-# PaperStorm Agent（v6.0）
+# PaperStorm Agent（v6.1）
 
-> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v6.0 将路由
-> 升级为 Action Planner，引入动态输出预算、显式模型错误、可选真实语义记忆，
-> 并补齐节点级运行遥测与 Context / LongMemEval-S 端到端评测入口。
+> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v6.1 使用真实
+> STORM 阶段事件驱动执行图，能够准确定位 Persona、对话、检索、写作与交付故障，
+> 并新增支持中文、表格、代码和数学公式的正式 PDF 交付。
 
-![PaperStorm v6.0 调研工作台](docs/screenshots/dashboard-research-v60.png)
+![PaperStorm 调研工作台](docs/screenshots/dashboard-research-v60.png)
 
 **论文调研** · **智能问答** · **混合检索** · **长期记忆** · **上下文治理** ·
 **Multi-Agent Research** · **公开 Benchmark** · **Langfuse Observability**
@@ -35,6 +35,19 @@ Agent 平台原型：
 - **工作台**：调研模式释放右侧配置栏；节点显示输入、当前活动、输出、耗时、
   Token、费用、结束原因和错误，运行中提供流动边框与呼吸反馈。开发者控制台注册
   SciFact、QASPER、LongMemEval-S 与 Context Pareto 实验。
+
+## v6.1 核心变化
+
+| 原因 | 旧行为造成的问题 | v6.1 改动 | 当前结果 |
+| --- | --- | --- | --- |
+| 前端猜测调研进度 | 提交后同时点亮 Persona、对话和检索；模型连接失败也会被误报为检索失败 | STORM Callback 与 Runner 边界统一输出 `stage_start/progress/end/error` | 任意时刻只有真实阶段运行，错误落到发生故障的卡片 |
+| 卡片只有笼统状态 | 无法判断节点收到了什么、产出了什么或为何失败 | 卡片检查器展示脱敏输入、输出摘要、活动、耗时、Token、费用和类型化错误 | 调试可直接沿 SSE Trace 定位，不再依赖终端猜测 |
+| 文章只能下载 Markdown | 对外展示和打印不方便，公式排版没有稳定交付格式 | Markdown 与 LaTeX 转为打印 HTML/MathML，再由 Edge/Chromium 输出并用 pypdf 验证 | 可选生成 `paperstorm_report.pdf`，交付卡片和文章区均可打开 |
+| PDF 交付与调研状态耦合 | 渲染器问题可能掩盖已成功生成的文章 | PDF 使用独立交付状态和错误码 | PDF 失败时 Markdown 仍保留，调研任务保持成功 |
+
+在论文调研的“交付产物”卡片中勾选**同时生成正式 PDF**，再开始调研。任务完成后，
+卡片和文章区会出现**查看 PDF**入口。Windows 默认自动使用 Microsoft Edge；也可通过
+`PAPERSTORM_PDF_BROWSER` 指定 Chromium 可执行文件。
 
 ## v6.0 核心变化
 
@@ -199,9 +212,10 @@ Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长�
 
 ### 1. 论文调研模式（默认工作台）
 
-![v6.0 论文调研工作台](docs/screenshots/dashboard-research-v60.png)
+![PaperStorm 论文调研工作台](docs/screenshots/dashboard-research-v60.png)
 
-- 调研文章支持一键**下载 Markdown**，便于本地保存与二次整理。
+- 调研文章支持一键**下载 Markdown**；勾选交付卡片中的 PDF 选项后，还可生成并
+  打开经过页数与正文校验的 `paperstorm_report.pdf`。
 - 输入主题后一次点击完成任务创建、运行、状态追踪和结果刷新；节点图展开任务编排、
   Persona、Multi-Agent 讨论、查询规划、论文检索、证据治理、大纲、写作、润色、
   评估与交付。运行节点和连线具有实时光效，点击节点可检查职责、输入、输出和状态。
@@ -560,7 +574,8 @@ v5.9 的边界定义、根因分析和逐项验收见
 | v5.8 Observability | Langfuse 可选双写、统一 Trace/Span/Score、递归脱敏与 fail-open 降级 | 历史版本 |
 | v5.8.1 Citation Fix | 原始论文来源回填、历史会话兼容迁移、文章段落锚点定位 | 历史版本 |
 | v5.9 Context & Agent Graph | LLM-first Turn Planner、跨会话 FTS5、结构化压缩、1M 模型窗口适配、实时节点执行图 | 历史版本 |
-| **v6.0 Action & Evaluation** | Action Planner、动态输出续接、显式 LLM 错误、真实语义记忆开关、节点遥测、Context Pareto、LongMemEval-S E2E | 当前版本 |
+| v6.0 Action & Evaluation | Action Planner、动态输出续接、显式 LLM 错误、真实语义记忆开关、节点遥测、Context Pareto、LongMemEval-S E2E | 历史版本 |
+| **v6.1 Stage Trace & PDF Delivery** | 真实阶段事件、精确故障归因、节点输入输出与成本检查器、可选正式 PDF 交付 | 当前版本 |
 
 ## License
 

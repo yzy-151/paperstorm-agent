@@ -11,12 +11,15 @@ from .rm import ArxivRM, LocalPDFRM
 from .utils import load_api_key
 
 from examples.storm_examples.run_paper_storm_minimax import (
-    PaperStormTraceRecorder,
-    TracedRetrievalModel,
     build_artifact_paths,
     build_lm_settings,
     build_lm_token_limits,
     configure_paperstorm_logging,
+)
+from .paperstorm_trace import (
+    PaperStormStageCallback,
+    PaperStormTraceRecorder,
+    TracedRetrievalModel,
 )
 from examples.storm_examples.run_storm_wiki_minimax import get_topic_for_storm
 
@@ -111,6 +114,16 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
         do_generate_article=config.do_generate_article,
         do_polish_article=config.do_polish_article,
     )
+    trace.start_stage(
+        "request",
+        "初始化模型、检索器与 STORM Runner",
+        input={
+            "topic": config.topic,
+            "llm_provider": config.llm_provider,
+            "llm_model": settings["model"],
+            "retriever": config.retriever,
+        },
+    )
 
     try:
         lm_configs = _build_lm_configs(args)
@@ -129,6 +142,15 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
                 retriever_name=type(rm).__name__,
             )
         runner = STORMWikiRunner(engine_args, lm_configs, rm)
+        _instrument_runner_stages(runner, trace)
+        callback_handler = PaperStormStageCallback(trace, topic=config.topic)
+        trace.end_stage(
+            output_summary={
+                "runner": "STORMWikiRunner",
+                "retriever": config.retriever,
+                "status": "ready",
+            }
+        )
         runner.run(
             topic=config.topic_for_storm,
             output_dir_name=config.output_dir_name,
@@ -137,16 +159,35 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
             do_generate_article=config.do_generate_article,
             do_polish_article=config.do_polish_article,
             remove_duplicate=config.remove_duplicate,
+            callback_handler=callback_handler,
+        )
+        trace.start_stage(
+            "evaluate",
+            "汇总运行日志并检查文章与引用完整性",
+            input={"article_dir": str(article_dir)},
         )
         runner.post_run()
         runner.summary()
+        _write_pipeline_scorecard(config)
+        scorecard_path = article_dir / "scorecard.json"
+        scorecard = (
+            json.loads(scorecard_path.read_text(encoding="utf-8"))
+            if scorecard_path.exists()
+            else {}
+        )
+        trace.end_stage(output_summary={"scorecard": scorecard.get("scores", {})})
+        trace.start_stage(
+            "deliver",
+            "登记文章、Trace 与评估产物",
+            input={"article_dir": str(article_dir)},
+        )
         artifact_paths = build_artifact_paths(str(article_dir))
         existing_artifacts = [
             path for path in artifact_paths.values() if os.path.exists(path)
         ]
         for artifact in existing_artifacts:
             trace.emit("artifact_written", path=artifact)
-        _write_pipeline_scorecard(config)
+        trace.end_stage(output_summary={"artifacts": existing_artifacts})
         trace.emit("run_end", success=True)
         trace.write_summary(
             success=True,
@@ -164,6 +205,8 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
             "artifacts": existing_artifacts,
         }
     except Exception as error:
+        if not trace.events or trace.events[-1].get("event") != "stage_error":
+            trace.fail_current_stage(error)
         trace.emit(
             "run_end",
             success=False,
@@ -181,6 +224,125 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
             },
         )
         raise
+
+
+def _instrument_runner_stages(runner, trace):
+    _wrap_runner_usage(
+        runner,
+        "run_knowledge_curation_module",
+        trace,
+        "dialogue",
+    )
+    _wrap_runner_usage(
+        runner,
+        "run_outline_generation_module",
+        trace,
+        "outline",
+    )
+    _wrap_runner_method(
+        runner,
+        "run_article_generation_module",
+        trace,
+        "writer",
+        "按大纲与证据生成文章章节",
+    )
+    _wrap_runner_method(
+        runner,
+        "run_article_polishing_module",
+        trace,
+        "polish",
+        "去重并统一文章结构与表达",
+    )
+
+
+def _wrap_runner_method(runner, method_name, trace, stage, operation):
+    original = getattr(runner, method_name, None)
+    if original is None:
+        return
+
+    def traced_method(*args, **kwargs):
+        before = _snapshot_lm_telemetry(getattr(runner, "lm_configs", None))
+        trace.start_stage(stage, operation)
+        try:
+            result = original(*args, **kwargs)
+        except Exception as error:
+            trace.fail_current_stage(error)
+            raise
+        after = _snapshot_lm_telemetry(getattr(runner, "lm_configs", None))
+        trace.end_stage(
+            output_summary={"status": "completed"},
+            **_telemetry_delta(before, after),
+        )
+        return result
+
+    setattr(runner, method_name, traced_method)
+
+
+def _wrap_runner_usage(runner, method_name, trace, stage):
+    original = getattr(runner, method_name, None)
+    if original is None:
+        return
+
+    def traced_method(*args, **kwargs):
+        before = _snapshot_lm_telemetry(getattr(runner, "lm_configs", None))
+        result = original(*args, **kwargs)
+        after = _snapshot_lm_telemetry(getattr(runner, "lm_configs", None))
+        trace.emit(
+            "stage_usage",
+            stage=stage,
+            operation="语言模型用量已汇总",
+            **_telemetry_delta(before, after),
+        )
+        return result
+
+    setattr(runner, method_name, traced_method)
+
+
+def _snapshot_lm_telemetry(lm_configs):
+    totals = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "estimated_cost": 0.0,
+        "cost_events": 0,
+    }
+    if lm_configs is None:
+        return totals
+    seen = set()
+    for attr_name, lm in vars(lm_configs).items():
+        if "_lm" not in attr_name or lm is None or id(lm) in seen:
+            continue
+        seen.add(id(lm))
+        for entry in list(getattr(lm, "history", []) or []):
+            usage = entry.get("usage") or {}
+            prompt = int(usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0)
+            completion = int(
+                usage.get("completion_tokens", usage.get("output_tokens", 0)) or 0
+            )
+            totals["prompt_tokens"] += prompt
+            totals["completion_tokens"] += completion
+            totals["total_tokens"] += int(usage.get("total_tokens", prompt + completion) or 0)
+            cost = entry.get("cost")
+            if isinstance(cost, (int, float)):
+                totals["estimated_cost"] += float(cost)
+                totals["cost_events"] += 1
+    totals["estimated_cost"] = round(totals["estimated_cost"], 10)
+    return totals
+
+
+def _telemetry_delta(before, after):
+    delta = {
+        "prompt_tokens": max(0, after["prompt_tokens"] - before["prompt_tokens"]),
+        "completion_tokens": max(
+            0, after["completion_tokens"] - before["completion_tokens"]
+        ),
+        "total_tokens": max(0, after["total_tokens"] - before["total_tokens"]),
+    }
+    if after.get("cost_events", 0) > before.get("cost_events", 0):
+        delta["estimated_cost"] = round(
+            max(0.0, after["estimated_cost"] - before["estimated_cost"]), 10
+        )
+    return delta
 
 
 def _config_to_namespace(config):

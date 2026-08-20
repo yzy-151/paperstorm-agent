@@ -19,6 +19,8 @@ litellm>=1.80,<1.81
 diskcache
 ddgs
 pypdf
+Markdown>=3.6,<4.0
+latex2mathml>=3.77,<4.0
 rank-bm25
 cryptography
 fastapi>=0.110,<1.0

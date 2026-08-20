@@ -177,8 +177,11 @@ class PaperStormLoggingTest(unittest.TestCase):
             with open(recorder.trace_path, encoding="utf-8") as f:
                 events = [json.loads(line) for line in f.read().splitlines()]
 
+        legacy_events = [
+            event for event in events if not event["event"].startswith("stage_")
+        ]
         self.assertEqual(
-            [event["event"] for event in events],
+            [event["event"] for event in legacy_events],
             [
                 "tool_start",
                 "retrieval_start",
@@ -190,10 +193,18 @@ class PaperStormLoggingTest(unittest.TestCase):
                 "tool_error",
             ],
         )
-        self.assertEqual(events[0]["tool_name"], "DummyRM")
-        self.assertEqual(events[1]["queries"], ["pim"])
-        self.assertEqual(events[2]["result_count"], 1)
-        self.assertEqual(events[7]["error_type"], "RuntimeError")
+        self.assertEqual(legacy_events[0]["tool_name"], "DummyRM")
+        self.assertEqual(legacy_events[1]["queries"], ["pim"])
+        self.assertEqual(legacy_events[2]["result_count"], 1)
+        self.assertEqual(legacy_events[7]["error_type"], "runtime_error")
+        stage_events = [
+            (event["event"], event["stage"])
+            for event in events
+            if event["event"].startswith("stage_")
+        ]
+        self.assertIn(("stage_start", "query"), stage_events)
+        self.assertIn(("stage_end", "retrieval"), stage_events)
+        self.assertIn(("stage_error", "retrieval"), stage_events)
 
 
 if __name__ == "__main__":

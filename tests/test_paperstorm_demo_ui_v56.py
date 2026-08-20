@@ -19,8 +19,8 @@ class PaperStormDemoUIV56Test(unittest.TestCase):
         self.assertIn('id="pipeline-wires"', self.index)
 
     def test_frontend_assets_are_versioned_to_prevent_mixed_releases(self):
-        self.assertIn('href="styles.css?v=6.0.0"', self.index)
-        self.assertIn('src="app.js?v=6.0.0"', self.index)
+        self.assertIn('href="styles.css?v=6.1.0"', self.index)
+        self.assertIn('src="app.js?v=6.1.0"', self.index)
         for node in ("request", "persona", "dialogue", "retrieval", "evidence", "outline", "writer", "deliver"):
             self.assertIn('data-node="{0}"'.format(node), self.index)
         self.assertIn("renderResearchProgress", self.script)

@@ -15,12 +15,12 @@ from unittest import mock
     },
 )
 class PaperStormServiceTest(unittest.TestCase):
-    def make_service(self):
+    def make_service(self, **kwargs):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         from knowledge_storm.paperstorm_service import PaperStormTaskService
 
-        return PaperStormTaskService(root_dir=Path(temp_dir.name))
+        return PaperStormTaskService(root_dir=Path(temp_dir.name), **kwargs)
 
     def make_service_with_pipeline_runner(self, runner):
         temp_dir = tempfile.TemporaryDirectory()
@@ -81,6 +81,27 @@ class PaperStormServiceTest(unittest.TestCase):
         self.assertIn("passive intermodulation", article["content"])
         self.assertGreater(scorecard["scores"]["total"], 50)
         self.assertTrue(trace["events"])
+        stage_starts = [
+            event.get("stage")
+            for event in trace["events"]
+            if event.get("event") == "stage_start"
+        ]
+        self.assertEqual(
+            stage_starts,
+            [
+                "request",
+                "persona",
+                "dialogue",
+                "query",
+                "retrieval",
+                "evidence",
+                "outline",
+                "writer",
+                "polish",
+                "evaluate",
+                "deliver",
+            ],
+        )
 
     def test_query_knowledge_base_answers_from_task_artifacts(self):
         service = self.make_service()
@@ -115,7 +136,7 @@ class PaperStormServiceTest(unittest.TestCase):
 
         bundle = service.get_dashboard_bundle(task["task_id"])
 
-        self.assertEqual(bundle["project"]["version"], "v6.0")
+        self.assertEqual(bundle["project"]["version"], "v6.1")
         self.assertEqual(bundle["tasks"][0]["task_id"], task["task_id"])
         self.assertIn("passive intermodulation", bundle["article"]["content"])
         self.assertTrue(bundle["trace"]["events"])
@@ -218,6 +239,40 @@ class PaperStormServiceTest(unittest.TestCase):
                 first = next(response.iter_lines())
                 self.assertIn("event: service", first)
 
+    def test_fastapi_serves_only_allowlisted_task_artifacts(self):
+        from fastapi.testclient import TestClient
+
+        from examples.storm_examples.paperstorm_service_api import create_app
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            client = TestClient(create_app(service_root=Path(temp_dir)))
+            task = client.post(
+                "/research-tasks",
+                json={"topic": "PIM", "run_mode": "fake"},
+            ).json()
+            client.post("/research-tasks/{0}/run".format(task["task_id"]))
+            output_dir = Path(task["output_dir"])
+            (output_dir / "paperstorm_report.pdf").write_bytes(b"%PDF-test")
+
+            pdf = client.get(
+                "/research-tasks/{0}/artifacts/paperstorm_report.pdf".format(
+                    task["task_id"]
+                )
+            )
+            forbidden = client.get(
+                "/research-tasks/{0}/artifacts/secrets.toml".format(task["task_id"])
+            )
+            missing = client.get(
+                "/research-tasks/{0}/artifacts/paperstorm_report.print.html".format(
+                    task["task_id"]
+                )
+            )
+
+        self.assertEqual(pdf.status_code, 200)
+        self.assertEqual(pdf.content, b"%PDF-test")
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(missing.status_code, 404)
+
     def test_paperstorm_run_mode_uses_injected_pipeline_runner(self):
         calls = []
 
@@ -275,6 +330,92 @@ class PaperStormServiceTest(unittest.TestCase):
         self.assertEqual(failed["status"], "failed")
         self.assertIn("provider failed", failed["error"])
         self.assertNotIn("sk-secret-value", json.dumps(failed, ensure_ascii=False))
+
+    def test_optional_pdf_is_registered_and_exposed_in_dashboard_bundle(self):
+        class FakePdfRenderer:
+            def render(self, markdown_path, output_pdf, title):
+                Path(output_pdf).write_bytes(b"%PDF-generated")
+                Path(output_pdf).with_suffix(".print.html").write_text(
+                    "<html>report</html>", encoding="utf-8"
+                )
+                return {
+                    "path": str(output_pdf),
+                    "html_path": str(Path(output_pdf).with_suffix(".print.html")),
+                    "page_count": 2,
+                    "text_length": 120,
+                    "size_bytes": Path(output_pdf).stat().st_size,
+                }
+
+        service = self.make_service(pdf_renderer=FakePdfRenderer())
+        task = service.submit_research_task(
+            topic="PIM 神经网络抑制",
+            run_mode="fake",
+            generate_pdf=True,
+        )
+
+        finished = service.run_task(task["task_id"])
+        bundle = service.get_dashboard_bundle(task["task_id"])
+        artifact_path = service.get_artifact_path(
+            task["task_id"], "paperstorm_report.pdf"
+        )
+
+        self.assertEqual(finished["status"], "succeeded")
+        self.assertEqual(finished["artifacts"]["pdf"]["status"], "ready")
+        self.assertEqual(finished["artifacts"]["pdf"]["page_count"], 2)
+        self.assertEqual(bundle["artifacts"]["pdf"]["status"], "ready")
+        self.assertTrue(bundle["artifacts"]["pdf"]["url"].endswith("paperstorm_report.pdf"))
+        self.assertTrue(artifact_path.exists())
+        trace_events = service.get_trace(task["task_id"])["events"]
+        self.assertTrue(
+            any(
+                event.get("event") == "stage_end"
+                and event.get("stage") == "deliver"
+                and event.get("output_summary", {}).get("pdf") == "ready"
+                for event in trace_events
+            )
+        )
+
+    def test_pdf_failure_keeps_research_success_and_reports_typed_error(self):
+        from knowledge_storm.paperstorm_pdf import PdfRenderError
+
+        class BrokenPdfRenderer:
+            def render(self, *args, **kwargs):
+                raise PdfRenderError(
+                    "pdf_renderer_unavailable", "没有找到 Edge 或 Chrome"
+                )
+
+        service = self.make_service(pdf_renderer=BrokenPdfRenderer())
+        task = service.submit_research_task(
+            topic="PIM",
+            run_mode="fake",
+            generate_pdf=True,
+        )
+
+        finished = service.run_task(task["task_id"])
+
+        self.assertEqual(finished["status"], "succeeded")
+        self.assertEqual(finished["artifacts"]["pdf"]["status"], "failed")
+        self.assertEqual(
+            finished["artifacts"]["pdf"]["error_type"],
+            "pdf_renderer_unavailable",
+        )
+        self.assertTrue(service.get_article(task["task_id"])["content"])
+
+    def test_artifact_lookup_is_allowlisted_and_rejects_traversal(self):
+        service = self.make_service()
+        task = service.submit_research_task(topic="PIM", run_mode="fake")
+        service.run_task(task["task_id"])
+        output_dir = Path(service.get_task(task["task_id"])["output_dir"])
+        (output_dir / "paperstorm_report.pdf").write_bytes(b"%PDF-test")
+
+        self.assertEqual(
+            service.get_artifact_path(task["task_id"], "paperstorm_report.pdf"),
+            output_dir / "paperstorm_report.pdf",
+        )
+        with self.assertRaises(PermissionError):
+            service.get_artifact_path(task["task_id"], "../tasks.json")
+        with self.assertRaises(PermissionError):
+            service.get_artifact_path(task["task_id"], "secrets.toml")
 
 
 if __name__ == "__main__":

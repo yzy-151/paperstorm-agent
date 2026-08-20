@@ -20,7 +20,6 @@ import json
 import time
 import warnings
 from argparse import ArgumentParser
-from datetime import datetime, timezone
 
 from knowledge_storm import (
     STORMWikiRunner,
@@ -28,6 +27,10 @@ from knowledge_storm import (
     STORMWikiLMConfigs,
 )
 from knowledge_storm.lm import LitellmModel
+from knowledge_storm.paperstorm_trace import (
+    PaperStormTraceRecorder,
+    TracedRetrievalModel,
+)
 from knowledge_storm.rm import ArxivRM, LocalPDFRM
 from knowledge_storm.utils import load_api_key
 
@@ -65,133 +68,6 @@ class PaperStormNoiseFilter(logging.Filter):
         ):
             return False
         return True
-
-
-class PaperStormTraceRecorder:
-    def __init__(self, article_dir: str, enabled: bool = True):
-        self.article_dir = article_dir
-        self.enabled = enabled
-        self.trace_path = os.path.join(article_dir, "paperstorm_trace.jsonl")
-        self.summary_path = os.path.join(article_dir, "run_summary.json")
-        self.started_at = time.time()
-        self.events = []
-        if self.enabled:
-            os.makedirs(article_dir, exist_ok=True)
-            open(self.trace_path, "w", encoding="utf-8").close()
-
-    @staticmethod
-    def _utc_now():
-        return datetime.now(timezone.utc).isoformat()
-
-    def emit(self, event: str, **payload):
-        if not self.enabled:
-            return
-        record = {
-            "ts": self._utc_now(),
-            "event": event,
-            **payload,
-        }
-        self.events.append(record)
-        with open(self.trace_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-    def write_summary(self, success: bool, artifacts=None, error=None, extra=None):
-        if not self.enabled:
-            return
-        artifacts = artifacts or []
-        retrieval_starts = [
-            event for event in self.events if event["event"] == "retrieval_start"
-        ]
-        summary = {
-            "success": success,
-            "duration_sec": round(time.time() - self.started_at, 4),
-            "event_count": len(self.events),
-            "retrieval_queries": sum(
-                len(event.get("queries") or []) for event in retrieval_starts
-            ),
-            "retrieval_success": sum(
-                event["event"] == "retrieval_end" for event in self.events
-            ),
-            "retrieval_failed": sum(
-                event["event"] == "retrieval_error" for event in self.events
-            ),
-            "artifacts": artifacts,
-        }
-        if error:
-            summary["error"] = error
-        if extra:
-            summary.update(extra)
-        with open(self.summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary, f, ensure_ascii=False, indent=2)
-
-
-class TracedRetrievalModel:
-    def __init__(self, rm, trace_recorder: PaperStormTraceRecorder, retriever_name: str):
-        self.rm = rm
-        self.trace_recorder = trace_recorder
-        self.retriever_name = retriever_name
-
-    def __call__(self, query_or_queries, exclude_urls=None):
-        queries = (
-            query_or_queries
-            if isinstance(query_or_queries, list)
-            else [query_or_queries]
-        )
-        started = time.time()
-        self.trace_recorder.emit(
-            "tool_start",
-            tool_name=self.retriever_name,
-            tool_type="retriever",
-            arguments={"queries": queries},
-        )
-        self.trace_recorder.emit(
-            "retrieval_start",
-            retriever=self.retriever_name,
-            queries=queries,
-        )
-        try:
-            results = self.rm(
-                query_or_queries=query_or_queries,
-                exclude_urls=exclude_urls or [],
-            )
-        except Exception as e:
-            self.trace_recorder.emit(
-                "retrieval_error",
-                retriever=self.retriever_name,
-                queries=queries,
-                duration_sec=round(time.time() - started, 4),
-                error_type=type(e).__name__,
-                error=str(e),
-            )
-            self.trace_recorder.emit(
-                "tool_error",
-                tool_name=self.retriever_name,
-                tool_type="retriever",
-                duration_sec=round(time.time() - started, 4),
-                error_type=type(e).__name__,
-                error=str(e),
-            )
-            raise
-        self.trace_recorder.emit(
-            "retrieval_end",
-            retriever=self.retriever_name,
-            queries=queries,
-            duration_sec=round(time.time() - started, 4),
-            result_count=len(results),
-        )
-        self.trace_recorder.emit(
-            "tool_end",
-            tool_name=self.retriever_name,
-            tool_type="retriever",
-            duration_sec=round(time.time() - started, 4),
-            result_count=len(results),
-        )
-        return results
-
-    def get_usage_and_reset(self):
-        if hasattr(self.rm, "get_usage_and_reset"):
-            return self.rm.get_usage_and_reset()
-        return {}
 
 
 def configure_paperstorm_logging(verbose: bool = False):

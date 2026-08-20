@@ -9,8 +9,11 @@ const state = {
   chatSessions: [],
   chatController: null,
   lastArticle: "",
+  lastPdfUrl: "",
   researchEvents: null,
   pipelineStatus: {},
+  hasStageTrace: false,
+  activeInvocations: {},
 };
 
 const pipelineNodes = {
@@ -104,29 +107,29 @@ function researchPayload(demo = false) {
     retriever: $("#task-retriever").value,
     output_language: $("#task-output-language").value,
     run_mode: $("#task-run-mode").value,
+    generate_pdf: $("#task-generate-pdf").checked,
     expected_keywords: demo ? [] : [$("#task-expected-keyword").value.trim()].filter(Boolean),
     forbidden_keywords: demo ? [] : [$("#task-forbidden-keyword").value.trim()].filter(Boolean),
   };
 }
 
 function renderResearchProgress(stage, failed = false) {
-  const stageNodes = {
-    created: ["request"], retrieval: ["persona", "dialogue", "query", "retrieval"],
-    outline: ["evidence", "outline"], writing: ["writer", "polish"],
-    completed: ["evaluate", "deliver"],
-  };
-  if (stage === "created") resetPipelineGraph();
-  const activeNodes = stageNodes[stage] || [];
-  activeNodes.forEach((nodeId, index) => {
-    setPipelineNodeStatus(nodeId, failed && index === activeNodes.length - 1 ? "failed" : "active");
-  });
-  if (stage === "completed" && !failed) {
-    Object.keys(pipelineNodes).forEach((nodeId) => setPipelineNodeStatus(nodeId, "complete"));
-  }
+  if (stage !== "created") return;
+  resetPipelineGraph();
+  setPipelineNodeStatus(
+    "request",
+    failed ? "failed" : "active",
+    failed ? "任务创建失败" : "正在提交并冻结运行配置",
+  );
 }
 
 function resetPipelineGraph() {
   state.pipelineStatus = {};
+  state.activeInvocations = {};
+  state.hasStageTrace = false;
+  state.lastPdfUrl = "";
+  $("#open-article-pdf").disabled = true;
+  $("#pipeline-open-pdf").classList.add("hidden");
   Object.keys(pipelineNodes).forEach((nodeId) => setPipelineNodeStatus(nodeId, "waiting", "尚未运行"));
 }
 
@@ -145,14 +148,15 @@ function formatPipelineTelemetry(trace = {}) {
   const costUsd = Number(trace.cost_usd ?? details.cost_usd);
   return {
     input: trace.input ?? details.input,
-    activity: trace.activity ?? details.activity ?? trace.message,
-    output: trace.output ?? details.output,
+    activity: trace.operation ?? trace.activity ?? details.activity ?? trace.message,
+    output: trace.output_summary ?? trace.output ?? details.output,
     durationMs: Number.isFinite(durationMs) ? durationMs : undefined,
     promptTokens,
     completionTokens,
     totalTokens,
-    costUsd: Number.isFinite(costUsd) ? costUsd : undefined,
+    costUsd: Number.isFinite(Number(trace.estimated_cost)) ? Number(trace.estimated_cost) : Number.isFinite(costUsd) ? costUsd : undefined,
     finishReason: trace.finish_reason ?? details.finish_reason,
+    errorType: trace.error_type ?? details.error_type,
     error: trace.error?.message ?? trace.error_message ?? details.error?.message ?? details.error,
   };
 }
@@ -174,9 +178,9 @@ function setPipelineNodeStatus(nodeId, status, detail = "", telemetry = {}) {
   };
   const node = $(`.pipeline-node[data-node="${nodeId}"]`);
   if (!node) return;
-  node.classList.remove("waiting", "active", "complete", "failed");
+  node.classList.remove("waiting", "active", "complete", "failed", "skipped");
   node.classList.add(status);
-  node.querySelector("em").textContent = {waiting: "WAIT", active: "RUN", complete: "DONE", failed: "ERR"}[status] || status;
+  node.querySelector("em").textContent = {waiting: "WAIT", active: "RUN", complete: "DONE", failed: "ERR", skipped: "SKIP"}[status] || status;
   let time = node.querySelector(".node-time");
   if ((status === "complete" || status === "failed") && Number.isFinite(measuredDuration)) {
     if (!time) {
@@ -254,9 +258,14 @@ function showPipelineNode(nodeId) {
     : "-";
   $("#pipeline-node-cost").textContent = Number.isFinite(runtime.costUsd) ? `$${runtime.costUsd.toFixed(6)}` : "-";
   $("#pipeline-node-finish").textContent = runtime.finishReason || "-";
-  $("#pipeline-node-error").textContent = runtime.error || "-";
+  $("#pipeline-node-error").textContent = runtime.error
+    ? `${runtime.errorType ? `[${runtime.errorType}] ` : ""}${runtime.error}`
+    : "-";
   $("#pipeline-node-status").textContent = runtime.status.toUpperCase();
   $("#pipeline-node-status").className = runtime.status;
+  $("#pipeline-pdf-actions").classList.toggle("hidden", nodeId !== "deliver");
+  $("#pipeline-open-pdf").classList.toggle("hidden", !state.lastPdfUrl);
+  $("#pipeline-open-pdf").href = state.lastPdfUrl || "#";
 }
 
 function openResearchEventStream(taskId) {
@@ -266,16 +275,25 @@ function openResearchEventStream(taskId) {
   source.addEventListener("task_status", (event) => {
     const payload = JSON.parse(event.data || "{}");
     if (payload.task_status === "running") {
-      setPipelineNodeStatus("request", "complete", `task ${taskId} 已启动`);
-      setPipelineNodeStatus("persona", "active", "正在生成调研视角");
-      setPipelineNodeStatus("dialogue", "active", "多 Agent 正在迭代提问");
+      if ((state.pipelineStatus.request?.status || "waiting") === "waiting") {
+        setPipelineNodeStatus("request", "active", `task ${taskId} 等待阶段 Trace`);
+      }
     } else if (payload.task_status === "failed") {
-      const active = Object.keys(state.pipelineStatus).find((key) => state.pipelineStatus[key].status === "active") || "request";
-      setPipelineNodeStatus(active, "failed", "任务执行失败，请查看 Trace");
+      const existingFailedNode = Object.keys(state.pipelineStatus).find(
+        (key) => state.pipelineStatus[key].status === "failed",
+      );
+      const active = Object.keys(state.pipelineStatus).find(
+        (key) => state.pipelineStatus[key].status === "active",
+      ) || "request";
+      if (!existingFailedNode) {
+        setPipelineNodeStatus(active, "failed", payload.error || "任务执行失败，请查看 Trace", {
+          errorType: "runtime_error",
+          error: payload.error || "任务执行失败",
+        });
+      }
       source.close();
       state.researchEvents = null;
     } else if (payload.task_status === "succeeded") {
-      Object.keys(pipelineNodes).forEach((nodeId) => setPipelineNodeStatus(nodeId, "complete"));
       source.close();
       state.researchEvents = null;
     }
@@ -285,36 +303,80 @@ function openResearchEventStream(taskId) {
 
 function applyPipelineTrace(trace) {
   const eventName = String(trace.event || trace.node || "").toLowerCase();
+  const stage = String(trace.stage || "").toLowerCase();
   const path = String(trace.path || "").toLowerCase();
   const detail = trace.tool_name || trace.tool || trace.retriever || trace.path || eventName;
   const telemetry = formatPipelineTelemetry(trace);
-  if (eventName === "run_start") {
-    setPipelineNodeStatus("request", "complete", "运行配置已冻结", telemetry);
-    setPipelineNodeStatus("persona", "active", "生成调研角色与视角", telemetry);
-  } else if (eventName.includes("retrieval_start") || eventName === "tool_start") {
-    ["persona", "dialogue", "query"].forEach((nodeId) => setPipelineNodeStatus(nodeId, "complete"));
-    setPipelineNodeStatus("retrieval", "active", detail, telemetry);
-  } else if (eventName.includes("retrieval_end") || eventName === "tool_end") {
+  const invocationId = String(trace.invocation_id || "");
+  if (eventName.startsWith("stage_")) state.hasStageTrace = true;
+  if (eventName === "stage_start" && pipelineNodes[stage]) {
+    if (invocationId) {
+      const active = state.activeInvocations[stage] || new Set();
+      active.add(invocationId);
+      state.activeInvocations[stage] = active;
+    }
+    setPipelineNodeStatus(stage, "active", trace.operation || detail, telemetry);
+    $("#research-current-activity").textContent = trace.operation || pipelineNodes[stage].title;
+  } else if (eventName === "stage_progress" && pipelineNodes[stage]) {
+    setPipelineNodeStatus(stage, "active", trace.operation || detail, telemetry);
+    $("#research-current-activity").textContent = trace.operation || pipelineNodes[stage].title;
+  } else if (eventName === "stage_end" && pipelineNodes[stage]) {
+    if (invocationId) state.activeInvocations[stage]?.delete(invocationId);
+    const stillActive = (state.activeInvocations[stage]?.size || 0) > 0;
+    setPipelineNodeStatus(
+      stage,
+      stillActive ? "active" : "complete",
+      stillActive ? "仍有并发调用正在执行" : (trace.operation || "阶段完成"),
+      telemetry,
+    );
+  } else if (eventName === "stage_error" && pipelineNodes[stage]) {
+    if (invocationId) state.activeInvocations[stage]?.delete(invocationId);
+    setPipelineNodeStatus(stage, "failed", trace.operation || trace.error_message || "阶段失败", telemetry);
+    markDownstreamSkipped(stage);
+    $("#research-current-activity").textContent = trace.error_message || "阶段执行失败";
+  } else if (eventName === "stage_usage" && pipelineNodes[stage]) {
+    const status = state.pipelineStatus[stage]?.status || "complete";
+    setPipelineNodeStatus(stage, status, trace.operation || "用量已汇总", telemetry);
+  } else if (eventName === "run_start") {
+    setPipelineNodeStatus("request", "active", "运行配置已冻结，正在初始化", telemetry);
+  } else if (!state.hasStageTrace && (eventName.includes("retrieval_start") || eventName === "tool_start")) {
+    if (!state.pipelineStatus.retrieval || state.pipelineStatus.retrieval.status === "waiting") {
+      setPipelineNodeStatus("retrieval", "active", detail, telemetry);
+    }
+  } else if (!state.hasStageTrace && (eventName.includes("retrieval_end") || eventName === "tool_end")) {
     setPipelineNodeStatus("retrieval", "complete", detail, telemetry);
-    setPipelineNodeStatus("evidence", "active", `${trace.result_count ?? "-"} 条候选证据`, telemetry);
-  } else if (eventName === "artifact_written" && path.includes("outline")) {
+  } else if (!state.hasStageTrace && eventName === "artifact_written" && path.includes("outline")) {
     setPipelineNodeStatus("evidence", "complete", "证据索引已建立");
     setPipelineNodeStatus("outline", "complete", detail, telemetry);
     setPipelineNodeStatus("writer", "active", "按章节生成内容");
-  } else if (eventName === "artifact_written" && path.includes("article_polished")) {
+  } else if (!state.hasStageTrace && eventName === "artifact_written" && path.includes("article_polished")) {
     setPipelineNodeStatus("writer", "complete", "文章草稿已生成");
     setPipelineNodeStatus("polish", "complete", detail, telemetry);
     setPipelineNodeStatus("evaluate", "active", "检查引用与质量指标");
-  } else if (eventName === "artifact_written" && path.includes("article")) {
+  } else if (!state.hasStageTrace && eventName === "artifact_written" && path.includes("article")) {
     setPipelineNodeStatus("writer", "complete", detail, telemetry);
     setPipelineNodeStatus("polish", "active", "去重并统一结构");
   } else if (eventName === "run_end") {
-    const activeNode = Object.keys(state.pipelineStatus).find((nodeId) => state.pipelineStatus[nodeId]?.status === "active");
-    Object.keys(pipelineNodes).forEach((nodeId) => {
-      const failed = trace.success === false && nodeId === (activeNode || "deliver");
-      setPipelineNodeStatus(nodeId, failed ? "failed" : "complete", detail, nodeId === "deliver" || failed ? telemetry : {});
-    });
+    if (trace.success === false) {
+      const existingFailedNode = Object.keys(state.pipelineStatus).find(
+        (nodeId) => state.pipelineStatus[nodeId]?.status === "failed",
+      );
+      if (existingFailedNode) return;
+      const activeNode = Object.keys(state.pipelineStatus).find((nodeId) => state.pipelineStatus[nodeId]?.status === "active") || "request";
+      setPipelineNodeStatus(activeNode, "failed", trace.error || "任务失败", telemetry);
+      markDownstreamSkipped(activeNode);
+    }
   }
+}
+
+function markDownstreamSkipped(failedStage) {
+  const order = ["request", "persona", "dialogue", "query", "retrieval", "evidence", "outline", "writer", "polish", "evaluate", "deliver"];
+  const failedIndex = order.indexOf(failedStage);
+  order.slice(failedIndex + 1).forEach((nodeId) => {
+    if ((state.pipelineStatus[nodeId]?.status || "waiting") === "waiting") {
+      setPipelineNodeStatus(nodeId, "skipped", "上游阶段失败，未执行");
+    }
+  });
 }
 
 async function runResearchWorkflow(demo = false) {
@@ -330,16 +392,18 @@ async function runResearchWorkflow(demo = false) {
     state.researchTaskId = task.task_id;
     $("#research-task-id").textContent = task.task_id;
     openResearchEventStream(task.task_id);
-    renderResearchProgress("retrieval");
-    $("#research-current-activity").textContent = "Agent 正在检索证据并组织文章...";
+    $("#research-current-activity").textContent = "任务已提交，等待后端阶段 Trace...";
     const completed = await fetchJson(`/research-tasks/${encodeURIComponent(task.task_id)}/run`, {method: "POST"});
     if (completed.status !== "succeeded") throw new Error(completed.error || `任务状态：${completed.status}`);
-    renderResearchProgress("completed");
     $("#research-current-activity").textContent = "调研完成，文章、评分与引用已更新。";
     await loadResearchResult(task.task_id);
     toast("调研任务已完成");
   } catch (error) {
-    renderResearchProgress("retrieval", true);
+    const active = Object.keys(state.pipelineStatus).find((nodeId) => state.pipelineStatus[nodeId]?.status === "active");
+    if (active && state.pipelineStatus[active]?.status !== "failed") {
+      setPipelineNodeStatus(active, "failed", error.message, {errorType: "request_error", error: error.message});
+      markDownstreamSkipped(active);
+    }
     $("#research-current-activity").textContent = error.message;
     toast(error.message, "error");
   } finally {
@@ -349,15 +413,42 @@ async function runResearchWorkflow(demo = false) {
 }
 
 async function loadResearchResult(taskId) {
-  const [article, scorecard] = await Promise.all([
+  const [article, scorecard, dashboard] = await Promise.all([
     fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/article`),
     fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/scorecard`),
+    fetchJson(`/research-tasks/${encodeURIComponent(taskId)}/dashboard`),
   ]);
   renderResearchArticle(article.content || "");
   state.lastArticle = article.content || "";
   $("#download-article-md").disabled = !state.lastArticle;
   renderMetricGrid($("#scorecard"), scorecard, 8);
   $("#research-score-section").classList.toggle("hidden", !Object.keys(scorecard).length);
+  updatePdfArtifact(dashboard.artifacts?.pdf || {});
+}
+
+function updatePdfArtifact(pdf = {}) {
+  state.lastPdfUrl = pdf.status === "ready" && pdf.url
+    ? `${serviceBase()}${pdf.url}`
+    : "";
+  $("#open-article-pdf").disabled = !state.lastPdfUrl;
+  $("#pipeline-open-pdf").classList.toggle("hidden", !state.lastPdfUrl);
+  $("#pipeline-open-pdf").href = state.lastPdfUrl || "#";
+  if (pdf.status === "failed") {
+    setPipelineNodeStatus("deliver", "failed", pdf.error_message || "PDF 生成失败", {
+      errorType: pdf.error_type || "pdf_render_error",
+      error: pdf.error_message || "PDF 生成失败",
+      output: {markdown: "ready", pdf: "failed"},
+    });
+  } else if (pdf.status === "ready") {
+    setPipelineNodeStatus("deliver", "complete", `PDF 已生成 · ${pdf.page_count || "-"} 页`, {
+      output: {
+        markdown: "ready",
+        pdf: "paperstorm_report.pdf",
+        page_count: pdf.page_count,
+        size_bytes: pdf.size_bytes,
+      },
+    });
+  }
 }
 
 function renderResearchArticle(content) {
@@ -608,6 +699,11 @@ function downloadArticleMarkdown() {
   anchor.remove();
   URL.revokeObjectURL(url);
   toast("Markdown 已下载");
+}
+
+function openArticlePdf() {
+  if (!state.lastPdfUrl) return toast("当前任务没有可用的 PDF", "error");
+  window.open(state.lastPdfUrl, "_blank", "noopener");
 }
 
 async function loadBenchmarkCatalog() {
@@ -900,6 +996,7 @@ $("#refresh-chat-sessions").addEventListener("click", loadChatSessions);
 $("#regenerate-chat").addEventListener("click", regenerateChat);
 $("#stop-chat").addEventListener("click", stopChat);
 $("#download-article-md").addEventListener("click", downloadArticleMarkdown);
+$("#open-article-pdf").addEventListener("click", openArticlePdf);
 $("#refresh-benchmark-catalog").addEventListener("click", loadBenchmarkCatalog);
 $("#benchmark-profile").addEventListener("change", () => {
   if (state.selectedBenchmark) selectBenchmark(state.selectedBenchmark.id);

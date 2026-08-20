@@ -45,14 +45,14 @@ class PaperStormReleaseIntegrityV52Test(unittest.TestCase):
         setup_text = (ROOT / "setup.py").read_text(encoding="utf-8")
         self.assertIn('python_requires=">=3.10,<3.12"', setup_text)
 
-    def test_package_versions_match_v59(self):
+    def test_package_versions_match_v61(self):
         setup_text = (ROOT / "setup.py").read_text(encoding="utf-8")
         init_text = (ROOT / "knowledge_storm" / "__init__.py").read_text(
             encoding="utf-8"
         )
         setup_version = re.search(r'version="([^"]+)"', setup_text).group(1)
         init_version = re.search(r'__version__ = "([^"]+)"', init_text).group(1)
-        self.assertEqual(setup_version, "6.0.0")
+        self.assertEqual(setup_version, "6.1.0")
         self.assertEqual(init_version, setup_version)
         self.assertIn("PaperStorm Agent", setup_text)
 

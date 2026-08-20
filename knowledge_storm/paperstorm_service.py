@@ -19,6 +19,7 @@ class PaperStormTaskService:
         root_dir,
         max_concurrent_tasks: int = 1,
         pipeline_runner=None,
+        pdf_renderer=None,
         observability=None,
     ):
         from .paperstorm_benchmarks import BenchmarkRunManager
@@ -32,6 +33,7 @@ class PaperStormTaskService:
         self.results_dir.mkdir(exist_ok=True)
         self.max_concurrent_tasks = max(1, int(max_concurrent_tasks))
         self.pipeline_runner = pipeline_runner
+        self.pdf_renderer = pdf_renderer
         self.observability = observability or build_observability(self.root_dir)
         self.benchmark_runs = BenchmarkRunManager(
             self.root_dir, observability=self.observability
@@ -123,7 +125,7 @@ class PaperStormTaskService:
                 "run_mode": state.get("run_mode"),
                 "retriever": state.get("retriever"),
                 "output_language": state.get("output_language"),
-                "version": "6.0.0",
+                "version": "6.1.0",
             },
             session_id=task_id,
             tags=["research", str(state.get("run_mode") or "")],
@@ -149,7 +151,13 @@ class PaperStormTaskService:
                         )
                     else:
                         self._run_fake_research(state)
-                    pipeline_span.end(output={"status": "succeeded"})
+                    self._maybe_generate_pdf(state)
+                    pipeline_span.end(
+                        output={
+                            "status": "succeeded",
+                            "pdf": (state.get("artifacts") or {}).get("pdf", {}),
+                        }
+                    )
                 state["status"] = "succeeded"
                 state["finished_at"] = _now()
                 scorecard = self.get_scorecard(task_id)
@@ -291,7 +299,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v6.0",
+                "version": "v6.1",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -300,6 +308,7 @@ class PaperStormTaskService:
             "scorecard": self.get_scorecard(task_id),
             "trace": self.get_trace(task_id),
             "process": self.get_process_artifacts(task_id),
+            "artifacts": self.get_artifacts(task_id),
             "pipeline_worker": _read_json(output_dir / "pipeline_worker.json", {}),
             "service_snapshot": {
                 "task_id": task_id,
@@ -310,6 +319,47 @@ class PaperStormTaskService:
                 "updated_at": state.get("updated_at", ""),
             },
         }
+
+    def get_artifacts(self, task_id: str):
+        state = self._read_state(task_id)
+        output_dir = Path(state["output_dir"])
+        stored = dict(state.get("artifacts") or {})
+        pdf_path = output_dir / "paperstorm_report.pdf"
+        pdf = dict(stored.get("pdf") or {})
+        if pdf_path.exists() and not pdf:
+            pdf = {
+                "status": "ready",
+                "name": pdf_path.name,
+                "size_bytes": pdf_path.stat().st_size,
+            }
+        pdf.setdefault("status", "not_requested")
+        if pdf.get("status") == "ready":
+            pdf["url"] = "/research-tasks/{0}/artifacts/{1}".format(
+                task_id, pdf_path.name
+            )
+        return {
+            "markdown": {
+                "status": "ready" if self.get_article(task_id)["path"] else "missing",
+                "url": "/research-tasks/{0}/article".format(task_id),
+            },
+            "pdf": pdf,
+        }
+
+    def get_artifact_path(self, task_id: str, artifact_name: str):
+        allowed = {
+            "paperstorm_report.pdf",
+            "paperstorm_report.print.html",
+        }
+        if artifact_name not in allowed:
+            raise PermissionError("Artifact is not allow-listed: {0}".format(artifact_name))
+        state = self._read_state(task_id)
+        output_dir = Path(state["output_dir"]).resolve()
+        path = (output_dir / artifact_name).resolve()
+        if path.parent != output_dir:
+            raise PermissionError("Artifact path escapes the task directory.")
+        if not path.is_file():
+            raise FileNotFoundError("Artifact does not exist: {0}".format(artifact_name))
+        return path
 
     def query_knowledge_base(self, task_id: str, question: str, top_k: int = 3):
         from .paperstorm_router_llm import build_chat_llm_callable
@@ -585,7 +635,7 @@ class PaperStormTaskService:
                 "chat_id": chat_id,
                 "run_mode": session.get("run_mode", ""),
                 "retriever": session.get("retriever", ""),
-                "version": "6.0.0",
+                "version": "6.1.0",
             },
             session_id=chat_id,
             user_id=session.get("user_id", ""),
@@ -1076,19 +1126,59 @@ class PaperStormTaskService:
                 "timestamp": _now(),
                 "tool": "fake_research",
             },
-            {
-                "event": "tool_end",
-                "task_id": state["task_id"],
-                "timestamp": _now(),
-                "tool": "fake_research",
-            },
-            {
-                "event": "run_end",
-                "task_id": state["task_id"],
-                "timestamp": _now(),
-                "success": True,
-            },
         ]
+        fake_stages = [
+            ("request", "解析任务并初始化运行配置", {"topic": topic}, {"mode": "fake"}),
+            ("persona", "生成多视角研究角色", {"topic": topic}, {"perspectives": ["领域专家"]}),
+            ("dialogue", "执行多 Agent 研究对话", {"perspectives": 1}, {"turns": 1}),
+            ("query", "规划检索查询", {"topic": topic}, {"query_count": 2}),
+            ("retrieval", "检索论文证据", {"retriever": state.get("retriever")}, {"result_count": 2}),
+            ("evidence", "清洗并组织证据", {"candidate_count": 2}, {"selected_count": 2}),
+            ("outline", "生成并细化文章大纲", {"topic": topic}, {"sections": 2}),
+            ("writer", "按章节撰写文章", {"sections": 2}, {"article": "storm_gen_article_polished.txt"}),
+            ("polish", "去重并润色文章", {"article": "storm_gen_article_polished.txt"}, {"status": "polished"}),
+            ("evaluate", "评估证据与文章质量", {"source_count": 2}, {"status": "scored"}),
+            ("deliver", "整理 Markdown 交付物", {"article": "storm_gen_article_polished.txt"}, {"markdown": "ready"}),
+        ]
+        for stage, operation, stage_input, output_summary in fake_stages:
+            trace_events.extend(
+                [
+                    {
+                        "event": "stage_start",
+                        "stage": stage,
+                        "operation": operation,
+                        "input": stage_input,
+                        "timestamp": _now(),
+                    },
+                    {
+                        "event": "stage_end",
+                        "stage": stage,
+                        "operation": operation,
+                        "output_summary": output_summary,
+                        "duration_ms": 0,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "estimated_cost": 0.0,
+                        "timestamp": _now(),
+                    },
+                ]
+            )
+        trace_events.extend(
+            [
+                {
+                    "event": "tool_end",
+                    "task_id": state["task_id"],
+                    "timestamp": _now(),
+                    "tool": "fake_research",
+                },
+                {
+                    "event": "run_end",
+                    "task_id": state["task_id"],
+                    "timestamp": _now(),
+                    "success": True,
+                },
+            ]
+        )
         (output_dir / "paperstorm_trace.jsonl").write_text(
             "\n".join(json.dumps(event, ensure_ascii=False) for event in trace_events)
             + "\n",
@@ -1125,6 +1215,107 @@ class PaperStormTaskService:
 
             runner = run_paperstorm_pipeline_task
         runner(state)
+
+    def _maybe_generate_pdf(self, state: Dict):
+        options = state.get("options") or {}
+        artifacts = state.setdefault("artifacts", {})
+        if not bool(options.get("generate_pdf", False)):
+            artifacts["pdf"] = {"status": "not_requested"}
+            return
+
+        output_dir = Path(state["output_dir"])
+        article = _first_existing(
+            [
+                output_dir / "storm_gen_article_polished.txt",
+                output_dir / "storm_gen_article.txt",
+            ]
+        )
+        pdf_path = output_dir / "paperstorm_report.pdf"
+        self._append_trace_event(
+            state,
+            {
+                "event": "stage_start",
+                "stage": "deliver",
+                "operation": "将 Markdown 文章渲染为 PDF",
+                "input": {
+                    "article": article.name if article else "",
+                    "output": pdf_path.name,
+                },
+            },
+        )
+        try:
+            if article is None:
+                from .paperstorm_pdf import PdfRenderError
+
+                raise PdfRenderError(
+                    "pdf_source_missing", "没有找到可用于生成 PDF 的文章。"
+                )
+            renderer = self.pdf_renderer
+            if renderer is None:
+                from .paperstorm_pdf import PaperStormPdfRenderer
+
+                renderer = PaperStormPdfRenderer()
+            result = renderer.render(
+                markdown_path=article,
+                output_pdf=pdf_path,
+                title=state.get("topic") or "PaperStorm 调研报告",
+            )
+            artifacts["pdf"] = {
+                "status": "ready",
+                "name": pdf_path.name,
+                "page_count": int(result.get("page_count", 0)),
+                "text_length": int(result.get("text_length", 0)),
+                "size_bytes": int(result.get("size_bytes", pdf_path.stat().st_size)),
+                "html_name": Path(
+                    result.get("html_path") or pdf_path.with_suffix(".print.html")
+                ).name,
+            }
+            self._append_trace_event(
+                state,
+                {
+                    "event": "artifact_written",
+                    "stage": "deliver",
+                    "path": str(pdf_path),
+                    "artifact_name": pdf_path.name,
+                },
+            )
+            self._append_trace_event(
+                state,
+                {
+                    "event": "stage_end",
+                    "stage": "deliver",
+                    "operation": "PDF 交付物生成完成",
+                    "output_summary": {
+                        "pdf": "ready",
+                        "page_count": artifacts["pdf"]["page_count"],
+                        "size_bytes": artifacts["pdf"]["size_bytes"],
+                    },
+                },
+            )
+        except Exception as error:
+            error_type = getattr(error, "code", "pdf_render_error")
+            artifacts["pdf"] = {
+                "status": "failed",
+                "error_type": error_type,
+                "error_message": _redact_error(str(error)),
+            }
+            self._append_trace_event(
+                state,
+                {
+                    "event": "stage_error",
+                    "stage": "deliver",
+                    "operation": "PDF 交付物生成失败",
+                    "error_type": error_type,
+                    "error_message": _redact_error(str(error)),
+                },
+            )
+
+    def _append_trace_event(self, state: Dict, event: Dict):
+        trace_path = Path(state["output_dir"]) / "paperstorm_trace.jsonl"
+        trace_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {"ts": _now(), **_redact(event)}
+        with trace_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def _state_path(self, task_id: str):
         return self.tasks_dir / "{0}.json".format(task_id)
