@@ -16,7 +16,7 @@
       <div class="topbar-context"><span>WORKSPACE</span><strong id="workspace-title">论文调研</strong></div>
       <div class="topbar-actions">
         <span class="service-pill" id="service-state"><i class="status-dot"></i><span>连接中</span></span>
-        <span class="release-pill"><small>release</small><strong>v5.8.1</strong></span>
+        <span class="release-pill"><small>release</small><strong>v5.9</strong></span>
       </div>
     </header>
 
@@ -60,12 +60,30 @@
             </div></details>
           </section>
 
-          <section class="pipeline-strip" aria-label="调研执行阶段">
-            <div class="section-heading compact"><div><span>02 / PIPELINE</span><h2>执行链路</h2></div><p class="activity-line" id="research-current-activity">填写主题后开始调研。</p></div>
-            <div class="research-progress" id="research-progress">
-              <div data-stage="created"><i>01</i><span>创建任务</span></div><div data-stage="retrieval"><i>02</i><span>检索证据</span></div>
-              <div data-stage="outline"><i>03</i><span>生成大纲</span></div><div data-stage="writing"><i>04</i><span>撰写文章</span></div>
-              <div data-stage="completed"><i>05</i><span>完成</span></div>
+          <section class="pipeline-strip pipeline-workbench" aria-label="调研执行阶段">
+            <div class="section-heading compact"><div><span>02 / AGENT GRAPH</span><h2>执行链路</h2></div><p class="activity-line" id="research-current-activity">填写主题后开始调研。</p></div>
+            <div class="pipeline-layout">
+              <div class="pipeline-canvas" id="pipeline-canvas">
+                <svg class="pipeline-wires" id="pipeline-wires" aria-hidden="true"></svg>
+                <div class="agent-cluster-label">MULTI-AGENT DELIBERATION</div>
+                <button class="pipeline-node" data-node="request" style="--col:1;--row:1" type="button"><i>IN</i><span><b>任务编排</b><small>Topic · Constraints</small></span><em>WAIT</em></button>
+                <button class="pipeline-node agent-node" data-node="persona" style="--col:2;--row:1" type="button"><i>AG</i><span><b>Persona Generator</b><small>多视角角色生成</small></span><em>WAIT</em></button>
+                <button class="pipeline-node agent-node" data-node="dialogue" style="--col:3;--row:1" type="button"><i>AG</i><span><b>Conv Simulator</b><small>WikiWriter · Expert</small></span><em>WAIT</em></button>
+                <button class="pipeline-node" data-node="query" style="--col:4;--row:1" type="button"><i>Q</i><span><b>查询规划</b><small>Rewrite · Domain Guard</small></span><em>WAIT</em></button>
+                <button class="pipeline-node" data-node="retrieval" style="--col:4;--row:3" type="button"><i>R</i><span><b>论文检索</b><small>arXiv · Local PDF</small></span><em>WAIT</em></button>
+                <button class="pipeline-node" data-node="evidence" style="--col:3;--row:3" type="button"><i>E</i><span><b>证据治理</b><small>Chunk · Hybrid · Rerank</small></span><em>WAIT</em></button>
+                <button class="pipeline-node" data-node="outline" style="--col:2;--row:3" type="button"><i>O</i><span><b>大纲生成</b><small>Draft · Refine</small></span><em>WAIT</em></button>
+                <button class="pipeline-node" data-node="writer" style="--col:1;--row:3" type="button"><i>W</i><span><b>章节写作</b><small>Section Parallelism</small></span><em>WAIT</em></button>
+                <button class="pipeline-node" data-node="polish" style="--col:1;--row:5" type="button"><i>P</i><span><b>文章润色</b><small>Deduplicate · Cohesion</small></span><em>WAIT</em></button>
+                <button class="pipeline-node" data-node="evaluate" style="--col:2;--row:5" type="button"><i>EV</i><span><b>质量评估</b><small>Evidence · Citation</small></span><em>WAIT</em></button>
+                <button class="pipeline-node" data-node="deliver" style="--col:3;--row:5" type="button"><i>OUT</i><span><b>交付产物</b><small>Article · Trace · Score</small></span><em>WAIT</em></button>
+              </div>
+              <aside class="pipeline-inspector" id="pipeline-inspector">
+                <div><span>NODE INSPECTOR</span><b id="pipeline-node-status">WAITING</b></div>
+                <h3 id="pipeline-node-title">选择一个节点</h3>
+                <p id="pipeline-node-description">点击节点查看职责、输入输出和当前运行信息。</p>
+                <dl><dt>INPUT</dt><dd id="pipeline-node-input">-</dd><dt>OUTPUT</dt><dd id="pipeline-node-output">-</dd><dt>LIVE DETAIL</dt><dd id="pipeline-node-detail">尚未运行</dd></dl>
+              </aside>
             </div>
           </section>
 

@@ -9,7 +9,7 @@ Policy:
 Env knobs:
     PAPERSTORM_ROUTER_LLM         1 to force LLM routing in fake mode
     PAPERSTORM_ROUTER_PROVIDER    deepseek (default)
-    PAPERSTORM_ROUTER_MODEL       deepseek-chat (default)
+    PAPERSTORM_ROUTER_MODEL       deepseek-v4-flash (default)
     PAPERSTORM_ROUTER_API_KEY     falls back to DEEPSEEK_API_KEY
     PAPERSTORM_ROUTER_API_BASE    falls back to DEEPSEEK_API_BASE
 """
@@ -22,7 +22,9 @@ from typing import Callable, Optional
 
 
 DEFAULT_PROVIDER = "deepseek"
-DEFAULT_MODEL = "deepseek-chat"
+DEFAULT_MODEL = "deepseek-v4-flash"
+DEEPSEEK_V4_CONTEXT_TOKENS = 1_000_000
+DEEPSEEK_V4_MAX_OUTPUT_TOKENS = 384_000
 
 
 def _router_cache_size() -> int:
@@ -183,6 +185,70 @@ def build_judge_llm_callable(
     return judge_llm
 
 
+def build_memory_extractor_callable(enabled: Optional[bool] = None):
+    """Return a structured durable-memory candidate extractor."""
+    if enabled is None:
+        enabled = str(os.getenv("PAPERSTORM_MEMORY_LLM", "")).lower() in {
+            "1", "true", "yes", "on"
+        }
+    if not enabled:
+        return None
+    config = _resolve_provider_config()
+    if config is None:
+        return None
+    model_name, api_key, api_base = config
+
+    def extract(prompt: str):
+        import litellm
+
+        response = litellm.completion(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            api_key=api_key,
+            api_base=api_base,
+            temperature=0.0,
+            max_tokens=500,
+            timeout=25,
+            response_format={"type": "json_object"},
+            cache={"no-cache": True, "no-store": True},
+        )
+        return str((response["choices"][0].get("message") or {}).get("content") or "")
+
+    return extract
+
+
+def build_context_summarizer_callable(enabled: Optional[bool] = None):
+    """Return the LLM compressor used only after the context watermark."""
+    if enabled is None:
+        enabled = str(os.getenv("PAPERSTORM_SUMMARY_LLM", "")).lower() in {
+            "1", "true", "yes", "on"
+        }
+    if not enabled:
+        return None
+    config = _resolve_provider_config()
+    if config is None:
+        return None
+    model_name, api_key, api_base = config
+
+    def summarize(prompt: str):
+        import litellm
+
+        response = litellm.completion(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            api_key=api_key,
+            api_base=api_base,
+            temperature=0.0,
+            max_tokens=4000,
+            timeout=60,
+            response_format={"type": "json_object"},
+            cache={"no-cache": True, "no-store": True},
+        )
+        return str((response["choices"][0].get("message") or {}).get("content") or "")
+
+    return summarize
+
+
 def _resolve_provider_config():
     """Return (model_name, api_key, api_base) or None when not configured."""
     _load_flat_toml_env()
@@ -200,7 +266,28 @@ def _resolve_provider_config():
     )
     if not api_key:
         return None
+    if provider == "deepseek" and model.startswith("deepseek-v4-"):
+        # Older LiteLLM releases do not map DeepSeek V4 yet. Its official API
+        # is OpenAI-compatible, so use the generic provider without relying on
+        # LiteLLM's model metadata table.
+        return "openai/{0}".format(model), api_key, api_base or "https://api.deepseek.com"
     return "{0}/{1}".format(provider, model), api_key, api_base
+
+
+def model_capabilities(model=DEFAULT_MODEL):
+    if str(model).startswith("deepseek-v4-"):
+        return {
+            "model": str(model),
+            "context_tokens": DEEPSEEK_V4_CONTEXT_TOKENS,
+            "max_output_tokens": DEEPSEEK_V4_MAX_OUTPUT_TOKENS,
+            "provider_mode": "openai_compatible",
+        }
+    return {
+        "model": str(model),
+        "context_tokens": 64_000,
+        "max_output_tokens": 8_000,
+        "provider_mode": "litellm_mapped",
+    }
 
 
 def build_intent_router(

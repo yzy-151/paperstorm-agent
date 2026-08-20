@@ -280,9 +280,15 @@ class SpanHandle(AbstractContextManager):
 
 
 def build_observability(root_dir, langfuse_client=None):
-    enabled = os.getenv("PAPERSTORM_OBSERVABILITY", "").lower() == "langfuse"
+    offline = str(os.getenv("PAPERSTORM_TEST_OFFLINE", "0")).strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    enabled = (
+        not offline
+        and os.getenv("PAPERSTORM_OBSERVABILITY", "").lower() == "langfuse"
+    )
     credentials = bool(os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"))
-    client = langfuse_client
+    client = None if offline else langfuse_client
     if enabled and credentials and client is None:
         try:
             from langfuse import get_client

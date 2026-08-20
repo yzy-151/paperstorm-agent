@@ -33,6 +33,55 @@ class CountingEmbedding(KeywordEmbedding):
 
 
 class PaperStormMemoryV56Tests(unittest.TestCase):
+    def test_llm_candidate_extractor_is_validated_before_durable_write(self):
+        from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
+
+        def extractor(_prompt):
+            return {
+                "memory_type": "preference",
+                "subject": "user",
+                "content": "用户偏好中文回答",
+                "canonical_key": "answer_language",
+                "confidence": 0.94,
+                "importance": 0.8,
+            }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = LongTermMemoryServiceV56(
+                Path(temp_dir) / "memory",
+                embedding_provider=KeywordEmbedding(),
+                candidate_extractor=extractor,
+            )
+            result = service.ingest_message(
+                "tenant:user", "以后回答简洁一些，用中文。", "message-1"
+            )
+
+            self.assertEqual(result["status"], "persisted")
+            self.assertEqual(result["memory"]["canonical_key"], "answer_language")
+            self.assertEqual(result["memory"]["metadata"]["extractor"], "llm_structured")
+
+    def test_negative_memory_instruction_blocks_llm_candidate(self):
+        from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = LongTermMemoryServiceV56(
+                Path(temp_dir) / "memory",
+                embedding_provider=KeywordEmbedding(),
+                candidate_extractor=lambda _prompt: {
+                    "memory_type": "semantic",
+                    "subject": "user",
+                    "content": "不应写入",
+                    "canonical_key": "blocked",
+                    "confidence": 0.99,
+                },
+            )
+            result = service.ingest_message(
+                "tenant:user", "不要记住下面这句话。", "message-2"
+            )
+
+            self.assertEqual(result["status"], "skipped")
+            self.assertEqual(service.list_memories("tenant:user"), [])
+
     def _service(self, root):
         from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
 

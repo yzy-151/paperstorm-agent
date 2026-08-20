@@ -679,7 +679,9 @@ class PaperStormProductionRuntimeV45:
                     build_chat_llm_callable,
                     build_intent_router,
                     build_judge_llm_callable,
+                    build_memory_extractor_callable,
                 )
+                from .paperstorm_memory_v56 import LongTermMemoryService
 
                 intent_router = self.intent_router or build_intent_router(
                     run_mode=payload.get("run_mode", "fake")
@@ -689,12 +691,17 @@ class PaperStormProductionRuntimeV45:
                 evidence_judge = self.evidence_judge or build_judge_llm_callable(
                     enabled=real_mode
                 )
+                memory_service = LongTermMemoryService(
+                    Path(self.task_service.root_dir) / "memory_service_v56",
+                    candidate_extractor=build_memory_extractor_callable(enabled=real_mode),
+                )
                 runtime = self.graph_runtime_class(
                     self.root_dir / "langgraph_v44",
                     self.task_service,
                     intent_router=intent_router,
                     chat_llm=chat_llm,
                     evidence_judge=evidence_judge,
+                    memory_service=memory_service,
                 )
                 graph_result = runtime.invoke(**payload)
             for event in graph_result.get("node_events") or []:

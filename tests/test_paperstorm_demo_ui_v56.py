@@ -13,12 +13,14 @@ class PaperStormDemoUIV56Test(unittest.TestCase):
         cls.script = (frontend / "app.js").read_text(encoding="utf-8")
         cls.styles = (frontend / "styles.css").read_text(encoding="utf-8")
 
-    def test_research_mode_has_one_click_demo_and_five_stage_progress(self):
+    def test_research_mode_has_one_click_demo_and_live_agent_graph(self):
         self.assertIn('id="start-research-demo"', self.index)
-        self.assertIn('id="research-progress"', self.index)
-        for stage in ("created", "retrieval", "outline", "writing", "completed"):
-            self.assertIn('data-stage="{0}"'.format(stage), self.index)
+        self.assertIn('id="pipeline-canvas"', self.index)
+        self.assertIn('id="pipeline-wires"', self.index)
+        for node in ("request", "persona", "dialogue", "retrieval", "evidence", "outline", "writer", "deliver"):
+            self.assertIn('data-node="{0}"'.format(node), self.index)
         self.assertIn("renderResearchProgress", self.script)
+        self.assertIn("applyPipelineTrace", self.script)
 
     def test_chat_mode_keeps_context_aware_session_controls(self):
         for marker in (

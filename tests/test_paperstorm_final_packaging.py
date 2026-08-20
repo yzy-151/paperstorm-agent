@@ -21,8 +21,9 @@ class PaperStormFinalPackagingTest(unittest.TestCase):
         readme = (root / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("PaperStormRAGIndex", readme)
-        self.assertIn("Context v4.2", readme)
-        self.assertIn("Memory v4.3", readme)
+        self.assertIn("Context v5.9", readme)
+        self.assertIn("Memory v5.6", readme)
+        self.assertIn("Session Recall", readme)
         self.assertIn("LangGraph v4.4", readme)
         self.assertIn("Production v4.5", readme)
         self.assertIn("本地文档知识库", readme)

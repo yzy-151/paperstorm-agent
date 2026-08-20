@@ -9,7 +9,30 @@ const state = {
   chatSessions: [],
   chatController: null,
   lastArticle: "",
+  researchEvents: null,
+  pipelineStatus: {},
 };
+
+const pipelineNodes = {
+  request: {title: "任务编排", description: "规范化主题、运行模式、检索源和领域约束。", input: "用户主题、语言、检索器", output: "Research Task + 运行配置"},
+  persona: {title: "Persona Generator", description: "从不同知识视角生成调研角色，扩大问题覆盖面。", input: "主题与背景资料", output: "多视角研究角色"},
+  dialogue: {title: "Conv Simulator", description: "WikiWriter 与 Topic Expert 迭代提问、检索和反思。", input: "角色、对话状态", output: "Conversation Log + 信息表"},
+  query: {title: "查询规划", description: "生成独立检索式，并进行领域消歧和空查询过滤。", input: "问题、角色、历史", output: "规范化查询集合"},
+  retrieval: {title: "论文检索", description: "从 arXiv、本地 PDF 或 Zotero 获取候选论文与段落。", input: "查询集合", output: "原始检索结果"},
+  evidence: {title: "证据治理", description: "对文献 Chunk 执行 BM25 + Dense 融合、RRF、Rerank 与引用映射。", input: "论文与段落", output: "可追溯 Evidence"},
+  outline: {title: "大纲生成", description: "先生成草案，再依据调研信息细化章节结构。", input: "信息表、证据", output: "Refined Outline"},
+  writer: {title: "章节写作", description: "各章节独立检索相关证据并并发生成带引用内容。", input: "大纲、Evidence Index", output: "Draft Article"},
+  polish: {title: "文章润色", description: "去重、统一结构和表达，同时保留引用标记。", input: "Draft Article", output: "Polished Article"},
+  evaluate: {title: "质量评估", description: "检查领域一致性、证据覆盖、引用与运行完整性。", input: "文章、Trace、Evidence", output: "Scorecard"},
+  deliver: {title: "交付产物", description: "汇总 Markdown、Trace、检索结果和评估报告。", input: "全部流水线产物", output: "Article + Trace + Score"},
+};
+
+const pipelineEdges = [
+  ["request", "persona"], ["persona", "dialogue"], ["dialogue", "query"],
+  ["request", "query"], ["query", "retrieval"], ["retrieval", "evidence"],
+  ["evidence", "outline"], ["outline", "writer"], ["writer", "polish"],
+  ["polish", "evaluate"], ["evaluate", "deliver"],
+];
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -87,14 +110,147 @@ function researchPayload(demo = false) {
 }
 
 function renderResearchProgress(stage, failed = false) {
-  const order = ["created", "retrieval", "outline", "writing", "completed"];
-  const current = order.indexOf(stage);
-  $$("#research-progress > div").forEach((node, index) => {
-    node.classList.remove("complete", "active", "failed");
-    if (failed && index === Math.max(0, current)) node.classList.add("failed");
-    else if (index < current || stage === "completed") node.classList.add("complete");
-    else if (index === current) node.classList.add("active");
+  const stageNodes = {
+    created: ["request"], retrieval: ["persona", "dialogue", "query", "retrieval"],
+    outline: ["evidence", "outline"], writing: ["writer", "polish"],
+    completed: ["evaluate", "deliver"],
+  };
+  if (stage === "created") resetPipelineGraph();
+  const activeNodes = stageNodes[stage] || [];
+  activeNodes.forEach((nodeId, index) => {
+    setPipelineNodeStatus(nodeId, failed && index === activeNodes.length - 1 ? "failed" : "active");
   });
+  if (stage === "completed" && !failed) {
+    Object.keys(pipelineNodes).forEach((nodeId) => setPipelineNodeStatus(nodeId, "complete"));
+  }
+}
+
+function resetPipelineGraph() {
+  state.pipelineStatus = {};
+  Object.keys(pipelineNodes).forEach((nodeId) => setPipelineNodeStatus(nodeId, "waiting", "尚未运行"));
+}
+
+function setPipelineNodeStatus(nodeId, status, detail = "") {
+  state.pipelineStatus[nodeId] = {status, detail: detail || state.pipelineStatus[nodeId]?.detail || ""};
+  const node = $(`.pipeline-node[data-node="${nodeId}"]`);
+  if (!node) return;
+  node.classList.remove("waiting", "active", "complete", "failed");
+  node.classList.add(status);
+  node.querySelector("em").textContent = {waiting: "WAIT", active: "RUN", complete: "DONE", failed: "ERR"}[status] || status;
+  updatePipelineWires();
+  if (node.classList.contains("selected")) showPipelineNode(nodeId);
+}
+
+function initializePipelineGraph() {
+  $$(".pipeline-node").forEach((node) => node.addEventListener("click", () => showPipelineNode(node.dataset.node)));
+  drawPipelineWires();
+  resetPipelineGraph();
+  window.addEventListener("resize", drawPipelineWires);
+}
+
+function drawPipelineWires() {
+  const canvas = $("#pipeline-canvas");
+  const svg = $("#pipeline-wires");
+  if (!canvas || !svg) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${canvasRect.width} ${canvasRect.height}`);
+  svg.innerHTML = pipelineEdges.map(([from, to]) => {
+    const source = $(`.pipeline-node[data-node="${from}"]`)?.getBoundingClientRect();
+    const target = $(`.pipeline-node[data-node="${to}"]`)?.getBoundingClientRect();
+    if (!source || !target) return "";
+    const sourceY = source.top + source.height / 2 - canvasRect.top;
+    const targetY = target.top + target.height / 2 - canvasRect.top;
+    if (Math.abs(sourceY - targetY) < 24) {
+      const forward = target.left > source.left;
+      const x1 = (forward ? source.right : source.left) - canvasRect.left;
+      const x2 = (forward ? target.left : target.right) - canvasRect.left;
+      const direction = forward ? 1 : -1;
+      const bend = Math.max(24, Math.abs(x2 - x1) * 0.42);
+      return `<path data-from="${from}" data-to="${to}" d="M ${x1} ${sourceY} C ${x1 + direction * bend} ${sourceY}, ${x2 - direction * bend} ${targetY}, ${x2} ${targetY}" />`;
+    }
+    const x1 = source.left + source.width / 2 - canvasRect.left;
+    const y1 = source.bottom - canvasRect.top;
+    const x2 = target.left + target.width / 2 - canvasRect.left;
+    const y2 = target.top - canvasRect.top;
+    const bend = Math.max(30, Math.abs(y2 - y1) * 0.48);
+    return `<path data-from="${from}" data-to="${to}" d="M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}" />`;
+  }).join("");
+  updatePipelineWires();
+}
+
+function updatePipelineWires() {
+  $$("#pipeline-wires path").forEach((path) => {
+    const source = state.pipelineStatus[path.dataset.from]?.status || "waiting";
+    const target = state.pipelineStatus[path.dataset.to]?.status || "waiting";
+    path.className.baseVal = target === "active" ? "active" : source === "complete" && target === "complete" ? "complete" : target === "failed" ? "failed" : "";
+  });
+}
+
+function showPipelineNode(nodeId) {
+  const definition = pipelineNodes[nodeId];
+  if (!definition) return;
+  $$(".pipeline-node").forEach((node) => node.classList.toggle("selected", node.dataset.node === nodeId));
+  const runtime = state.pipelineStatus[nodeId] || {status: "waiting", detail: "尚未运行"};
+  $("#pipeline-node-title").textContent = definition.title;
+  $("#pipeline-node-description").textContent = definition.description;
+  $("#pipeline-node-input").textContent = definition.input;
+  $("#pipeline-node-output").textContent = definition.output;
+  $("#pipeline-node-detail").textContent = runtime.detail || "等待 Trace 事件";
+  $("#pipeline-node-status").textContent = runtime.status.toUpperCase();
+  $("#pipeline-node-status").className = runtime.status;
+}
+
+function openResearchEventStream(taskId) {
+  state.researchEvents?.close();
+  const source = new EventSource(`${serviceBase()}/events?task_id=${encodeURIComponent(taskId)}`);
+  state.researchEvents = source;
+  source.addEventListener("task_status", (event) => {
+    const payload = JSON.parse(event.data || "{}");
+    if (payload.task_status === "running") {
+      setPipelineNodeStatus("request", "complete", `task ${taskId} 已启动`);
+      setPipelineNodeStatus("persona", "active", "正在生成调研视角");
+      setPipelineNodeStatus("dialogue", "active", "多 Agent 正在迭代提问");
+    } else if (payload.task_status === "failed") {
+      const active = Object.keys(state.pipelineStatus).find((key) => state.pipelineStatus[key].status === "active") || "request";
+      setPipelineNodeStatus(active, "failed", "任务执行失败，请查看 Trace");
+      source.close();
+      state.researchEvents = null;
+    } else if (payload.task_status === "succeeded") {
+      Object.keys(pipelineNodes).forEach((nodeId) => setPipelineNodeStatus(nodeId, "complete"));
+      source.close();
+      state.researchEvents = null;
+    }
+  });
+  source.addEventListener("trace", (event) => applyPipelineTrace((JSON.parse(event.data || "{}")).trace || {}));
+}
+
+function applyPipelineTrace(trace) {
+  const eventName = String(trace.event || trace.node || "").toLowerCase();
+  const path = String(trace.path || "").toLowerCase();
+  const detail = trace.tool_name || trace.tool || trace.retriever || trace.path || eventName;
+  if (eventName === "run_start") {
+    setPipelineNodeStatus("request", "complete", "运行配置已冻结");
+    setPipelineNodeStatus("persona", "active", "生成调研角色与视角");
+  } else if (eventName.includes("retrieval_start") || eventName === "tool_start") {
+    ["persona", "dialogue", "query"].forEach((nodeId) => setPipelineNodeStatus(nodeId, "complete"));
+    setPipelineNodeStatus("retrieval", "active", detail);
+  } else if (eventName.includes("retrieval_end") || eventName === "tool_end") {
+    setPipelineNodeStatus("retrieval", "complete", detail);
+    setPipelineNodeStatus("evidence", "active", `${trace.result_count ?? "-"} 条候选证据`);
+  } else if (eventName === "artifact_written" && path.includes("outline")) {
+    setPipelineNodeStatus("evidence", "complete", "证据索引已建立");
+    setPipelineNodeStatus("outline", "complete", detail);
+    setPipelineNodeStatus("writer", "active", "按章节生成内容");
+  } else if (eventName === "artifact_written" && path.includes("article_polished")) {
+    setPipelineNodeStatus("writer", "complete", "文章草稿已生成");
+    setPipelineNodeStatus("polish", "complete", detail);
+    setPipelineNodeStatus("evaluate", "active", "检查引用与质量指标");
+  } else if (eventName === "artifact_written" && path.includes("article")) {
+    setPipelineNodeStatus("writer", "complete", detail);
+    setPipelineNodeStatus("polish", "active", "去重并统一结构");
+  } else if (eventName === "run_end") {
+    Object.keys(pipelineNodes).forEach((nodeId) => setPipelineNodeStatus(nodeId, trace.success === false ? "failed" : "complete", detail));
+  }
 }
 
 async function runResearchWorkflow(demo = false) {
@@ -109,6 +265,7 @@ async function runResearchWorkflow(demo = false) {
     const task = await fetchJson("/research-tasks", {method: "POST", body: JSON.stringify(payload)});
     state.researchTaskId = task.task_id;
     $("#research-task-id").textContent = task.task_id;
+    openResearchEventStream(task.task_id);
     renderResearchProgress("retrieval");
     $("#research-current-activity").textContent = "Agent 正在检索证据并组织文章...";
     const completed = await fetchJson(`/research-tasks/${encodeURIComponent(task.task_id)}/run`, {method: "POST"});
@@ -687,5 +844,5 @@ $("#cancel-benchmark-run").addEventListener("click", cancelBenchmarkRun);
 $("#copy-benchmark-command").addEventListener("click", copyBenchmarkCommand);
 $("#refresh-runtime-diagnostics").addEventListener("click", refreshRuntimeDiagnostics);
 
-renderResearchProgress("created");
+initializePipelineGraph();
 loadBenchmarkCatalog();

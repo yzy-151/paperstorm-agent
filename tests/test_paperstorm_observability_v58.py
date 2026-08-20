@@ -172,6 +172,23 @@ class PaperStormObservabilityV58Test(unittest.TestCase):
             self.assertFalse(observability.status()["remote_enabled"])
             self.assertEqual(observability.status()["status"], "local-only")
 
+    def test_offline_test_mode_hard_disables_remote_export(self):
+        from knowledge_storm.paperstorm_observability import build_observability
+
+        environment = {
+            "PAPERSTORM_TEST_OFFLINE": "1",
+            "PAPERSTORM_OBSERVABILITY": "langfuse",
+            "LANGFUSE_PUBLIC_KEY": "pk-test",
+            "LANGFUSE_SECRET_KEY": "sk-test",
+        }
+        with tempfile.TemporaryDirectory() as root, mock.patch.dict(
+            os.environ, environment, clear=False
+        ):
+            observability = build_observability(Path(root))
+
+        self.assertFalse(observability.status()["remote_enabled"])
+        self.assertEqual(observability.status()["status"], "local-only")
+
     def test_task_service_emits_research_and_chat_harness_traces(self):
         from knowledge_storm.paperstorm_observability import PaperStormObservability
         from knowledge_storm.paperstorm_service import PaperStormTaskService

@@ -234,9 +234,11 @@ def build_lm_settings(args):
             "api_base": os.getenv("MINIMAX_API_BASE", "https://api.minimax.chat/v1"),
         }
     if args.llm_provider == "deepseek":
-        model = args.llm_model or "deepseek/deepseek-chat"
+        model = args.llm_model or "openai/deepseek-v4-flash"
         if model == "flash":
-            model = "deepseek/deepseek-chat"
+            # DeepSeek V4 uses an OpenAI-compatible endpoint. The openai/
+            # prefix keeps this working with the verified LiteLLM release.
+            model = "openai/deepseek-v4-flash"
         return {
             "model": model,
             "api_env": "DEEPSEEK_API_KEY",
@@ -435,7 +437,7 @@ if __name__ == "__main__":
         "--llm-model",
         type=str,
         default="flash",
-        help="Model name. For DeepSeek, flash maps to deepseek/deepseek-chat.",
+        help="Model name. For DeepSeek, flash maps to deepseek-v4-flash.",
     )
     parser.add_argument(
         "--retriever", choices=["arxiv", "local-pdf"], default="arxiv"

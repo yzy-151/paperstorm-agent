@@ -16,6 +16,7 @@ ROUTER_SCHEMA = {
     "need_retrieval": "boolean",
     "tool": "chat_fallback | kb_qa | research_qa | paper_research | clarify",
     "rewritten_query": "standalone Chinese or English query",
+    "working_subject": "current subject or empty string; never inherit stale topic",
     "confidence": "0.0-1.0",
     "reason": "short routing reason",
 }
@@ -44,7 +45,8 @@ class PaperStormIntentRouter:
         session = session or {}
         context_window = context_window or []
 
-        guard_decision = route_high_confidence_rules(message, session, context_window)
+        if not message:
+            return route_high_confidence_rules(message, session, context_window)
 
         if self.llm_router:
             prompt = build_router_prompt(
@@ -57,17 +59,15 @@ class PaperStormIntentRouter:
             try:
                 decision = parse_llm_router_json(self.llm_router(prompt))
                 decision = normalize_decision(decision, message, session, context_window)
-                if (
-                    decision["confidence"] >= self.confidence_threshold
-                    and _llm_decision_safe(decision, guard_decision)
-                ):
-                    decision["router"] = "llm"
+                if decision["confidence"] >= self.confidence_threshold:
+                    decision["router"] = "llm_planner"
                     return decision
             except Exception as exc:  # pragma: no cover - defensive trace path.
-                fallback = guard_decision or route_by_rules(message, session, context_window)
+                fallback = route_by_rules(message, session, context_window)
                 fallback["router_error"] = str(exc)
                 return fallback
 
+        guard_decision = route_high_confidence_rules(message, session, context_window)
         if guard_decision:
             return guard_decision
         return route_by_rules(message, session, context_window)
@@ -81,12 +81,15 @@ def build_router_prompt(
     evidence_sufficiency: Dict,
 ) -> str:
     compact_context = [
-        {"role": item.get("role", ""), "content": item.get("content", "")[:300]}
-        for item in context_window[-6:]
+        {
+            "role": item.get("role", ""),
+            "content": item.get("content", "")[:1200],
+            "context_layer": item.get("metadata", {}).get("context_layer", "active"),
+        }
+        for item in context_window[-24:]
     ]
     payload = {
         "user_message": message,
-        "topic": session.get("topic", ""),
         "task_id": session.get("task_id", ""),
         "expected_keywords": session.get("expected_keywords") or [],
         "forbidden_keywords": session.get("forbidden_keywords") or [],
@@ -96,11 +99,13 @@ def build_router_prompt(
         "schema": ROUTER_SCHEMA,
     }
     return (
-        "你是 Agent Runtime 的意图路由器。只输出一个 JSON 对象，不要解释。\n"
-        "判断用户是在聊天/问系统能力，还是需要论文知识库问答，还是需要触发新调研。\n"
-        "如果用户问“你是什么模型/你是谁/怎么用/上下文/记忆/按钮/端口”等系统问题，"
-        "不要被 topic 诱导去检索。\n"
-        "如果是代词追问，把 topic、上一轮用户问题和当前问题重写成独立 query。\n"
+        "你是 PaperStorm 的 Turn Planner。只输出一个符合 Schema 的 JSON 对象。\n"
+        "为当前这一轮选择动作：直接回复、查询会话历史、查询长期记忆、查询论文证据、"
+        "启动深度调研或请求澄清。不要生成最终答案。\n"
+        "旧任务主题不得自动继承。只有当前消息或最近对话明确承接旧主题时，才设置 "
+        "working_subject；创作、闲聊、系统问题默认不检索。\n"
+        "短追问必须根据最近对话改写，不能仅凭 task_id 猜测主题。论文事实需要证据，"
+        "用户偏好和历史决定查长期记忆，‘之前聊过’优先查会话历史。\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )
 
@@ -139,6 +144,7 @@ def normalize_decision(
         "need_retrieval": need_retrieval,
         "tool": tool,
         "rewritten_query": rewritten_query,
+        "working_subject": str(decision.get("working_subject") or "").strip(),
         "confidence": max(0.0, min(1.0, confidence)),
         "reason": str(decision.get("reason") or "normalized router decision"),
         "router": str(decision.get("router") or "unknown"),
@@ -256,7 +262,7 @@ def rewrite_query(message: str, session: Dict, context_window: List[Dict]) -> st
             if content and content != text:
                 previous_user = content
                 break
-    parts = [session.get("topic", ""), previous_user, text]
+    parts = [previous_user, text]
     return "\n".join(part for part in parts if part)
 
 

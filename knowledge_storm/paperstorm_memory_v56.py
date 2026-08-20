@@ -20,18 +20,19 @@ from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 
-from .paperstorm_memory_v43 import MemoryWritePolicy, _model_dump
+from .paperstorm_memory_v43 import MemoryCandidateV43, MemoryWritePolicy, _model_dump
 from .paperstorm_rag import HashEmbeddingProvider
 
 
 class LongTermMemoryServiceV56:
     """SQLite-backed episodic and long-term memory with temporal retrieval."""
 
-    def __init__(self, root_dir, embedding_provider=None):
+    def __init__(self, root_dir, embedding_provider=None, candidate_extractor=None):
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.root_dir / "memory_v56.sqlite3"
         self.embedding_provider = embedding_provider or HashEmbeddingProvider(64)
+        self.candidate_extractor = candidate_extractor
         self._initialize()
 
     @contextmanager
@@ -203,7 +204,9 @@ class LongTermMemoryServiceV56:
 
     def ingest_message(self, namespace: str, message: str, source_message_id: str = "", subject: str = "user"):
         episode = self.ingest_episode(namespace, message, source_id=source_message_id, role=subject)
-        candidate = MemoryWritePolicy.extract(message, source_message_id=source_message_id, subject=subject)
+        if _blocks_memory_write(message):
+            return {"status": "skipped", "reason": "user explicitly blocked durable memory", "episode": episode}
+        candidate = self._extract_candidate(message, source_message_id, subject)
         if candidate is None:
             return {"status": "skipped", "reason": "no durable memory signal", "episode": episode}
         payload = _model_dump(candidate)
@@ -212,6 +215,37 @@ class LongTermMemoryServiceV56:
             queued = self._queue_candidate(namespace, payload)
             return {"status": "queued", "candidate": queued, "episode": episode}
         return {"status": "persisted", "memory": self.upsert(namespace=namespace, **payload), "episode": episode}
+
+    def _extract_candidate(self, message, source_message_id, subject):
+        if self.candidate_extractor is None:
+            return MemoryWritePolicy.extract(
+                message, source_message_id=source_message_id, subject=subject
+            )
+        prompt = build_memory_candidate_prompt(message, source_message_id, subject)
+        try:
+            raw = self.candidate_extractor(prompt)
+            if isinstance(raw, str):
+                match = re.search(r"\{.*\}", raw, flags=re.S)
+                if not match:
+                    return None
+                raw = json.loads(match.group(0))
+            if not isinstance(raw, dict) or raw.get("should_write") is False:
+                return None
+            payload = dict(raw)
+            payload.pop("should_write", None)
+            payload.setdefault("subject", subject)
+            payload.setdefault("source_message_ids", [source_message_id] if source_message_id else [])
+            payload.setdefault("importance", 0.7)
+            payload.setdefault("confidence", 0.7)
+            payload.setdefault("metadata", {})
+            payload["metadata"] = dict(payload["metadata"], extractor="llm_structured")
+            return MemoryCandidateV43(**payload)
+        except Exception:
+            # Extraction failure must not turn an ordinary chat turn into a
+            # durable write. Explicit rule signals remain a safe fallback.
+            return MemoryWritePolicy.extract(
+                message, source_message_id=source_message_id, subject=subject
+            )
 
     def upsert(
         self,
@@ -618,6 +652,37 @@ def _parse_datetime(value):
 
 def _normalize(text):
     return re.sub(r"\s+", " ", str(text or "")).strip().lower()
+
+
+def _blocks_memory_write(message):
+    lowered = str(message or "").lower()
+    return any(
+        marker in lowered
+        for marker in ("不要记住", "别记住", "不要保存", "do not remember", "forget this")
+    )
+
+
+def build_memory_candidate_prompt(message, source_message_id="", subject="user"):
+    schema = {
+        "should_write": False,
+        "memory_type": "semantic | episodic | procedural | preference",
+        "subject": subject,
+        "content": "one durable, context-independent fact",
+        "canonical_key": "stable snake_case key",
+        "confidence": 0.0,
+        "importance": 0.0,
+        "source_message_ids": [source_message_id] if source_message_id else [],
+        "expires_at": None,
+        "metadata": {"reason": ""},
+    }
+    return (
+        "你是长期记忆候选提取器，只输出一个 JSON 对象。\n"
+        "只有稳定偏好、用户明确事实、长期决策或可复用流程才应写入。\n"
+        "闲聊、临时任务、论文正文、未经证实的推测和敏感凭据不得写入。\n"
+        "如果用户拒绝记忆，should_write 必须为 false。内容必须脱离当前轮次仍可理解，"
+        "不得把外部论文结论伪装成用户事实。\n"
+        "Schema：{0}\n用户消息：{1}"
+    ).format(_json(schema), str(message or ""))
 
 
 def _json(value):

@@ -10,6 +10,7 @@ from .paperstorm_context_v56 import ContextEngine, ContextEngineConfig, ContextE
 from .paperstorm_intent_router import PaperStormIntentRouter
 from .paperstorm_memory import PaperStormMemoryStore
 from .paperstorm_memory_v56 import LongTermMemoryService
+from .paperstorm_session_recall import SessionRecallStore
 
 
 class PaperStormChatAgent:
@@ -32,8 +33,8 @@ class PaperStormChatAgent:
         output_language: str = "zh",
         expected_keywords: Optional[List[str]] = None,
         forbidden_keywords: Optional[List[str]] = None,
-        context_window_size: int = 6,
-        context_token_limit: int = 4096,
+        context_window_size: int = 48,
+        context_token_limit: int = 1_000_000,
         user_id: str = "local-user",
         tenant_id: str = "local",
         memory_enabled: bool = True,
@@ -51,8 +52,9 @@ class PaperStormChatAgent:
             "output_language": output_language,
             "expected_keywords": expected_keywords or [],
             "forbidden_keywords": forbidden_keywords or [],
-            "context_window_size": max(2, int(context_window_size or 6)),
+            "context_window_size": max(2, int(context_window_size or 48)),
             "context_config": _context_config(context_token_limit, context_window_size),
+            "working_subject": topic,
             "user_id": _safe_user_id(user_id),
             "tenant_id": str(tenant_id or "local"),
             "memory_namespace": memory_namespace,
@@ -66,6 +68,7 @@ class PaperStormChatAgent:
             "active_compaction_id": "",
             "memory_context": {},
             "long_term_memory": {},
+            "session_recall": {},
             "memory_write": {"status": "not_evaluated"},
             "conversation_runtime": "paperstorm-production-v5.0",
             "graph_run": {},
@@ -163,6 +166,15 @@ class PaperStormChatAgent:
         user_message = _message("user", message)
         session["messages"].append(user_message)
         engine.store.append_message(user_message)
+        self._session_recall_store().append_message(
+            user_id=session.get("user_id") or "local-user",
+            chat_id=chat_id,
+            message_id=user_message["id"],
+            role="user",
+            content=message,
+            metadata={"task_id": session.get("task_id", "")},
+            created_at=user_message["created_at"],
+        )
         if self._is_cancelled(chat_id):
             session["messages"].pop()
             self._write_session(session)
@@ -170,11 +182,16 @@ class PaperStormChatAgent:
         context_window = self._context_window(session)
         memory = self._build_memory(session, message)
         long_term_memory = self._recall_long_term_memory(session, message)
+        session_recall = self._session_recall_store().search(
+            session.get("user_id") or "local-user", message, top_k=5
+        )
         combined_memory_context = memory.get_context_bundle(query=message, max_items=5)
         routed_context = ContextEngine(config=engine.config).assemble(
             session["messages"],
             memory=_memory_messages(combined_memory_context)
-            + _long_term_memory_messages(long_term_memory),
+            + _long_term_memory_messages(long_term_memory)
+            + _session_recall_messages(session_recall),
+            query=message,
         )
 
         graph_run = self._run_conversation_graph(
@@ -187,6 +204,8 @@ class PaperStormChatAgent:
             self._write_session(session)
             return {"status": "stopped", "chat_id": chat_id, "messages": session["messages"]}
         router_decision = graph_run.get("router_decision") or {}
+        working_subject = str(router_decision.get("working_subject") or "").strip()
+        session["working_subject"] = working_subject
         long_term_memory = graph_run.get("memory_recall") or long_term_memory
         answer = _graph_answer_payload(graph_run)
         session["task_id"] = answer.get("used_task_id") or session.get("task_id", "")
@@ -208,6 +227,18 @@ class PaperStormChatAgent:
         )
         session["messages"].append(assistant_message)
         engine.store.append_message(assistant_message)
+        self._session_recall_store().append_message(
+            user_id=session.get("user_id") or "local-user",
+            chat_id=chat_id,
+            message_id=assistant_message["id"],
+            role="assistant",
+            content=assistant_message["content"],
+            metadata={
+                "task_id": session.get("task_id", ""),
+                "route": graph_run.get("route", ""),
+            },
+            created_at=assistant_message["created_at"],
+        )
         context_window = self._context_window(session)
         constraints = _context_keywords(session, message) + list(
             session.get("forbidden_keywords") or []
@@ -246,7 +277,9 @@ class PaperStormChatAgent:
         assembled_view = ContextEngine(config=engine.config).assemble(
             compacted_view,
             memory=_memory_messages(memory_context)
-            + _long_term_memory_messages(long_term_memory),
+            + _long_term_memory_messages(long_term_memory)
+            + _session_recall_messages(session_recall),
+            query=message,
         )
         context_view = assembled_view["messages"]
         session["compressed_context"] = compressed
@@ -258,6 +291,7 @@ class PaperStormChatAgent:
         session["context_events"] = inspection["events"]
         session["memory_context"] = memory_context
         session["long_term_memory"] = long_term_memory
+        session["session_recall"] = session_recall
         session["memory_write"] = memory_write
         session["conversation_runtime"] = graph_run.get(
             "runtime", "paperstorm-production-v5.0"
@@ -279,6 +313,7 @@ class PaperStormChatAgent:
             "context_events": session["context_events"],
             "memory_context": memory_context,
             "long_term_memory": long_term_memory,
+            "session_recall": session_recall,
             "memory_write": memory_write,
             "conversation_runtime": session["conversation_runtime"],
             "graph_run": graph_run,
@@ -345,13 +380,13 @@ class PaperStormChatAgent:
         return dict(restored, chat_id=chat_id, raw_messages_unchanged=True)
 
     def _context_window(self, session: Dict) -> List[Dict]:
-        size = max(2, int(session.get("context_window_size") or 6))
+        size = max(2, int(session.get("context_window_size") or 48))
         messages = session.get("messages") or []
         return messages[-size:]
 
     def _build_memory(self, session: Dict, query: str):
         memory = PaperStormMemoryStore()
-        topic = session.get("topic") or query
+        topic = session.get("working_subject") or ""
         if topic:
             memory.remember_semantic(
                 "当前聊天主题：{0}".format(topic),
@@ -367,7 +402,7 @@ class PaperStormChatAgent:
                 "检索和回答时需要警惕跑题关键词：{0}".format(keyword),
                 {"type": "forbidden_keyword"},
             )
-        for message in (session.get("messages") or [])[-6:]:
+        for message in (session.get("messages") or [])[-24:]:
             memory.append_working(
                 "[{0}] {1}".format(message.get("role", ""), message.get("content", "")),
                 {"chat_id": session.get("chat_id", "")},
@@ -397,6 +432,9 @@ class PaperStormChatAgent:
     def _long_term_memory(self):
         return LongTermMemoryService(Path(self.task_service.root_dir) / "memory_service_v56")
 
+    def _session_recall_store(self):
+        return SessionRecallStore(Path(self.task_service.root_dir) / "session_recall.sqlite3")
+
     def _run_conversation_graph(self, session: Dict, user_message: Dict, context_window):
         return self.task_service.invoke_conversation_graph(
             tenant_id=session.get("tenant_id") or "local",
@@ -404,7 +442,7 @@ class PaperStormChatAgent:
             request_id=user_message["id"],
             user_id=session.get("user_id") or "local-user",
             message=user_message.get("content", ""),
-            topic=session.get("topic") or "",
+            topic=session.get("working_subject") or "",
             task_id=session.get("task_id") or "",
             run_mode=session.get("run_mode") or "fake",
             retriever=session.get("retriever") or "arxiv",
@@ -523,8 +561,16 @@ class PaperStormChatAgent:
         )
 
     def _context_engine(self, session: Dict):
-        config = ContextEngineConfig(**(session.get("context_config") or _context_config(4096, 6)))
-        return ContextEngine(config=config, store=self._event_store(session["chat_id"]))
+        from .paperstorm_router_llm import build_context_summarizer_callable
+
+        config = ContextEngineConfig(**(session.get("context_config") or _context_config(1_000_000, 48)))
+        return ContextEngine(
+            config=config,
+            store=self._event_store(session["chat_id"]),
+            summarizer=build_context_summarizer_callable(
+                enabled=session.get("run_mode") == "paperstorm"
+            ),
+        )
 
     def _event_store(self, chat_id: str):
         return ContextEventStore(self.chat_dir / "{0}.context.jsonl".format(chat_id))
@@ -551,7 +597,7 @@ def _message(role: str, content: str, metadata: Optional[Dict] = None):
 
 def _context_keywords(session: Dict, message: str):
     keywords = list(session.get("expected_keywords") or [])
-    topic = "{0} {1}".format(session.get("topic", ""), message)
+    topic = "{0} {1}".format(session.get("working_subject", ""), message)
     lowered = topic.lower()
     if "pim" in lowered and "PIM" not in keywords:
         keywords.append("PIM")
@@ -562,13 +608,15 @@ def _context_keywords(session: Dict, message: str):
 
 
 def _context_config(total_tokens: int, recent_message_count: int):
-    total_tokens = max(128, int(total_tokens or 4096))
+    total_tokens = max(128, int(total_tokens or 1_000_000))
     return {
         "total_tokens": total_tokens,
-        "output_reserve_tokens": min(768, max(32, total_tokens // 5)),
-        "compact_threshold_ratio": 0.72,
+        "operational_input_tokens": min(128_000, max(128, total_tokens - 16_000)),
+        "output_reserve_tokens": min(16_000, max(32, total_tokens // 8)),
+        "compact_threshold_ratio": 0.78,
         "high_watermark_ratio": 0.9,
-        "recent_message_count": max(2, int(recent_message_count or 6)),
+        "recent_message_count": max(2, int(recent_message_count or 48)),
+        "task_profile": "chat",
         "tool_inline_token_limit": 180,
     }
 
@@ -633,6 +681,24 @@ def _long_term_memory_messages(recall: Dict):
                 "\n".join(lines)
             ),
         }
+    ]
+
+
+def _session_recall_messages(recall: Dict):
+    results = recall.get("results") or []
+    if not results:
+        return []
+    return [
+        {
+            "role": "system",
+            "content": "Cross-session transcript hit (conversation history, not authoritative evidence): "
+            + " | ".join(item.get("content", "") for item in results[:5]),
+            "metadata": {
+                "context_layer": "session_recall",
+                "source_id": "session:" + str(item.get("message_id", "")),
+            },
+        }
+        for item in results[:5]
     ]
 
 

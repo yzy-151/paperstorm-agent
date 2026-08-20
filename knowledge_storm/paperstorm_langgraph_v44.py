@@ -416,6 +416,9 @@ class PaperStormLangGraphRuntime:
     def _classify(self, state: ConversationStateV44):
         started = time.perf_counter()
         try:
+            memory_preview = self.memory_service.search(
+                state["namespace"], state["message"], top_k=3
+            )
             decision = self.intent_router.route(
                 message=state["message"],
                 session={
@@ -425,10 +428,13 @@ class PaperStormLangGraphRuntime:
                     "forbidden_keywords": state.get("forbidden_keywords") or [],
                 },
                 context_window=state.get("context_window") or [],
-                memory_context={},
+                memory_context=memory_preview,
             )
             return self._success_update(
-                state, "classify", started, {"router_decision": decision}
+                state,
+                "classify",
+                started,
+                {"router_decision": decision, "planner_memory_preview": memory_preview},
             )
         except Exception as error:
             self._error_event(state, "classify", started, error)
@@ -935,9 +941,8 @@ def _casual_chat_prompt(state: ConversationStateV44) -> str:
         "- {0}".format(item.get("content", ""))
         for item in (memory.get("results") or [])[:3]
     ]
-    topic = str(state.get("topic") or "").strip()
     history_lines = []
-    for item in (state.get("context_window") or [])[-6:]:
+    for item in (state.get("context_window") or [])[-24:]:
         role = item.get("role") or ""
         if role == "user":
             label = "用户"
@@ -945,36 +950,34 @@ def _casual_chat_prompt(state: ConversationStateV44) -> str:
             label = "助手"
         else:
             label = "系统"
-        content = str(item.get("content") or "")[:200]
+        content = str(item.get("content") or "")[:1200]
         history_lines.append("{0}: {1}".format(label, content))
     return (
         "你是 PaperStorm Research Agent 的聊天回复生成器。用户可能在聊天、问系统能力，"
-        "或聊面试/求职话题。请用自然、简洁、有温度的中文回复（3-5 句），不要提内部实现"
+        "也可能要求创作或讨论技术。请用自然、简洁、有温度的中文回复，不要提内部实现"
         "细节；用户问到算法/实现细节时，按【系统事实】如实简要回答，不要编造，"
         "也不要主动展开未问到的内容。不要编造不存在的功能。"
-        "如果用户提到面试准备，可以基于项目背景给出可执行的建议。\n"
         "用户问系统自身（算法、知识库逻辑、实现细节）时，必须直接按【系统事实】回答，"
         "禁止使用检索标记。\n"
         "【系统事实】\n"
         "- 检索算法：默认 BM25（稀疏）+ Dense 向量 + RRF 融合的混合检索，"
         "可选 Cross-Encoder 二次重排；真实语义向量模型可用时自动启用。\n"
-        "- 意图路由：规则兜底 + LLM 增强。\n"
+        "- 动作规划：真实模式由 LLM Turn Planner 结构化选择工具，规则只处理空输入、"
+        "安全约束和模型失败回退。\n"
         "- 证据判定：LLM 证据裁判判断已有证据能否回答，不足则启动深度调研。\n"
         "- 知识库问答：意图路由 → 记忆召回 → 混合检索 → 证据裁判 → 带引用回答；"
         "证据不足时升级深度调研。\n"
-        "- 记忆：同一会话有连续上下文记忆；跨会话长期记忆由记忆服务管理。\n"
+        "- 记忆：短期对话、FTS5 跨会话历史、长期用户事实和论文证据彼此隔离。\n"
         "- 当前运行模式：{run_mode}（fake=本地模拟调研；paperstorm=真实检索+LLM）。\n"
         "这是同一会话的连续对话，你有完整的会话上下文（不是没有记忆），请自然地接着聊。\n"
         "如果你能直接回答，就直接回答；只有当你认为必须检索外部资料/论文才能回答时，"
         "才只回复一行：{0}\n"
         "最近对话记录：\n{1}\n"
-        "会话主题（仅供背景，不要直接复述）：{2}\n"
-        "跨会话记忆（仅供参考）：{3}\n"
-        "用户消息：{4}\n"
+        "跨会话记忆（仅供参考）：{2}\n"
+        "用户消息：{3}\n"
         "回复：".format(
             RETRIEVE_MARKER,
             "\n".join(history_lines) or "（无）",
-            topic or "无",
             "\n".join(memory_lines) or "无",
             str(state.get("message") or ""),
             run_mode=str(state.get("run_mode") or "fake"),

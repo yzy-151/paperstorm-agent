@@ -15,7 +15,7 @@ langchain-huggingface>=1.0,<2.0
 qdrant-client
 langchain-qdrant
 numpy>=1.26,<3.0
-litellm
+litellm>=1.80,<1.81
 diskcache
 ddgs
 pypdf

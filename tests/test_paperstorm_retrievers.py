@@ -184,7 +184,7 @@ class PaperStormRetrieversTest(unittest.TestCase):
             SimpleNamespace(llm_provider="deepseek", llm_model="flash")
         )
 
-        self.assertEqual(settings["model"], "deepseek/deepseek-chat")
+        self.assertEqual(settings["model"], "openai/deepseek-v4-flash")
         self.assertEqual(settings["api_env"], "DEEPSEEK_API_KEY")
         self.assertEqual(settings["api_base"], "https://api.deepseek.com")
 

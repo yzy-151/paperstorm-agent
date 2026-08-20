@@ -1,11 +1,10 @@
-# PaperStorm Agent（v5.8.1）
+# PaperStorm Agent（v5.9）
 
-> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v5.8.1 修复问答引用
-> 的来源展示与文章定位；v5.8 将研究、
-> 对话、证据、运行状态和公开 Benchmark 整合为统一工作台；底层继续使用
-> v5.6 Memory / Context 与 v5.5 公开评测口径，不用 UI 版本虚增算法成绩。
+> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v5.9 引入
+> LLM-first Turn Planner、可检索的跨会话历史、结构化上下文压缩、DeepSeek V4
+> 百万 token 硬上限适配，以及可实时追踪的节点式 Multi-Agent 执行图。
 
-![PaperStorm v5.8 调研工作台](docs/screenshots/dashboard-research-v57.png)
+![PaperStorm v5.9 调研工作台](docs/screenshots/dashboard-research-v59.png)
 
 **论文调研** · **智能问答** · **混合检索** · **长期记忆** · **上下文治理** ·
 **Multi-Agent Research** · **公开 Benchmark** · **Langfuse Observability**
@@ -20,9 +19,9 @@ Agent 平台原型：
   BM25 + Dense + RRF 混合召回、可选 Cross-Encoder 重排、引用回答。
 - **Agent Runtime**：LangGraph 状态图编排（意图分类 → 记忆 → 检索 → 证据门控 →
   深度调研 → 引用回答），SQLite checkpoint、节点级重试、span trace。
-- **Context v5.6**：Pinned / Active / 递归 Summary / Memory & Evidence / Artifact
-  五层工作集，typed token budget、tool call/result 原子组、summary DAG、按
-  `compaction_id` 精确恢复。
+- **Context v5.9**：Pinned / Active / Summary / Memory / Evidence / Artifact
+  六类工作集，按 chat / QA / research 动态分配预算；128K / 256K / 512K 软工作集
+  共享 DeepSeek V4 1M 硬窗口，支持结构化递归摘要和 `compaction_id` 精确恢复。
 - **Memory v5.6**：SQLite WAL 规范化存储 episode / fact / source provenance /
   entity / audit event，事实带 `valid_from / valid_to / supersedes_id` 支持历史
   `as_of` 查询，检索融合 BM25、真实 embedding、entity、time、importance/recency、
@@ -31,15 +30,15 @@ Agent 平台原型：
   熔断 / 层级 span。
 - **v5.8 可观测性**：Research / Chat / Benchmark 统一 Trace 模型，本地 JSONL
   镜像与 Langfuse 可选双写；递归脱敏、用户 ID 哈希、失败降级、Trace Score 回传。
-- **工作台**：直角深色信息架构，左侧任务导航、中部执行工作区、右侧
+- **工作台**：直角深色信息架构，左侧任务导航、中部节点式执行工作区、右侧
   Context / Memory 检查器；开发者控制台独立承载数据集就绪度、实验命令、日志、
   指标与 Runtime Trace。
 
 ## 最终能力地图与系统架构图
 
-### 领导总览：业务流程与项目价值
+### 业务总览：核心流程与项目价值
 
-![PaperStorm 领导总览](docs/architecture/paperstorm-executive-overview-v57.svg)
+![PaperStorm 业务总览](docs/architecture/paperstorm-executive-overview-v57.svg)
 
 这张图用于汇报和项目介绍：从业务需求进入统一 Agent 平台，经意图编排分流到
 智能问答或深度调研，再由 RAG、Memory、Context 与 Multi-Agent 能力支撑，最终形成
@@ -52,7 +51,7 @@ Agent 平台原型：
 
 ![PaperStorm Agent 详细流程](docs/architecture/paperstorm-agent-system-flow-v57.svg)
 
-这张图用于技术讲解和面试：左侧是数据源、模型与工具，中间展开 Chat Agent 与
+这张图用于技术讲解和系统评审：左侧是数据源、模型与工具，中间展开 Chat Agent 与
 Research Agent 两条执行链，并保留原 STORM 的 Persona Generator、WikiWriter、
 TopicExpert、ConvSimulator、Knowledge Curation、两阶段 Outline、章节写作与润色；
 右侧说明 RAG、Memory、Context、Runtime 和工程治理算法，底部连接公开评测反馈闭环。
@@ -177,18 +176,19 @@ Trace 映射如下：
 Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长字符串截断。生产环境仍应
 优先使用自部署 Langfuse，并根据企业数据制度决定是否上报原始问题和论文片段。
 
-实现边界、故障降级、评测方法和面试讲法见
+实现边界、故障降级与评测方法见
 [Langfuse 可观测性设计与学习记录](docs/langfuse-observability-v58.md)。
 
 ## 前端功能图文说明
 
 ### 1. 论文调研模式（默认工作台）
 
-![V5.8 论文调研工作台](docs/screenshots/dashboard-research-v57.png)
+![V5.9 论文调研工作台](docs/screenshots/dashboard-research-v59.png)
 
 - 调研文章支持一键**下载 Markdown**，便于本地保存与二次整理。
-- 输入主题后一次点击完成任务创建、运行、状态追踪和结果刷新；五阶段进度
-  （创建任务 → 检索证据 → 生成大纲 → 撰写文章 → 完成）明确显示当前位置。
+- 输入主题后一次点击完成任务创建、运行、状态追踪和结果刷新；节点图展开任务编排、
+  Persona、Multi-Agent 讨论、查询规划、论文检索、证据治理、大纲、写作、润色、
+  评估与交付。运行节点和连线具有实时光效，点击节点可检查职责、输入、输出和状态。
 - 默认 paperstorm 模式调用真实 arXiv/PDF 检索与 LLM；fake 仅用于离线可复现测试。
 - 支持数据源（arXiv / 本地 PDF）、输出语言（中文 / 原文）、期望与排除关键词。
 
@@ -233,12 +233,15 @@ Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长�
 无关问题会拒答而不是编造。真实向量模型可用时自动启用（`auto→real`），
 `hash` 为无模型快速模式。核心实现见 `PaperStormRAGIndex` / `HybridPaperIndex`。
 
-### Context v5.6（已接入聊天）
+### Context v5.9（已接入聊天）
 
-Pinned / Active / Recursive Summary / Retrieved Memory & Evidence / Artifact 五层
-工作集；typed token budget、tool call/result 原子选择、soft/high watermark、
-summary DAG、失败回退，并按 `compaction_id` 恢复原始事件。v4.2 API 由兼容 facade
-保留（`Context v4.2` 契约测试仍保留）。
+Pinned / Active / Recursive Summary / Retrieved Memory / Evidence / Artifact 六类
+工作集；DeepSeek V4 使用 1M token 硬上限，但日常聊天、证据问答和深度调研分别采用
+128K、256K、512K 软工作集，避免每轮无差别填满窗口。各层先获得任务相关目标份额，
+空闲预算再按优先级借给 Active 或 Evidence，并受绝对上限保护。达到 78% 软水位时触发
+结构化递归摘要，保留否定条件、数值、路径、错误、引用 ID、主题切换和待办；原始事件
+仍可按 `compaction_id` 恢复。摘要候选按当前问题的 BM25 风格相关性选取，不再固定只取
+最后两条。
 
 ### Memory v5.6（已接入聊天）
 
@@ -246,6 +249,18 @@ SQLite WAL 规范化存储 episode、fact、source provenance、entity 与 audit
 事实更新保留 `valid_from/valid_to/supersedes_id`，支持历史 `as_of` 查询；检索融合
 BM25、真实 embedding、entity、time、importance/recency、RRF 与 MMR。v4.3 API 由
 兼容 facade 保留（`Memory v4.3` 契约测试仍保留）。
+
+### 会话历史、长期记忆与证据边界
+
+- **Session Recall** 保存完整消息到 SQLite WAL，FTS5 BM25 跨会话检索，中文无空格文本
+  使用 n-gram 子串兜底，并回填命中消息前后文；只允许同一用户范围内召回。
+- **Long-term Memory** 只存稳定偏好、用户事实、明确决定和可复用流程。真实模式由 LLM
+  输出结构化候选，规则负责禁止项、置信度、去重、时效和审计；fake 模式保留确定性规则。
+- **Evidence** 存论文和文档中的外部事实，保留 source / document / chunk / citation
+  provenance，经 BM25 + Dense + RRF 和可选 Rerank 召回，不写入用户长期记忆。
+
+因此“之前聊过的 PIM 论文”先从 Session Recall 找到旧会话和引用指针，再按需去
+Evidence 取论文原文；用户偏好则从 Long-term Memory 取。三者不会混成一个向量池。
 
 ### LangGraph v4.4（已接入聊天）
 
@@ -259,10 +274,12 @@ span trace、`storm_deep_research` 隔离工具。
 每条聊天/调研请求外层都走 SQLite WAL 控制面：tenant/resource ACL、审计、
 事务幂等（相同载荷重放复用结果）、TTL+tag 缓存、持久任务、熔断、层级 span。
 
-### 意图路由：规则兜底 + LLM 增强
+### Turn Planner：LLM 主决策 + 规则故障兜底
 
-`run_mode=paperstorm` 默认启用 LLM 路由（DeepSeek），`fake` 模式默认纯规则；
-LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突，解析失败/超时自动回退规则。
+`run_mode=paperstorm` 默认由 DeepSeek Turn Planner 根据最近 24 条消息、相关摘要、
+长期记忆和当前请求输出结构化 action / retrieval / tool / working_subject；旧 topic 不再
+自动注入并否决 LLM 决策。仅在 LLM 不可用、超时或 JSON 解析失败时回退规则。
+`fake` 模式仍使用纯规则，保证离线测试完全可复现且不产生 API 费用。
 
 **回复策略是"生成优先、答不了才检索"**：聊天类消息默认直接由 LLM 生成自然回复；
 只有当 LLM 明确表示需要检索或消息明显是调研请求时，才升级到知识检索 / 深度调研。
@@ -272,7 +289,8 @@ LLM 决策需置信度 ≥ 0.65 且不能与高置信规则冲突，解析失败
 
 ### 缓存
 
-- LLM 调用层：`functools.lru_cache` + litellm 磁盘缓存。
+- LLM 调用层：`functools.lru_cache`；litellm 磁盘缓存改为显式 opt-in，避免 import
+  阶段写入用户目录导致服务启动失败。
 - 运行时检索索引：进程内 LRU（默认 16），文件变化自动失效。
 - 意图路由 LLM：prompt 级 LRU（默认 512）。
 - 治理缓存：SQLite TTL + tag 失效（数据变更驱动，非 LRU）。
@@ -493,8 +511,9 @@ Mem0 / Graphiti（episode provenance、时间有效事实）、Stanford STORM。
 ```text
 knowledge_storm/
   paperstorm_retrieval_v41.py        # BM25+Dense+RRF 检索栈
-  paperstorm_context_v56.py          # 五层 Context 与递归 compaction lineage
+  paperstorm_context_v56.py          # 六类 Context 与递归 compaction lineage
   paperstorm_memory_v56.py           # SQLite temporal memory 与混合召回
+  paperstorm_session_recall.py       # FTS5 BM25 跨会话历史检索
   paperstorm_langgraph_v44.py        # LangGraph 会话运行时
   paperstorm_production_v45.py       # SQLite WAL 生产控制面
   paperstorm_benchmarks.py           # 公开 Benchmark 契约与指标
@@ -505,6 +524,9 @@ frontend/paperstorm_dashboard/       # 网页端 Dashboard（两模式 + 评测�
 tests/                               # 离线单元、API、前端契约与发布完整性测试
 docs/                                # 评测记录 / Benchmark 口径 / 截图
 ```
+
+v5.9 的边界定义、根因分析和逐项验收见
+[Memory、Context 与 Agent Planner 改进记录](docs/PAPERSTORM_V59_CONTEXT_MEMORY.md)。
 
 ## 版本演进
 
@@ -520,7 +542,8 @@ docs/                                # 评测记录 / Benchmark 口径 / 截图
 | v5.6 Memory & Context | SQLite temporal memory、五层 Context、LongMemEval-S、QASPER Context 诊断 | 当前算法与评测底座 |
 | v5.7 Workspace | 直角深色工作台、Visio 风格架构图、Benchmark 能力矩阵与正式截图 | 历史版本 |
 | v5.8 Observability | Langfuse 可选双写、统一 Trace/Span/Score、递归脱敏与 fail-open 降级 | 历史版本 |
-| **v5.8.1 Citation Fix** | 原始论文来源回填、历史会话兼容迁移、文章段落锚点定位 | 当前版本 |
+| v5.8.1 Citation Fix | 原始论文来源回填、历史会话兼容迁移、文章段落锚点定位 | 历史版本 |
+| **v5.9 Context & Agent Graph** | LLM-first Turn Planner、跨会话 FTS5、结构化压缩、1M 模型窗口适配、实时节点执行图 | 当前版本 |
 
 ## License
 

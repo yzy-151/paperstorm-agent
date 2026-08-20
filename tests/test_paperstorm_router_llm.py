@@ -51,7 +51,7 @@ class PaperStormRouterLLMTest(unittest.TestCase):
             context_window=[],
             source_message_id="src-1",
         )
-        self.assertEqual(result["router_decision"]["router"], "llm")
+        self.assertEqual(result["router_decision"]["router"], "llm_planner")
         self.assertEqual(result["route"], "casual_chat")
         self.assertFalse(result["retrieval_triggered"])
 

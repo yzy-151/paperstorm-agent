@@ -267,7 +267,7 @@ class BenchmarkRunManager:
             trace = self.observability.trace(
                 "paperstorm.benchmark",
                 input={"benchmark_id": benchmark_id, "profile": profile},
-                metadata={"run_id": run_id, "version": "5.8.1"},
+                metadata={"run_id": run_id, "version": "5.9.0"},
                 session_id=run_id,
                 tags=["benchmark", profile],
             )
@@ -396,8 +396,11 @@ def _resolve_benchmark_root(explicit=None):
         ]
     )
     for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
+        try:
+            if candidate.exists():
+                return candidate.resolve()
+        except OSError:
+            continue
     return candidates[0].expanduser().resolve() if candidates else (PROJECT_ROOT / "data" / "benchmarks")
 
 
@@ -419,9 +422,12 @@ def _discover_inputs(root):
 
 
 def _input_exists(key, path):
-    if key == "scifact_dir":
-        return all((path / relative).exists() for relative in ("corpus.jsonl", "queries.jsonl", "qrels/test.tsv"))
-    return path.exists()
+    try:
+        if key == "scifact_dir":
+            return all((path / relative).exists() for relative in ("corpus.jsonl", "queries.jsonl", "qrels/test.tsv"))
+        return path.exists()
+    except OSError:
+        return False
 
 
 def _latest_result_path(benchmark_id, root):

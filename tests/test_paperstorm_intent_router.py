@@ -2,6 +2,41 @@ import unittest
 
 
 class PaperStormIntentRouterTest(unittest.TestCase):
+    def test_llm_planner_is_not_vetoed_by_topic_biased_keyword_rules(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        def fake_llm(_prompt):
+            return (
+                '{"intent":"casual_chat","need_retrieval":false,'
+                '"tool":"chat_fallback","rewritten_query":"写一个太空故事",'
+                '"working_subject":"","confidence":0.98,'
+                '"reason":"creative chat does not need research"}'
+            )
+
+        decision = PaperStormIntentRouter(llm_router=fake_llm).route(
+            message="继续写一个太空故事",
+            session={"topic": "PIM 无源互调", "task_id": "task-pim"},
+            context_window=[{"role": "user", "content": "给我写一个故事"}],
+        )
+
+        self.assertEqual(decision["router"], "llm_planner")
+        self.assertEqual(decision["tool"], "chat_fallback")
+        self.assertFalse(decision["need_retrieval"])
+
+    def test_planner_prompt_does_not_inject_stale_topic_as_current_intent(self):
+        from knowledge_storm.paperstorm_intent_router import build_router_prompt
+
+        prompt = build_router_prompt(
+            message="给我写一个太空故事",
+            session={"topic": "PIM 无源互调", "task_id": "task-pim"},
+            context_window=[{"role": "user", "content": "我们换个话题"}],
+            memory_context={},
+            evidence_sufficiency={},
+        )
+
+        self.assertNotIn('"topic": "PIM 无源互调"', prompt)
+        self.assertIn("旧任务主题不得自动继承", prompt)
+
     def test_llm_router_accepts_structured_json_decision(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
 
@@ -22,7 +57,7 @@ class PaperStormIntentRouterTest(unittest.TestCase):
         self.assertEqual(decision["intent"], "system_help")
         self.assertFalse(decision["need_retrieval"])
         self.assertEqual(decision["tool"], "chat_fallback")
-        self.assertEqual(decision["router"], "llm")
+        self.assertEqual(decision["router"], "llm_planner")
 
     def test_router_rewrites_followup_into_standalone_research_query(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
@@ -43,7 +78,6 @@ class PaperStormIntentRouterTest(unittest.TestCase):
 
         self.assertEqual(decision["intent"], "research_qa")
         self.assertTrue(decision["need_retrieval"])
-        self.assertIn("pim 神经网络抑制", decision["rewritten_query"])
         self.assertIn("PIM 是什么", decision["rewritten_query"])
 
     def test_router_keeps_standalone_research_request_without_topic_pollution(self):

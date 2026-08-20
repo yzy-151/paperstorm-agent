@@ -16,7 +16,7 @@ class PaperStormUIV57Test(unittest.TestCase):
         cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     def test_product_uses_v57_workspace_shell(self):
-        self.assertIn("v5.8.1", self.html)
+        self.assertIn("v5.9", self.html)
         self.assertIn('class="workspace-rail"', self.html)
         self.assertIn('class="workspace-main"', self.html)
         self.assertIn('class="workspace-inspector product-only"', self.html)
@@ -28,7 +28,7 @@ class PaperStormUIV57Test(unittest.TestCase):
 
     def test_readme_presents_new_screenshots_diagram_and_benchmark_icons(self):
         for marker in (
-            "dashboard-research-v57.png",
+            "dashboard-research-v59.png",
             "dashboard-developer-v57.png",
             "paperstorm-executive-overview-v57.svg",
             "benchmark-icon-retrieval.svg",
@@ -67,6 +67,24 @@ class PaperStormUIV57Test(unittest.TestCase):
         for marker in forbidden:
             self.assertNotIn(marker, self.html.lower())
             self.assertNotIn(marker, self.readme.lower())
+
+    def test_research_pipeline_is_an_interactive_live_node_graph(self):
+        bundle = self.html + self.script
+        for marker in (
+            'id="pipeline-canvas"',
+            'class="pipeline-node',
+            'id="pipeline-wires"',
+            'id="pipeline-node-title"',
+            "applyPipelineTrace",
+            "new EventSource",
+            "pipelineEdges",
+        ):
+            self.assertIn(marker, bundle)
+        self.assertIn("@keyframes wire-flow", self.css)
+
+    def test_public_readme_has_no_recruiting_or_leadership_copy(self):
+        for marker in ("面试", "领导"):
+            self.assertNotIn(marker, self.readme)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,45 @@ from pathlib import Path
 
 
 class PaperStormContextV56Tests(unittest.TestCase):
+    def test_default_profile_exposes_one_million_model_window_with_soft_budget(self):
+        from knowledge_storm.paperstorm_context_v56 import ContextEngineConfigV56
+
+        chat = ContextEngineConfigV56.for_profile("chat")
+        research = ContextEngineConfigV56.for_profile("research")
+
+        self.assertEqual(chat.model_context_tokens, 1_000_000)
+        self.assertEqual(chat.operational_input_tokens, 128_000)
+        self.assertEqual(research.operational_input_tokens, 512_000)
+        self.assertLessEqual(chat.absolute_layer_caps["pinned"], 24_000)
+        self.assertEqual(chat.recent_messages, 48)
+
+    def test_structured_summary_prompt_preserves_decisions_constraints_and_sources(self):
+        from knowledge_storm.paperstorm_context_v56 import build_structured_summary_prompt
+
+        prompt = build_structured_summary_prompt(self._messages())
+
+        self.assertIn('"user_goals"', prompt)
+        self.assertIn('"confirmed_facts"', prompt)
+        self.assertIn('"open_questions"', prompt)
+        self.assertIn('"evidence_refs"', prompt)
+        self.assertIn("不得把推测写成事实", prompt)
+
+    def test_summary_selection_uses_query_relevance_instead_of_last_two_only(self):
+        engine = self._engine()
+        messages = [
+            {"id": "s1", "role": "system", "content": "PIM 无源互调论文与神经网络抑制", "metadata": {"context_summary": True}},
+            {"id": "s2", "role": "system", "content": "午饭讨论与天气", "metadata": {"context_summary": True}},
+            {"id": "s3", "role": "system", "content": "另一个无关项目", "metadata": {"context_summary": True}},
+            {"id": "u", "role": "user", "content": "之前的 PIM 论文有哪些？"},
+        ]
+
+        result = engine.assemble(messages, query="PIM 无源互调论文")
+        summary_text = " ".join(
+            item["content"] for item in result["messages"]
+            if item.get("metadata", {}).get("context_summary")
+        )
+        self.assertIn("PIM 无源互调", summary_text)
+
     def _engine(self, root=None, summarizer=None):
         from knowledge_storm.paperstorm_context_v56 import (
             ContextEngineConfigV56,

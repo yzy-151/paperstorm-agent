@@ -1,6 +1,7 @@
 """Layered, auditable context governance for PaperStorm v5.6."""
 
 import json
+import math
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -17,25 +18,83 @@ LAYER_NAMES = ("pinned", "active", "summary", "memory", "evidence", "artifact")
 
 @dataclass
 class ContextEngineConfigV56:
-    model_context_tokens: int = 32768
-    output_reserve_tokens: int = 4096
-    soft_watermark: float = 0.72
+    model_context_tokens: int = 1_000_000
+    operational_input_tokens: int = 128_000
+    output_reserve_tokens: int = 16_000
+    soft_watermark: float = 0.78
     high_watermark: float = 0.9
-    recent_messages: int = 8
-    layer_caps: Dict[str, float] = field(
+    recent_messages: int = 48
+    task_profile: str = "chat"
+    layer_targets: Dict[str, float] = field(
         default_factory=lambda: {
-            "pinned": 0.25,
-            "active": 0.35,
-            "summary": 0.2,
+            "pinned": 0.08,
+            "active": 0.42,
+            "summary": 0.18,
             "memory": 0.12,
-            "evidence": 0.35,
-            "artifact": 0.08,
+            "evidence": 0.14,
+            "artifact": 0.06,
         }
     )
+    absolute_layer_caps: Dict[str, int] = field(
+        default_factory=lambda: {
+            "pinned": 24_000,
+            "active": 96_000,
+            "summary": 64_000,
+            "memory": 48_000,
+            "evidence": 700_000,
+            "artifact": 96_000,
+        }
+    )
+    layer_caps: Optional[Dict[str, float]] = None
+
+    def __post_init__(self):
+        # Public v5.6 benchmark adapters used ``layer_caps``. Keep that
+        # constructor contract while using the clearer v5.9 target name.
+        if self.layer_caps:
+            merged = dict(self.layer_targets)
+            merged.update(self.layer_caps)
+            self.layer_targets = merged
 
     @property
     def input_limit(self):
-        return max(1, int(self.model_context_tokens) - int(self.output_reserve_tokens))
+        hard_limit = int(self.model_context_tokens) - int(self.output_reserve_tokens)
+        return max(1, min(hard_limit, int(self.operational_input_tokens)))
+
+    @classmethod
+    def for_profile(cls, profile="chat", model_context_tokens=1_000_000):
+        profile = str(profile or "chat").lower()
+        profiles = {
+            "chat": {
+                "operational_input_tokens": 128_000,
+                "output_reserve_tokens": 16_000,
+                "layer_targets": {
+                    "pinned": 0.08, "active": 0.42, "summary": 0.18,
+                    "memory": 0.12, "evidence": 0.14, "artifact": 0.06,
+                },
+            },
+            "qa": {
+                "operational_input_tokens": 256_000,
+                "output_reserve_tokens": 32_000,
+                "layer_targets": {
+                    "pinned": 0.06, "active": 0.22, "summary": 0.12,
+                    "memory": 0.10, "evidence": 0.44, "artifact": 0.06,
+                },
+            },
+            "research": {
+                "operational_input_tokens": 512_000,
+                "output_reserve_tokens": 64_000,
+                "layer_targets": {
+                    "pinned": 0.04, "active": 0.18, "summary": 0.10,
+                    "memory": 0.08, "evidence": 0.52, "artifact": 0.08,
+                },
+            },
+        }
+        values = profiles.get(profile, profiles["chat"])
+        return cls(
+            model_context_tokens=int(model_context_tokens),
+            task_profile=profile if profile in profiles else "chat",
+            **values,
+        )
 
 
 class ContextLedgerV56:
@@ -178,6 +237,7 @@ class ContextEngineV56:
         evidence: Optional[Iterable[Dict]] = None,
         state: Optional[Dict] = None,
         artifacts: Optional[Iterable[Dict]] = None,
+        query: str = "",
     ):
         messages = [dict(item) for item in messages]
         layers = {name: [] for name in LAYER_NAMES}
@@ -185,24 +245,55 @@ class ContextEngineV56:
         summaries = [item for item in messages if _is_summary(item) and not _is_pinned(item)]
         ordinary = [item for item in messages if not _is_pinned(item) and not _is_summary(item)]
         layers["active"] = _select_recent_groups(ordinary, self.config.recent_messages)
-        layers["summary"] = summaries[-2:]
+        layers["summary"] = _select_relevant_messages(summaries, query, limit=4)
         if state:
             layers["summary"].append({"role": "system", "content": "Current task state: " + _json(state), "metadata": {"context_layer": "summary"}})
         layers["memory"] = [_memory_message(item) for item in (memories or [])]
         layers["evidence"] = [_evidence_message(item) for item in (evidence or [])]
         layers["artifact"] = [_artifact_message(item) for item in (artifacts or [])]
 
-        selected = []
+        selected_by_layer = {name: [] for name in LAYER_NAMES}
         usage = {name: 0 for name in LAYER_NAMES}
+        selected_ids = set()
         remaining = self.config.input_limit
+
+        # First pass protects a task-specific share for every context type.
         for layer_name in LAYER_NAMES:
-            cap = max(0, int(self.config.input_limit * float(self.config.layer_caps.get(layer_name, 1.0))))
-            layer_budget = min(remaining, cap if cap else remaining)
+            target = max(
+                0,
+                int(self.config.input_limit * float(self.config.layer_targets.get(layer_name, 0))),
+            )
+            hard_cap = int(self.config.absolute_layer_caps.get(layer_name, self.config.input_limit))
+            layer_budget = min(remaining, target, hard_cap)
             chosen = _fit_groups(layers[layer_name], layer_budget, preserve_order=True)
-            selected.extend(chosen)
+            selected_by_layer[layer_name].extend(chosen)
+            selected_ids.update(_identity(item) for item in chosen)
             used = self.estimate(chosen)
             usage[layer_name] = used
             remaining -= used
+
+        # Second pass lends unused budget to high-value layers without exceeding
+        # their absolute caps. Research profiles prioritize evidence; chat keeps
+        # recent dialogue first.
+        priority = (
+            ("evidence", "active", "summary", "memory", "artifact", "pinned")
+            if self.config.task_profile in {"qa", "research"}
+            else ("active", "summary", "memory", "evidence", "artifact", "pinned")
+        )
+        for layer_name in priority:
+            if remaining <= 0:
+                break
+            hard_cap = int(self.config.absolute_layer_caps.get(layer_name, self.config.input_limit))
+            extra_budget = min(remaining, max(0, hard_cap - usage[layer_name]))
+            candidates = [item for item in layers[layer_name] if _identity(item) not in selected_ids]
+            chosen = _fit_groups(candidates, extra_budget, preserve_order=True)
+            selected_by_layer[layer_name].extend(chosen)
+            selected_ids.update(_identity(item) for item in chosen)
+            used = self.estimate(chosen)
+            usage[layer_name] += used
+            remaining -= used
+
+        selected = [item for name in LAYER_NAMES for item in selected_by_layer[name]]
 
         selected = _deduplicate_messages(selected)
         if self.estimate(selected) > self.config.input_limit:
@@ -217,7 +308,7 @@ class ContextEngineV56:
                 "layers": usage,
             },
             "validation": validation,
-            "policy": "pinned -> active -> summary -> memory -> evidence -> artifact",
+            "policy": "profile targets -> dynamic budget borrowing -> absolute caps",
         }
 
     def compact(self, messages: Iterable[Dict], force: bool = False):
@@ -243,7 +334,7 @@ class ContextEngineV56:
             summary_content = _deterministic_summary(middle)
         summary_content = truncate_to_tokens(
             summary_content,
-            max(16, int(self.config.input_limit * self.config.layer_caps["summary"]) - 6),
+            max(16, min(self.config.absolute_layer_caps["summary"], int(self.config.input_limit * 0.18)) - 6),
         )
         compaction_id = uuid.uuid4().hex
         summary = {
@@ -299,9 +390,20 @@ class ContextEngineV56:
 
     def _summarize(self, messages):
         if self.summarizer:
-            value = self.summarizer(messages)
+            prompt = build_structured_summary_prompt(messages)
+            try:
+                value = self.summarizer(prompt)
+            except TypeError:
+                value = self.summarizer(messages)
             if isinstance(value, dict):
-                value = value.get("summary") or value.get("content") or _json(value)
+                value = _json(_normalize_summary(value))
+            elif isinstance(value, str):
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, dict):
+                        value = _json(_normalize_summary(parsed))
+                except json.JSONDecodeError:
+                    pass
             value = str(value or "").strip()
             if not value:
                 raise ValueError("summarizer returned empty content")
@@ -400,28 +502,116 @@ def _validate_context(messages, pinned):
 
 
 def _deterministic_summary(messages):
+    structured = {
+        "user_goals": [],
+        "confirmed_facts": [],
+        "decisions": [],
+        "constraints": [],
+        "open_questions": [],
+        "completed_actions": [],
+        "pending_actions": [],
+        "evidence_refs": [],
+        "memory_candidates": [],
+        "topic_transitions": [],
+    }
     if not messages:
-        return "Context summary: no older conversational content."
-    constraints, decisions, open_items, sources = [], [], [], []
+        return json.dumps(structured, ensure_ascii=False)
     for message in messages:
         content = str(message.get("content") or "").strip()
         if not content:
             continue
         lowered = content.lower()
         if any(word in lowered for word in ("必须", "不要", "偏好", "require", "must")):
-            constraints.append(content)
+            structured["constraints"].append(content)
         elif message.get("role") == "user":
-            open_items.append(content)
+            structured["user_goals"].append(content)
+            if content.endswith(("?", "？")):
+                structured["open_questions"].append(content)
         else:
-            decisions.append(content)
+            structured["decisions"].append(content)
         source = message.get("metadata", {}).get("source_id")
         if source:
-            sources.append(str(source))
-    parts = ["Context handoff summary (derived; raw events remain restorable):"]
-    for label, values in (("constraints", constraints), ("user requests", open_items), ("decisions/results", decisions), ("sources", sources)):
-        if values:
-            parts.append(label + ": " + " | ".join(values[:6]))
-    return "\n".join(parts)
+            structured["evidence_refs"].append(str(source))
+    # Keep schema order so high-value goals and facts survive any emergency
+    # token truncation before lower-priority bookkeeping fields.
+    return json.dumps(_normalize_summary(structured), ensure_ascii=False)
+
+
+SUMMARY_FIELDS = (
+    "user_goals",
+    "confirmed_facts",
+    "decisions",
+    "constraints",
+    "open_questions",
+    "completed_actions",
+    "pending_actions",
+    "evidence_refs",
+    "memory_candidates",
+    "topic_transitions",
+)
+
+
+def build_structured_summary_prompt(messages):
+    """Build a provenance-preserving prompt for recursive context summaries."""
+    schema = {field_name: [] for field_name in SUMMARY_FIELDS}
+    return (
+        "你是 PaperStorm 的上下文压缩器。把历史对话压缩为严格 JSON，不要输出 Markdown。\n"
+        "规则：\n"
+        "1. 不得把推测写成事实；事实、决定、待办和未解决问题必须分开。\n"
+        "2. 原样保留否定条件、数值、路径、错误、引用 ID、task_id 和 document_id。\n"
+        "3. 标记主题切换；旧主题不得自动成为当前主题。\n"
+        "4. 不复制大段工具输出，只保留结论、来源指针与恢复线索。\n"
+        "5. 不确定内容放入 open_questions，不得补写对话中不存在的信息。\n"
+        "输出 Schema：{0}\n"
+        "待压缩消息：{1}"
+    ).format(_json(schema), _json(list(messages or [])))
+
+
+def _normalize_summary(value):
+    value = dict(value or {})
+    normalized = {}
+    for field_name in SUMMARY_FIELDS:
+        items = value.get(field_name) or []
+        if not isinstance(items, list):
+            items = [items]
+        normalized[field_name] = [str(item).strip() for item in items if str(item).strip()][:20]
+    return normalized
+
+
+def _select_relevant_messages(messages, query, limit=4):
+    messages = list(messages or [])
+    if not messages:
+        return []
+    if not str(query or "").strip():
+        return messages[-max(1, int(limit)):]
+    query_terms = _search_terms(query)
+    documents = [_search_terms(message.get("content", "")) for message in messages]
+    document_count = len(documents)
+    document_frequency = {
+        term: sum(1 for document in documents if term in document)
+        for term in query_terms
+    }
+    scored = []
+    average_length = sum(len(document) for document in documents) / max(1, document_count)
+    for index, (message, content_terms) in enumerate(zip(messages, documents)):
+        length = max(1, len(content_terms))
+        score = 0.0
+        for term in query_terms.intersection(content_terms):
+            idf = math.log(1.0 + (document_count - document_frequency[term] + 0.5) / (document_frequency[term] + 0.5))
+            score += idf * 2.2 / (1.0 + 1.2 * (0.25 + 0.75 * length / max(1.0, average_length)))
+        scored.append((score, index, message))
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    chosen = sorted(scored[: max(1, int(limit))], key=lambda item: item[1])
+    return [item[2] for item in chosen]
+
+
+def _search_terms(text):
+    import re
+
+    return {
+        item.lower()
+        for item in re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]{2,}", str(text or ""))
+    }
 
 
 def _memory_message(item):
@@ -483,21 +673,24 @@ class ContextEngineConfig(ContextEngineConfigV56):
 
     def __init__(
         self,
-        total_tokens=4096,
-        output_reserve_tokens=768,
-        compact_threshold_ratio=0.72,
+        total_tokens=1_000_000,
+        output_reserve_tokens=16_000,
+        compact_threshold_ratio=0.78,
         high_watermark_ratio=0.9,
-        recent_message_count=6,
+        recent_message_count=48,
         tool_inline_token_limit=180,
         **updates,
     ):
         super().__init__(
             model_context_tokens=int(updates.pop("model_context_tokens", total_tokens)),
+            operational_input_tokens=int(updates.pop("operational_input_tokens", min(128_000, int(total_tokens) - int(output_reserve_tokens)))),
             output_reserve_tokens=int(output_reserve_tokens),
             soft_watermark=float(updates.pop("soft_watermark", compact_threshold_ratio)),
             high_watermark=float(updates.pop("high_watermark", high_watermark_ratio)),
             recent_messages=int(updates.pop("recent_messages", recent_message_count)),
-            layer_caps=updates.pop("layer_caps", ContextEngineConfigV56().layer_caps),
+            task_profile=str(updates.pop("task_profile", "chat")),
+            layer_targets=updates.pop("layer_targets", updates.pop("layer_caps", ContextEngineConfigV56().layer_targets)),
+            absolute_layer_caps=updates.pop("absolute_layer_caps", ContextEngineConfigV56().absolute_layer_caps),
         )
         self.tool_inline_token_limit = int(tool_inline_token_limit)
 
@@ -590,6 +783,13 @@ class ContextEngine:
         result = self.core.compact(messages, force=True)
         summary_message = next((item for item in result["messages"] if _is_summary(item)), {})
         summary_text = str(summary_message.get("content") or "")
+        user_contents = [
+            str(item.get("content") or "").strip()
+            for item in messages
+            if item.get("role") == "user" and str(item.get("content") or "").strip()
+        ]
+        if force and user_contents and not all(content in summary_text for content in user_contents):
+            summary_text = _deterministic_summary(messages)
         expected = [str(item) for item in (expected_constraints or [])]
         if expected:
             summary_text = "\n".join(
@@ -614,13 +814,15 @@ class ContextEngine:
             "lineage": compaction,
         }
 
-    def assemble(self, messages, memory=None, rag_evidence=None, tool_schemas=None):
+    def assemble(self, messages, memory=None, rag_evidence=None, tool_schemas=None, query=""):
         compaction = self.compact(messages)
         artifacts = [{"artifact_id": "tool-schemas", "summary": _json(list(tool_schemas or []))}] if tool_schemas else []
-        result = self.core.assemble(compaction["messages"], memories=memory, evidence=rag_evidence, artifacts=artifacts)
-        meter = self.estimate(result["messages"])
-        meter.update({"remaining_input_tokens": max(0, self.config.input_limit - meter["input_tokens"]), "assembly_limit_tokens": self.config.input_limit, "allocation": result["token_usage"]["layers"], "compaction_status": compaction["status"]})
-        return {"messages": result["messages"], "meter": meter, "compaction": compaction, "validation": result["validation"]}
+        result = self.core.assemble(compaction["messages"], memories=memory, evidence=rag_evidence, artifacts=artifacts, query=query)
+        assembly_limit = max(32, int(self.config.input_limit * self.config.high_watermark))
+        fitted_messages = _hard_fit(result["messages"], assembly_limit)
+        meter = self.estimate(fitted_messages)
+        meter.update({"remaining_input_tokens": max(0, assembly_limit - meter["input_tokens"]), "assembly_limit_tokens": assembly_limit, "allocation": result["token_usage"]["layers"], "compaction_status": compaction["status"]})
+        return {"messages": fitted_messages, "meter": meter, "compaction": compaction, "validation": result["validation"]}
 
     def restore(self, compaction_id):
         return {"compaction_id": compaction_id, "messages": self.core.restore(compaction_id), "restored_at": _now()}

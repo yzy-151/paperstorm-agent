@@ -98,10 +98,22 @@ with warnings.catch_warnings():
 
 from litellm.caching.caching import Cache
 
-# 磁盘缓存目录: ~/.storm_local_cache
-# 注意: 这是 litellm 层面的缓存，与下面的 LRU 内存缓存是两个独立层
-disk_cache_dir = os.path.join(Path.home(), ".storm_local_cache")
-litellm.cache = Cache(disk_cache_dir=disk_cache_dir, type="disk")
+# Avoid filesystem writes during package import. The cache is initialized only
+# when explicitly requested, which keeps CI, read-only containers and library
+# imports deterministic.
+def configure_litellm_disk_cache(cache_dir=None):
+    disk_cache_dir = str(
+        cache_dir
+        or os.getenv("PAPERSTORM_LITELLM_CACHE_DIR")
+        or (Path.home() / ".storm_local_cache")
+    )
+    Path(disk_cache_dir).mkdir(parents=True, exist_ok=True)
+    litellm.cache = Cache(disk_cache_dir=disk_cache_dir, type="disk")
+    return disk_cache_dir
+
+
+if str(os.getenv("PAPERSTORM_ENABLE_LITELLM_DISK_CACHE", "0")).lower() in {"1", "true", "yes"}:
+    configure_litellm_disk_cache()
 
 # 注释掉的代码是 litellm 未安装时的 fallback 处理
 # 因为 litellm 已在 requirements.txt 中，所以直接 import
@@ -586,7 +598,7 @@ class DeepSeekModel(dspy.OpenAI):
 
     def __init__(
         self,
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-flash",
         api_key: Optional[str] = None,
         api_base: str = "https://api.deepseek.com",
         **kwargs,

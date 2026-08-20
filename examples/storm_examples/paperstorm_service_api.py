@@ -40,7 +40,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         finally:
             service.observability.flush()
 
-    app = FastAPI(title="PaperStorm Agent Service", version="5.8.1", lifespan=lifespan)
+    app = FastAPI(title="PaperStorm Agent Service", version="5.9.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -113,8 +113,8 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         output_language: str = "zh"
         expected_keywords: list[str] = []
         forbidden_keywords: list[str] = []
-        context_window_size: int = 6
-        context_token_limit: int = Field(default=4096, ge=128, le=200000)
+        context_window_size: int = Field(default=48, ge=2, le=200)
+        context_token_limit: int = Field(default=1_000_000, ge=128, le=1_000_000)
         user_id: str = "local-user"
         tenant_id: str = "local"
         memory_enabled: bool = True
@@ -296,6 +296,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
                 },
             )
             last_status = None
+            seen_trace_events = 0
             while True:
                 payload = {
                     "status": "heartbeat",
@@ -313,6 +314,16 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
                     if payload.get("task_status") != last_status:
                         last_status = payload.get("task_status")
                         yield _sse_event("task_status", payload)
+                    try:
+                        trace_events = service.get_trace(task_id).get("events") or []
+                    except (KeyError, FileNotFoundError):
+                        trace_events = []
+                    for trace_event in trace_events[seen_trace_events:]:
+                        yield _sse_event(
+                            "trace",
+                            {"task_id": task_id, "trace": trace_event},
+                        )
+                    seen_trace_events = len(trace_events)
                 yield _sse_event("heartbeat", payload)
                 if once:
                     break
