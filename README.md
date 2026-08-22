@@ -1,86 +1,57 @@
-# PaperStorm Agent（v6.3）
+# PaperStorm Agent（v6.4）
 
-> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v6.3 将工作流升级为
-> 工业编排视图：主流程按行阅读、跨行外侧回转，文件依赖使用独立通道与语义端口；
-> 问答消息在正文下方明确展示 Token、耗时以及真实/估算用量。
+> 面向论文调研、证据问答与企业知识治理的可观测 Agent 平台。项目基于 Stanford
+> STORM 的多视角调研方法扩展，覆盖检索、规划、协作写作、记忆、上下文压缩、
+> 运行时治理、公开评测与正式文档交付。
 
-![PaperStorm 调研工作台](docs/screenshots/dashboard-research-v63.png)
+![PaperStorm 调研工作台](docs/screenshots/dashboard-research-v64.png)
 
-**论文调研** · **智能问答** · **混合检索** · **长期记忆** · **上下文治理** ·
-**Multi-Agent Research** · **公开 Benchmark** · **Langfuse Observability**
+**Deep Research** · **Evidence-grounded QA** · **Hybrid RAG** ·
+**Temporal Memory** · **Context Engineering** · **Agent Runtime** ·
+**Public Benchmarks** · **Langfuse Observability**
 
-## 项目一眼看懂
+## 项目概述
 
-PaperStorm 不是从零重写聊天机器人，而是在 Stanford STORM 的 Deep Research /
-长文生成框架上做工程化增强，把"论文调研脚本"推进成一个可演示、可评测、可治理的
-Agent 平台原型：
+PaperStorm 提供两类核心业务能力：一是面向 arXiv、本地 PDF、Zotero 与企业文档的
+多 Agent 深度调研和长文生成；二是面向持续会话的证据问答，在证据不足时可调用调研
+工具补充知识。系统以 FastAPI 暴露服务接口，以 LangGraph 管理运行状态，并通过 SSE、
+本地 Trace 与 Langfuse 记录执行轨迹、模型用量和评测结果。
 
-- **RAG 检索链路**：arXiv / 本地 PDF / Zotero 论文检索，query 清洗、PIM 领域消歧、
-  BM25 + Dense + RRF 混合召回、可选 Cross-Encoder 重排、引用回答。
-- **Agent Runtime v6.0**：LLM 规划 `respond / tool_call / clarify`，工具能力为
-  `memory.search / evidence.search / research.start`；输出形式不再被硬编码成“闲聊、
-  故事”等有限意图。LangGraph 负责状态转移、SQLite checkpoint、节点级重试和 span trace。
-- **Context v5.9**：Pinned / Active / Summary / Memory / Evidence / Artifact
-  六类工作集，按 chat / QA / research 动态分配预算；128K / 256K / 512K 软工作集
-  共享 DeepSeek V4 1M 硬窗口，支持结构化递归摘要和 `compaction_id` 精确恢复。
-- **Memory v5.6**：SQLite WAL 规范化存储 episode / fact / source provenance /
-  entity / audit event，事实带 `valid_from / valid_to / supersedes_id` 支持历史
-  `as_of` 查询，检索融合 BM25、真实 embedding、entity、time、importance/recency、
-  RRF 与 MMR。聊天可选择轻量 FTS/BM25 或真实 SentenceTransformer 语义召回；
-  Hash embedding 仅允许用于离线测试，不会伪装成语义检索。
-- **生产治理**：SQLite WAL 控制面，ACL / 审计 / 事务幂等 / TTL 缓存 / 持久任务 /
-  熔断 / 层级 span。
-- **v5.8 可观测性**：Research / Chat / Benchmark 统一 Trace 模型，本地 JSONL
-  镜像与 Langfuse 可选双写；递归脱敏、用户 ID 哈希、失败降级、Trace Score 回传。
-- **工作台**：调研模式释放右侧配置栏；节点显示输入、当前活动、输出、耗时、
-  Token、费用、结束原因和错误；粗曲线表达执行顺序，细曲线表达带文件名的产物流，
-  仅在运行和传递时提供方向流动光效。开发者控制台注册
-  SciFact、QASPER、LongMemEval-S 与 Context Pareto 实验。
+## 核心能力
 
-## v6.3 核心变化
+- **多 Agent 调研**：Persona Generator、Conv Simulator、Query Planner、Retriever、
+  Evidence Processor、Outline Generator、Section Writer 与 Evaluator 协作完成调研。
+- **RAG 与证据治理**：BM25、真实 Dense Embedding、RRF、可选 Cross-Encoder Rerank、
+  Chunk 级来源映射、引用门控与领域消歧。
+- **Action Planner**：LLM 使用 `respond / tool_call / clarify` 动作契约调用
+  `memory.search / evidence.search / research.start`，规则仅承担故障降级与安全边界。
+- **Memory Engine**：SQLite WAL 持久化 episode、fact、entity、source provenance 与
+  audit event；支持 FTS/BM25、真实语义召回、时间有效事实、RRF 与 MMR。
+- **Context Engine**：Pinned、Active、Summary、Memory、Evidence、Artifact 六类工作集，
+  支持 128K/256K/512K 软预算、结构化递归摘要、上下文压缩与精确恢复。
+- **Agent Runtime**：LangGraph 状态图、SQLite checkpoint、节点级重试、幂等控制、
+  类型化错误、持久任务与熔断降级。
+- **可观测性**：Research、Chat、Benchmark 使用统一 Trace/Span/Score 模型，支持本地
+  JSONL 与 Langfuse 双写、递归脱敏、用量统计和失败降级。
+- **评测体系**：SciFact、QASPER、LongMemEval-S、Context Pareto 与 Answer F1，覆盖
+  检索质量、答案质量、记忆召回、上下文保真、延迟和成本。
+- **正式交付**：Markdown、原始论文引用、运行 Trace、评估 Scorecard 与支持 MathML
+  数学排版的 PDF 报告。
 
-| 原因 | 旧行为造成的问题 | v6.3 改动 | 当前结果 |
-| --- | --- | --- | --- |
-| 连线缺少固定通道 | 曲线贴着卡片或穿过无关节点，流程顺序不易扫读 | 主流程每行从左到右，跨行经画布外侧回转；文件线使用全三次贝塞尔曲线和独立高度车道 | 浏览器采样验证 23 条路径均未穿过无关卡片；13 条文件线轨迹互异，与端口中心误差为 0 px |
-| 端口语义只靠文字 | 输入、中间产物和最终交付物不易快速区分 | 圆形表示输入、青色菱形表示会被后续消费的输出、黄色方形表示终端产物，并在画布右侧提供图例 | 每条线严格连接两个端口；文件名保持水平正向，不随回转路径倒排 |
-| 节点层级与运行光效过重 | 辅助节点和核心节点视觉权重相同，多色高亮影响诊断 | 系统、Agent、处理、辅助节点分层；运行态改为单色边框流动与呼吸光效 | 状态更聚焦，流程图不再被多色装饰干扰 |
-| Token 信息挤在消息标题 | 长指标影响消息头排版，也不容易判断是真实统计还是估算 | 用量脚注固定放在正文和引用之后，展示输入、输出、总计、耗时及统计类型 | 每条用户/助手消息恢复后仍能查看同一份遥测 |
+## v6.4 发布说明
 
-## v6.2 核心变化
+| 领域 | 改进内容 | 验收结果 |
+| --- | --- | --- |
+| 工作流可视化 | 11 节点行优先编排；粗线表示执行顺序，三次贝塞尔虚线表示文件依赖；输入、中间输出和终端产物使用不同端口 | 23 条路径不穿过无关卡片，13 条文件线轨迹互异且端点误差为 0 px |
+| 状态一致性 | 产物状态采用单调迁移，迟到事件不能重新激活已完成连线；任务成功时统一收敛传输状态 | 完成后的文件线不再保持动画高亮 |
+| 问答遥测 | 每条回复展示输入、输出、总 Token、墙钟耗时及真实/估算标识；旧会话自动补齐 token 估算 | 新消息显示实际耗时；历史消息明确标注“耗时未记录” |
+| Agent 行为 | 动作级 LLM Planner、动态输出预算、长度截断续接、类型化模型错误与真实语义 Memory 开关 | 普通生成不受固定内容类型限制，工具调用边界可追踪 |
+| PDF 交付 | 原始标题和作者进入参考文献；`$...$`、`$$...$$`、`\(...\)`、`\[...\]` 转换为 MathML，并记录公式转换指标 | 转换不完整时返回类型化错误，PDF 与打印 HTML 可验证 |
+| Benchmark | 集成 SciFact、QASPER、LongMemEval-S、Context Pareto 与端到端 Reader/Judge | 开发者控制台可加载数据集、运行实验并查看结果与限制 |
 
-| 原因 | 旧行为造成的问题 | v6.2 改动 | 当前结果 |
-| --- | --- | --- | --- |
-| 单一进度条无法表达依赖 | 看得到阶段先后，但看不到具体文件从哪里产生、被谁消费 | 11 节点工作流拆分粗执行曲线与细产物曲线；输入/输出圆点绑定文件名，多输入节点使用独立端口 | 等待、运行、完成、失败状态可区分；运行主线和正在传递的文件线独立高亮并流动 |
-| 卡片缺少实时诊断 | 无法沿节点定位输入、输出、耗时、Token、费用和错误 | SSE 阶段事件与 `artifact_ready` 事件共同驱动卡片检查器 | 点击任意卡片可查看职责与脱敏运行信息，完成后卡片顶部保留耗时 |
-| 聊天回复缺少成本反馈 | 用户无法判断每轮对话的时间和上下文开销 | 用户消息与助手消息持久化消息级 Token、耗时及估算标识，并增加本地头像 | 会话恢复后仍保留同一份遥测信息 |
-| 引用与 PDF 丢失论文身份 | 页面只显示生成段落，公式或来源不适合正式交付 | 引用保留原始标题、作者与年份；LaTeX 转 MathML，失败时保留可见公式源码 | 网页与 PDF 均能追溯原论文，中文、表格、代码和公式可打印 |
-
-## v6.1 核心变化
-
-| 原因 | 旧行为造成的问题 | v6.1 改动 | 当前结果 |
-| --- | --- | --- | --- |
-| 前端猜测调研进度 | 提交后同时点亮 Persona、对话和检索；模型连接失败也会被误报为检索失败 | STORM Callback 与 Runner 边界统一输出 `stage_start/progress/end/error` | 任意时刻只有真实阶段运行，错误落到发生故障的卡片 |
-| 卡片只有笼统状态 | 无法判断节点收到了什么、产出了什么或为何失败 | 卡片检查器展示脱敏输入、输出摘要、活动、耗时、Token、费用和类型化错误 | 调试可直接沿 SSE Trace 定位，不再依赖终端猜测 |
-| 文章只能下载 Markdown | 对外展示和打印不方便，公式排版没有稳定交付格式 | Markdown 与 LaTeX 转为打印 HTML/MathML，再由 Edge/Chromium 输出并用 pypdf 验证 | 可选生成 `paperstorm_report.pdf`，交付卡片和文章区均可打开 |
-| PDF 交付与调研状态耦合 | 渲染器问题可能掩盖已成功生成的文章 | PDF 使用独立交付状态和错误码 | PDF 失败时 Markdown 仍保留，调研任务保持成功 |
-
-在论文调研的“交付产物”卡片中勾选**同时生成正式 PDF**，再开始调研。任务完成后，
-卡片和文章区会出现**查看 PDF**入口。Windows 默认自动使用 Microsoft Edge；也可通过
-`PAPERSTORM_PDF_BROWSER` 指定 Chromium 可执行文件。
-
-## v6.0 核心变化
-
-| 原因 | 旧行为造成的问题 | v6.0 改动 | 当前结果 |
-| --- | --- | --- | --- |
-| 把内容类型当成路由枚举 | 新增写作形式就要扩充 intent；失败时可能回退成自我介绍 | LLM 输出动作、工具调用与响应契约，旧 intent 仅作兼容视图 | 普通生成不受有限内容标签约束，工具边界明确 |
-| 固定输出上限 | 长文和续写可能在半句处结束 | 按短答、知识回答、详细回答、创作续写动态分配 2K-16K，显式长度最高 64K；`finish_reason=length` 自动续接一次 | 避免为所有请求支付大输出预算，同时降低长内容截断概率 |
-| 模型异常被当作普通回复 | 用户看到“你好/我是 PaperStorm”，无法判断真实故障 | 统一返回 timeout、rate_limit、authentication、provider_unavailable、provider_error | 前端与 Trace 可定位失败类型，会话状态仍保留 |
-| Memory dense 边界不清 | Hash 向量可能被误解为真实语义效果 | 默认 lexical；semantic 必须加载真实 SentenceTransformer，显式拒绝 Hash provider | 运行配置可选择，报告包含 retrieval mode 与 embedding backend |
-| 节点图只有 WAIT/RUN/DONE | 无法判断输入、耗时和成本 | SSE Trace 归一化为节点遥测，完成节点显示耗时徽标 | UI 契约测试已覆盖字段与状态动画 |
-| Context/Memory 缺少同条件端到端对比 | 只能看单点召回指标，不能做质量/成本决策 | 新增 128K/256K/512K Pareto 与 LongMemEval-S Reader/Judge 三模式评测 | Harness 与 checkpoint 已通过离线测试；付费全量分数待正式运行 |
-
-完整设计边界、动态预算和复现实验命令见
-[v6.0 Agent Harness 发布说明](docs/PAPERSTORM_V60_AGENT_HARNESS.md)。
+在“交付产物”卡片中启用 PDF 后，任务会生成 `paperstorm_report.pdf` 与对应的
+打印 HTML。Windows 优先使用 Google Chrome，并在未安装时回退到 Microsoft Edge；
+也可通过 `PAPERSTORM_PDF_BROWSER` 指定 Chromium 浏览器。
 
 ## 最终能力地图与系统架构图
 
@@ -231,7 +202,7 @@ Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长�
 
 ### 1. 论文调研模式（默认工作台）
 
-![PaperStorm 论文调研工作台](docs/screenshots/dashboard-research-v60.png)
+![PaperStorm 论文调研工作台](docs/screenshots/dashboard-research-v64.png)
 
 - 调研文章支持一键**下载 Markdown**；勾选交付卡片中的 PDF 选项后，还可生成并
   打开经过页数与正文校验的 `paperstorm_report.pdf`。
@@ -243,7 +214,7 @@ Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长�
 
 ### 2. 智能问答模式
 
-![V5.7 智能问答模式](docs/screenshots/dashboard-chat-v57.png)
+![PaperStorm 智能问答模式](docs/screenshots/dashboard-chat-v64.png)
 
 - 输入即问答：普通聊天/系统问题直接回复，技术问题优先复用已有调研任务，
   证据不足自动启动深度调研；说"请记住：…"保存跨会话记忆。
@@ -258,10 +229,10 @@ Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长�
 
 ### 3. 开发者控制台与公开评测工作台
 
-![V5.7 公开评测工作台](docs/screenshots/dashboard-developer-v57.png)
+![PaperStorm 公开评测工作台](docs/screenshots/dashboard-developer-v64.png)
 
 - 左侧导航的"开发者控制台"将公开评测与运行诊断从用户产品界面分离。
-- Benchmark Registry 只发布 v5.5/v5.6 证据：SciFact、QASPER Retrieval、
+- Benchmark Registry 发布经过口径审查的证据：SciFact、QASPER Retrieval、
   QASPER Answer F1、LongMemEval-S 与 QASPER Context；旧 synthetic 分数不再提供
   网页入口。
 - 自动发现 `PAPERSTORM_BENCHMARK_ROOT` 或
@@ -282,7 +253,7 @@ Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长�
 无关问题会拒答而不是编造。真实向量模型可用时自动启用（`auto→real`），
 `hash` 为无模型快速模式。核心实现见 `PaperStormRAGIndex` / `HybridPaperIndex`。
 
-### Context v5.9（已接入聊天）
+### Context Engine：分层预算与结构化压缩
 
 Pinned / Active / Recursive Summary / Retrieved Memory / Evidence / Artifact 六类
 工作集；DeepSeek V4 使用 1M token 硬上限，但日常聊天、证据问答和深度调研分别采用
@@ -292,7 +263,7 @@ Pinned / Active / Recursive Summary / Retrieved Memory / Evidence / Artifact 六
 仍可按 `compaction_id` 恢复。摘要候选按当前问题的 BM25 风格相关性选取，不再固定只取
 最后两条。
 
-### Memory v5.6（已接入聊天）
+### Memory Engine：时序记忆与跨会话召回
 
 SQLite WAL 规范化存储 episode、fact、source provenance、entity 与 audit event；
 事实更新保留 `valid_from/valid_to/supersedes_id`，支持历史 `as_of` 查询；检索融合
@@ -311,19 +282,19 @@ BM25、真实 embedding、entity、time、importance/recency、RRF 与 MMR。v4.
 因此“之前聊过的 PIM 论文”先从 Session Recall 找到旧会话和引用指针，再按需去
 Evidence 取论文原文；用户偏好则从 Long-term Memory 取。三者不会混成一个向量池。
 
-### LangGraph v4.4（已接入聊天）
+### Agent Runtime：LangGraph 状态编排
 
 `classify → memory_recall → knowledge_retrieval → evidence_grade →
 deep_research → answer_with_citations → memory_candidate_write → final_trace`，
 SQLite checkpointer 持久化（一次聊天产生多个 checkpoint）、节点级瞬时故障重试、
 span trace、`storm_deep_research` 隔离工具。
 
-### Production v4.5（已接入聊天）
+### Production Runtime：可靠性与治理
 
 每条聊天/调研请求外层都走 SQLite WAL 控制面：tenant/resource ACL、审计、
 事务幂等（相同载荷重放复用结果）、TTL+tag 缓存、持久任务、熔断、层级 span。
 
-### Turn Planner：LLM 主决策 + 规则故障兜底
+### Action Planner：LLM 主决策与规则故障兜底
 
 `run_mode=paperstorm` 默认由 DeepSeek Turn Planner 根据最近 24 条消息、相关摘要、
 长期记忆和当前请求输出结构化 action / retrieval / tool / working_subject；旧 topic 不再
@@ -371,7 +342,7 @@ span trace、`storm_deep_research` 隔离工具。
 就不再参与调参；延迟为冷建索引后的单机 CPU warm-query 参考值，不代表线上 SLA；
 小样本结果给出 Bootstrap 95% CI。
 
-### 主结果 1：LongMemEval-S 长期记忆检索（v5.6）
+### 主结果 1：LongMemEval-S 长期记忆检索
 
 官方 cleaned-2025-09，500/500 题，Top-5。该结果只衡量 evidence session retrieval，
 **不等同于 reader LLM 的端到端答案准确率**。
@@ -379,16 +350,16 @@ span trace、`storm_deep_research` 隔离工具。
 | 方法 | Recall@5 | P50 | P95 |
 | --- | ---: | ---: | ---: |
 | Recent 5 sessions | 0.1358 | 0 ms | 0 ms |
-| v5.6 Memory，hash 协议基线 | 0.4813 | 146.8 ms | 202.6 ms |
-| v5.6 Memory，paraphrase-multilingual-MiniLM-L12-v2（向量持久化） | **0.8003** | 218.1 ms | 359.3 ms |
+| Temporal Memory，hash 协议基线 | 0.4813 | 146.8 ms | 202.6 ms |
+| Temporal Memory，paraphrase-multilingual-MiniLM-L12-v2（向量持久化） | **0.8003** | 218.1 ms | 359.3 ms |
 
-v5.6 在写入时一次性编码事实并持久化向量（SQLite `memory_fact_vectors`，按模型指纹
+Temporal Memory 在写入时一次性编码事实并持久化向量（SQLite `memory_fact_vectors`，按模型指纹
 隔离），查询只编码 query、按主键取向量，不再逐查询重编码全部 session：与早期
 `0.7930 / P95 1857ms` 相比，Recall@5 提升到 `0.8003`，P95 降到 `359.3ms`
 （-80.6%）。LongBench adapter/paired scorer 已通过离线测试，官方数据下载因外部
 网络中断未完成，因此不声称 LongBench task score。
 
-### 主结果 2：QASPER Context 预算治理（v5.6）
+### 主结果 2：QASPER Context 预算治理
 
 复用官方 QASPER test 1309 条真实 Hybrid+Rerank Top-5 排名；8K 模型窗口、1536 输出
 预留、Evidence 层预算 70%。
@@ -405,7 +376,7 @@ v5.6 在写入时一次性编码事实并持久化向量（SQLite `memory_fact_v
 结论：当前预算下 Context 没有进一步损害上游金证据召回，并把完整论文输入缩减到
 平均 16.657%。这是 Context 保真诊断，不是生成答案准确率。
 
-### 主结果 3：公开论文检索 Benchmark（v5.5）
+### 主结果 3：公开论文检索 Benchmark
 
 **SciFact 官方 test**：5,183 篇科学摘要、300 条官方 query、Top-10。
 
@@ -430,7 +401,7 @@ Rerank 排序质量最高，但 CPU P95 达 1.3~2.7 秒，超过低延迟预算�
 是 Hybrid+Rerank，低延迟部署默认是 Hybrid**。质量与延迟联合选型，而不是只看一个
 nDCG 数字。
 
-### 主结果 4：QASPER 端到端 Answer F1（v5.5）
+### 主结果 4：QASPER 端到端 Answer F1
 
 冻结 Hybrid+Rerank Top-5 与 `deepseek/deepseek-chat` 后，在全部官方 test 问题上
 运行一次（test 不再调参），并使用数据集自带 `qasper_evaluator.py` 对拍：
@@ -448,7 +419,7 @@ nDCG 数字。
 在正式全量付费实验前，先按 **1/4 协议规模** 完成两组长上下文实验（DeepSeek
 `deepseek-chat`，温度 0，逐题 checkpoint，成本约 $1.1）：
 
-**LongMemEval-S 端到端问答（125/500）**：复用 v5.6 持久化 Memory 检索 Top-5 会话
+**LongMemEval-S 端到端问答（125/500）**：复用持久化 Temporal Memory 检索 Top-5 会话
 作为证据，reader 生成答案。证据 Recall@5 `0.8075`，整体 EM `0.256`；分类型看，
 单会话问答 EM `0.4286`，多会话推理 EM `0.0364` —— 检索证据足够，但多会话跨 session
 推理是当前主要瓶颈（与头尾截断的证据表示有关）。该运行使用非官方 token-F1/EM 判分，
@@ -462,17 +433,17 @@ nDCG 数字。
 | 多会话推理 EM / F1 | 0.0364 / 0.0622 |
 | 成本估算 | $0.34 |
 
-**QASPER full-paper vs v5.6 预算上下文（validation 251 题）**：同一批问题分别用
-整篇论文段落与 v5.6 预算装配上下文生成，250 条成功配对：
+**QASPER full-paper vs 预算上下文（validation 251 题）**：同一批问题分别用
+整篇论文段落与预算装配上下文生成，250 条成功配对：
 
-| 指标 | full | v5.6 | Δ |
+| 指标 | full | budgeted context | Δ |
 | --- | ---: | ---: | ---: |
 | Answer F1 | 0.5383 | 0.5399 | +0.002 |
 | Exact Match | 0.2590 | 0.2550 | -0.004 |
 | Evidence F1 | 0.5732 | 0.5674 | -0.006 |
 | Prompt tokens | 1,453,417 | 1,306,984 | -10.1% |
 
-结论：v5.6 上下文在全部指标上保持在 2pp 质量预算内（"压缩不丢证据"成立）；
+结论：预算上下文在全部指标上保持在 2pp 质量预算内（"压缩不丢证据"成立）；
 但 QASPER validation 论文大多能装进 6656 token 预算，平均只省 10% 输入，
 50% 削减目标需要真正超预算的长文（见 QASPER Context 诊断的 16.7% 全论文口径）。
 完整逐题数据见
@@ -542,7 +513,7 @@ python examples/storm_examples/run_qasper_answer_benchmark.py `
 ### 历史与审计
 
 更早的 synthetic seed 回归（0.99 级 Recall 与同分布生成规则高度相关）与本地真实论文
-候选实验（v5.2 / v5.4，含文档级 dev/test 隔离与人工审核门禁）不再作为主结果发布，
+早期候选实验（含文档级 dev/test 隔离与人工审核门禁）不再作为主结果发布，
 完整审计记录保留在
 [docs/PAPERSTORM_V54_EVALUATION.md](docs/PAPERSTORM_V54_EVALUATION.md) 与
 [docs/PAPERSTORM_V55_PUBLIC_BENCHMARKS.md](docs/PAPERSTORM_V55_PUBLIC_BENCHMARKS.md)
@@ -574,29 +545,8 @@ tests/                               # 离线单元、API、前端契约与发�
 docs/                                # 评测记录 / Benchmark 口径 / 截图
 ```
 
-v5.9 的边界定义、根因分析和逐项验收见
+Memory、Context 与 Planner 的边界定义、根因分析和逐项验收见
 [Memory、Context 与 Agent Planner 改进记录](docs/PAPERSTORM_V59_CONTEXT_MEMORY.md)。
-
-## 版本演进
-
-| 版本 | 主题 | 关键产物 |
-| --- | --- | --- |
-| v0.1 → v1.2 | MVP → Final Packaging | `run_paperstorm_release_demo.py` |
-| v2.0 → v3.2 | Research QA / RAG Memory / Intent Router / Knowledge Base | 检索问答、记忆与压缩基线 |
-| v4.0 → v4.5 | 混合检索、可恢复 Context、可治理 Memory、LangGraph、生产治理 | 历史架构主线 |
-| v5.0 Cyclone | 生成优先聊天、LLM 证据裁判、主题锚点判定 | 历史版本 |
-| v5.2 Evaluation Integrity | 真实论文文档级 holdout、冻结 test、Bootstrap CI | 历史版本 |
-| v5.4 Trustworthy Evaluation | 人工门禁、质量/延迟联合选型 | 历史版本 |
-| v5.5 Public Benchmarks | SciFact / QASPER 公开评测、官方 evaluator 对拍 | 公开检索与 Answer F1 |
-| v5.6 Memory & Context | SQLite temporal memory、五层 Context、LongMemEval-S、QASPER Context 诊断 | 当前算法与评测底座 |
-| v5.7 Workspace | 直角深色工作台、Visio 风格架构图、Benchmark 能力矩阵与正式截图 | 历史版本 |
-| v5.8 Observability | Langfuse 可选双写、统一 Trace/Span/Score、递归脱敏与 fail-open 降级 | 历史版本 |
-| v5.8.1 Citation Fix | 原始论文来源回填、历史会话兼容迁移、文章段落锚点定位 | 历史版本 |
-| v5.9 Context & Agent Graph | LLM-first Turn Planner、跨会话 FTS5、结构化压缩、1M 模型窗口适配、实时节点执行图 | 历史版本 |
-| v6.0 Action & Evaluation | Action Planner、动态输出续接、显式 LLM 错误、真实语义记忆开关、节点遥测、Context Pareto、LongMemEval-S E2E | 历史版本 |
-| v6.1 Stage Trace & PDF Delivery | 真实阶段事件、精确故障归因、节点输入输出与成本检查器、可选正式 PDF 交付 | 历史版本 |
-| v6.2 Observable Workflow | 执行流与产物流双层曲线、多输入文件端口、消息级遥测、原始论文引用与公式 PDF | 历史版本 |
-| **v6.3 Industrial Workflow** | 行优先编排、避障连线、语义端口与图例、节点层级、问答用量脚注 | 当前版本 |
 
 ## License
 

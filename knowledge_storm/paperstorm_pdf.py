@@ -106,10 +106,10 @@ def markdown_to_print_html(markdown_text: str, title: str = "PaperStorm 调研�
 def discover_browser_executable():
     candidates = [
         os.getenv("PAPERSTORM_PDF_BROWSER", ""),
-        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
     ]
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
@@ -178,11 +178,11 @@ class PaperStormPdfRenderer:
             )
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.unlink(missing_ok=True)
         html_path = output_path.with_suffix(".print.html")
-        html_path.write_text(
-            markdown_to_print_html(markdown_text, title=title),
-            encoding="utf-8",
-        )
+        print_html = markdown_to_print_html(markdown_text, title=title)
+        formula_metrics = _formula_render_metrics(markdown_text, print_html)
+        html_path.write_text(print_html, encoding="utf-8")
         with tempfile.TemporaryDirectory(
             prefix="paperstorm-pdf-", ignore_cleanup_errors=True
         ) as profile_dir:
@@ -190,20 +190,41 @@ class PaperStormPdfRenderer:
                 str(browser),
                 "--headless=new",
                 "--disable-gpu",
+                "--disable-software-rasterizer",
+                "--disable-gpu-compositing",
                 "--disable-extensions",
+                "--disable-dev-shm-usage",
                 "--no-pdf-header-footer",
-                "--user-data-dir={0}".format(profile_dir),
+                "--user-data-dir={0}".format(Path(profile_dir) / "primary"),
                 "--print-to-pdf={0}".format(output_path.resolve()),
                 html_path.resolve().as_uri(),
             ]
+            runner_kwargs = {
+                "capture_output": True,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "timeout": self.timeout_seconds,
+                "shell": False,
+            }
             try:
-                completed = self.command_runner(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout_seconds,
-                    shell=False,
-                )
+                completed = self.command_runner(command, **runner_kwargs)
+                if "chrome" in browser.name.lower() and (
+                    completed.returncode != 0 or not output_path.is_file()
+                ):
+                    # Some Windows GPU policies terminate Chrome before print.
+                    # Retry only after failure; the input remains local and CSP-restricted.
+                    compatibility_command = list(command)
+                    compatibility_command.insert(2, "--no-sandbox")
+                    compatibility_command = [
+                        "--user-data-dir={0}".format(Path(profile_dir) / "compat")
+                        if item.startswith("--user-data-dir=")
+                        else item
+                        for item in compatibility_command
+                    ]
+                    completed = self.command_runner(
+                        compatibility_command, **runner_kwargs
+                    )
             except subprocess.TimeoutExpired as error:
                 raise PdfRenderError(
                     "pdf_render_timeout", "浏览器生成 PDF 超时。"
@@ -224,6 +245,7 @@ class PaperStormPdfRenderer:
         return {
             "path": str(output_path),
             "html_path": str(html_path),
+            "formula_metrics": formula_metrics,
             **metrics,
         }
 
@@ -263,6 +285,35 @@ def _replace_latex_math(markdown_text, converter):
     for index, value in enumerate(protected):
         converted = converted.replace("PAPERSTORMCODEBLOCK{0}TOKEN".format(index), value)
     return converted
+
+
+def _formula_render_metrics(markdown_text, print_html):
+    source = str(markdown_text or "")
+    protected = re.sub(r"```.*?```|`[^`\n]+`", "", source, flags=re.DOTALL)
+    expression_count = sum(
+        len(re.findall(pattern, protected, flags=re.DOTALL))
+        for pattern in (
+            r"\$\$(.+?)\$\$",
+            r"\\\[(.+?)\\\]",
+            r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)",
+            r"\\\((.+?)\\\)",
+        )
+    )
+    html_text = str(print_html or "")
+    mathml_count = html_text.count("<math")
+    fallback_count = html_text.count('class="math-fallback"')
+    if expression_count and mathml_count + fallback_count < expression_count:
+        raise PdfRenderError(
+            "pdf_formula_conversion_incomplete",
+            "公式转换不完整：检测到 {0} 个表达式，仅生成 {1} 个公式节点。".format(
+                expression_count, mathml_count + fallback_count
+            ),
+        )
+    return {
+        "source_expression_count": expression_count,
+        "mathml_count": mathml_count,
+        "fallback_count": fallback_count,
+    }
 
 
 def _append_original_references(markdown_text, run_dir):

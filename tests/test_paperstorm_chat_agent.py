@@ -26,6 +26,29 @@ class PaperStormChatAgentTest(unittest.TestCase):
         loaded = service.get_chat_session(session["chat_id"])
         self.assertEqual(loaded["memory_retrieval_mode"], "lexical")
 
+    def test_legacy_messages_are_backfilled_with_visible_usage_metadata(self):
+        from knowledge_storm.paperstorm_chat_agent import PaperStormChatAgent
+
+        service = self.make_service()
+        agent = PaperStormChatAgent(service)
+        session = agent.create_session(run_mode="fake")
+        session["messages"] = [
+            {"role": "user", "content": "上帝", "metadata": {}},
+            {"role": "assistant", "content": "这是历史回答。", "metadata": {}},
+        ]
+        agent._write_session(session)
+
+        loaded = service.get_chat_session(session["chat_id"])
+        user_usage = loaded["messages"][0]["metadata"]["telemetry"]
+        assistant_usage = loaded["messages"][1]["metadata"]["telemetry"]
+
+        self.assertGreater(user_usage["message_tokens"], 0)
+        self.assertTrue(user_usage["estimated"])
+        self.assertTrue(user_usage["legacy"])
+        self.assertGreater(assistant_usage["total_tokens"], 0)
+        self.assertIsNone(assistant_usage["duration_ms"])
+        self.assertTrue(assistant_usage["legacy"])
+
     def make_service(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

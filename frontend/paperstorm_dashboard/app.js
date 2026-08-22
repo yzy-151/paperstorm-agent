@@ -15,6 +15,7 @@ const state = {
   hasStageTrace: false,
   activeInvocations: {},
   artifactStatus: {},
+  runFinished: false,
 };
 
 const pipelineNodes = {
@@ -144,6 +145,7 @@ function resetPipelineGraph() {
   state.pipelineStatus = {};
   state.activeInvocations = {};
   state.artifactStatus = {};
+  state.runFinished = false;
   state.hasStageTrace = false;
   state.lastPdfUrl = "";
   $("#open-article-pdf").disabled = true;
@@ -351,11 +353,12 @@ function updatePipelineWires() {
 }
 
 function markArtifactsReady(stage, trace = {}) {
+  if (state.runFinished) return;
   const artifactName = String(trace.artifact_name || trace.path || "").toLowerCase();
   pipelineArtifactEdges.forEach((edge) => {
     if (edge.from !== stage) return;
     if (artifactName && !artifactName.includes(edge.label.toLowerCase().replace("storm_gen_", ""))) return;
-    state.artifactStatus[edge.id] = "active";
+    if (state.artifactStatus[edge.id] !== "complete") state.artifactStatus[edge.id] = "active";
   });
   updatePipelineWires();
 }
@@ -363,6 +366,21 @@ function markArtifactsReady(stage, trace = {}) {
 function markArtifactsConsumed(stage) {
   pipelineArtifactEdges.forEach((edge) => {
     if (edge.to === stage && state.artifactStatus[edge.id] === "active") state.artifactStatus[edge.id] = "complete";
+  });
+  updatePipelineWires();
+}
+
+function settleArtifactStatuses() {
+  Object.keys(state.artifactStatus).forEach((edgeId) => {
+    if (state.artifactStatus[edgeId] === "active") state.artifactStatus[edgeId] = "complete";
+  });
+  updatePipelineWires();
+}
+
+function failActiveArtifactStatuses() {
+  state.runFinished = true;
+  Object.keys(state.artifactStatus).forEach((edgeId) => {
+    if (state.artifactStatus[edgeId] === "active") state.artifactStatus[edgeId] = "failed";
   });
   updatePipelineWires();
 }
@@ -405,6 +423,7 @@ function openResearchEventStream(taskId) {
         setPipelineNodeStatus("request", "active", `task ${taskId} 等待阶段 Trace`);
       }
     } else if (payload.task_status === "failed") {
+      failActiveArtifactStatuses();
       const existingFailedNode = Object.keys(state.pipelineStatus).find(
         (key) => state.pipelineStatus[key].status === "failed",
       );
@@ -420,6 +439,8 @@ function openResearchEventStream(taskId) {
       source.close();
       state.researchEvents = null;
     } else if (payload.task_status === "succeeded") {
+      state.runFinished = true;
+      settleArtifactStatuses();
       source.close();
       state.researchEvents = null;
     }
@@ -488,6 +509,7 @@ function applyPipelineTrace(trace) {
     setPipelineNodeStatus("polish", "active", "去重并统一结构");
   } else if (eventName === "run_end") {
     if (trace.success === false) {
+      failActiveArtifactStatuses();
       const existingFailedNode = Object.keys(state.pipelineStatus).find(
         (nodeId) => state.pipelineStatus[nodeId]?.status === "failed",
       );
@@ -495,6 +517,9 @@ function applyPipelineTrace(trace) {
       const activeNode = Object.keys(state.pipelineStatus).find((nodeId) => state.pipelineStatus[nodeId]?.status === "active") || "request";
       setPipelineNodeStatus(activeNode, "failed", trace.error || "任务失败", telemetry);
       markDownstreamSkipped(activeNode);
+    } else {
+      state.runFinished = true;
+      settleArtifactStatuses();
     }
   }
 }
@@ -797,10 +822,13 @@ function renderMessageNode(message) {
   }
   const metricPrefix = telemetry.estimated ? "≈" : "";
   const usageKind = telemetry.estimated ? "估算用量" : "真实用量";
+  const durationText = telemetry.duration_ms === null || telemetry.duration_ms === undefined
+    ? "耗时未记录"
+    : formatDuration(Number(telemetry.duration_ms));
   const metricHtml = role === "user"
     ? (telemetry.message_tokens ? `<span class="message-usage message-telemetry">输入 ${metricPrefix}${escapeHtml(telemetry.message_tokens)} tokens · ${usageKind}</span>` : "")
     : ((telemetry.total_tokens || telemetry.duration_ms !== undefined)
-      ? `<span class="message-usage message-telemetry">输入 ${metricPrefix}${escapeHtml(telemetry.prompt_tokens || 0)} · 输出 ${metricPrefix}${escapeHtml(telemetry.completion_tokens || 0)} · 总计 ${metricPrefix}${escapeHtml(telemetry.total_tokens || (Number(telemetry.prompt_tokens || 0) + Number(telemetry.completion_tokens || 0)))} tokens · ${formatDuration(Number(telemetry.duration_ms || 0))} · ${usageKind}</span>`
+      ? `<span class="message-usage message-telemetry">输入 ${metricPrefix}${escapeHtml(telemetry.prompt_tokens || 0)} · 输出 ${metricPrefix}${escapeHtml(telemetry.completion_tokens || 0)} · 总计 ${metricPrefix}${escapeHtml(telemetry.total_tokens || (Number(telemetry.prompt_tokens || 0) + Number(telemetry.completion_tokens || 0)))} tokens · ${durationText} · ${usageKind}</span>`
       : "");
   const avatar = role === "user" ? "/dashboard/assets/avatar-user.svg" : "/dashboard/assets/avatar-paperstorm.svg";
   node.innerHTML = `<img class="message-avatar" src="${avatar}" alt="" /><div class="message-body"><div class="message-head"><strong>${role === "user" ? "你" : "PaperStorm"}${version}${regenerated}</strong></div><p>${escapeHtml(message.content)}</p>${citationsHtml}${metricHtml}</div>`;

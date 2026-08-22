@@ -1,5 +1,6 @@
 import tempfile
 import json
+import inspect
 import threading
 import time
 import unittest
@@ -9,11 +10,16 @@ from unittest import mock
 from knowledge_storm.paperstorm_pdf import (
     PaperStormPdfRenderer,
     PdfRenderError,
+    discover_browser_executable,
     markdown_to_print_html,
 )
 
 
 class PaperStormPdfTest(unittest.TestCase):
+    def test_browser_discovery_prefers_chrome_over_edge_on_windows(self):
+        source = inspect.getsource(discover_browser_executable)
+        self.assertLess(source.index("Google\\Chrome"), source.index("Microsoft\\Edge"))
+
     def test_markdown_to_print_html_supports_chinese_tables_code_and_math(self):
         markdown = """# 无源互调抑制
 
@@ -95,13 +101,51 @@ print("PIM")
 
             self.assertTrue(output_path.exists())
             self.assertEqual(result["page_count"], 2)
+            self.assertEqual(result["formula_metrics"]["source_expression_count"], 1)
+            self.assertEqual(result["formula_metrics"]["mathml_count"], 1)
+            self.assertEqual(result["formula_metrics"]["fallback_count"], 0)
             self.assertTrue(Path(result["html_path"]).exists())
             command, kwargs = calls[0]
             self.assertIsInstance(command, list)
             self.assertFalse(kwargs.get("shell", False))
+            self.assertEqual(kwargs.get("encoding"), "utf-8")
+            self.assertEqual(kwargs.get("errors"), "replace")
+            self.assertIn("--disable-software-rasterizer", command)
+            self.assertIn("--disable-gpu-compositing", command)
+            self.assertNotIn("--no-sandbox", command)
             self.assertTrue(
                 any(item.startswith("--print-to-pdf=") for item in command)
             )
+
+    def test_chrome_retries_with_compatibility_sandbox_flag_only_after_failure(self):
+        calls = []
+
+        def flaky_runner(command, **_kwargs):
+            calls.append(command)
+            if len(calls) == 1:
+                return mock.Mock(returncode=1, stdout="", stderr="gpu sandbox failed")
+            output_arg = next(item for item in command if item.startswith("--print-to-pdf="))
+            Path(output_arg.split("=", 1)[1]).write_bytes(b"%PDF-retry")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            markdown_path = Path(temp_dir) / "article.md"
+            markdown_path.write_text("# Formula\n\n$x^2$", encoding="utf-8")
+            renderer = PaperStormPdfRenderer(
+                browser_path=Path(temp_dir) / "chrome.exe",
+                command_runner=flaky_runner,
+                pdf_validator=lambda path: {
+                    "page_count": 1,
+                    "text_length": 7,
+                    "size_bytes": path.stat().st_size,
+                },
+            )
+
+            renderer.render(markdown_path, Path(temp_dir) / "report.pdf")
+
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("--no-sandbox", calls[0])
+        self.assertIn("--no-sandbox", calls[1])
 
     def test_renderer_reports_missing_browser_with_typed_error(self):
         with tempfile.TemporaryDirectory() as temp_dir:

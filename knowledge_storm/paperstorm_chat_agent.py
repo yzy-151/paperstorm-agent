@@ -544,7 +544,45 @@ class PaperStormChatAgent:
             raise KeyError("Unknown chat_id: {0}".format(chat_id))
         session = json.loads(path.read_text(encoding="utf-8"))
         self._rehydrate_article_citations(session)
+        if self._rehydrate_message_telemetry(session):
+            self._write_session(session)
         return session
+
+    @staticmethod
+    def _rehydrate_message_telemetry(session: Dict):
+        """Backfill visible estimates for sessions created before message telemetry."""
+        changed = False
+        prior_tokens = 0
+        for message in session.get("messages") or []:
+            content = str(message.get("content") or "")
+            content_tokens = _estimate_tokens(content)
+            metadata = message.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+                message["metadata"] = metadata
+                changed = True
+            if not isinstance(metadata.get("telemetry"), dict):
+                if message.get("role") == "user":
+                    metadata["telemetry"] = {
+                        "message_tokens": content_tokens,
+                        "estimated": True,
+                        "legacy": True,
+                    }
+                else:
+                    prompt_tokens = max(1, prior_tokens)
+                    metadata["telemetry"] = {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": content_tokens,
+                        "total_tokens": prompt_tokens + content_tokens,
+                        "duration_ms": None,
+                        "cost_usd": 0.0,
+                        "finish_reason": "",
+                        "estimated": True,
+                        "legacy": True,
+                    }
+                changed = True
+            prior_tokens += content_tokens
+        return changed
 
     def _rehydrate_article_citations(self, session: Dict):
         from .paperstorm_sources import load_article_passages

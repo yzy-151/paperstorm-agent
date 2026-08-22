@@ -11,7 +11,7 @@ class PaperStormV60UITest(unittest.TestCase):
         cls.js = (root / "app.js").read_text(encoding="utf-8")
 
     def test_release_and_memory_mode_controls_are_visible(self):
-        self.assertIn("v6.3", self.html)
+        self.assertIn("v6.4", self.html)
         self.assertIn('id="chat-memory-mode"', self.html)
         self.assertIn('value="semantic"', self.html)
 
@@ -66,6 +66,7 @@ class PaperStormV60UITest(unittest.TestCase):
             "总计",
             "估算用量",
             "真实用量",
+            "耗时未记录",
             "prompt_tokens",
             "completion_tokens",
         ):
@@ -100,6 +101,16 @@ class PaperStormV60UITest(unittest.TestCase):
         self.assertIn("pipelineArtifactRoute", self.js)
         self.assertIn("artifactLaneOffset", self.js)
         self.assertNotIn(" L ${points.x2", self.js)
+
+    def test_artifact_highlights_settle_and_cannot_reactivate(self):
+        self.assertIn("settleArtifactStatuses", self.js)
+        self.assertIn("failActiveArtifactStatuses", self.js)
+        self.assertIn('state.artifactStatus[edge.id] !== "complete"', self.js)
+        self.assertIn('payload.task_status === "succeeded"', self.js)
+        self.assertIn('payload.task_status === "failed"', self.js)
+        self.assertIn('state.artifactStatus[edgeId] = "failed"', self.js)
+        self.assertIn("state.runFinished", self.js)
+        self.assertIn("if (state.runFinished) return", self.js)
 
 
 if __name__ == "__main__":
