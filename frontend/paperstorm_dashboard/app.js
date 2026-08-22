@@ -347,7 +347,12 @@ function updatePipelineWires() {
     path.className.baseVal = `execution-wire ${target === "active" ? "active" : source === "complete" && target === "complete" ? "complete" : target === "failed" ? "failed" : "waiting"}`;
   });
   $$("#pipeline-artifact-wires path").forEach((path) => {
-    const status = state.artifactStatus[path.dataset.edgeId] || "waiting";
+    const edge = pipelineArtifactEdges.find((item) => item.id === path.dataset.edgeId);
+    const sourceStatus = state.pipelineStatus[edge?.from]?.status || "waiting";
+    const storedStatus = state.artifactStatus[path.dataset.edgeId] || "waiting";
+    const status = storedStatus === "waiting" && sourceStatus === "active"
+      ? "active"
+      : storedStatus;
     path.className.baseVal = `artifact-wire ${status}`;
   });
 }
@@ -363,9 +368,20 @@ function markArtifactsReady(stage, trace = {}) {
   updatePipelineWires();
 }
 
-function markArtifactsConsumed(stage) {
+function markArtifactInputsActive(stage) {
   pipelineArtifactEdges.forEach((edge) => {
-    if (edge.to === stage && state.artifactStatus[edge.id] === "active") state.artifactStatus[edge.id] = "complete";
+    if (edge.to === stage && state.artifactStatus[edge.id] !== "complete") {
+      state.artifactStatus[edge.id] = "active";
+    }
+  });
+  updatePipelineWires();
+}
+
+function completeArtifactInputs(stage) {
+  pipelineArtifactEdges.forEach((edge) => {
+    if (edge.to === stage && state.artifactStatus[edge.id] === "active") {
+      state.artifactStatus[edge.id] = "complete";
+    }
   });
   updatePipelineWires();
 }
@@ -457,7 +473,7 @@ function applyPipelineTrace(trace) {
   const invocationId = String(trace.invocation_id || "");
   if (eventName.startsWith("stage_")) state.hasStageTrace = true;
   if (eventName === "stage_start" && pipelineNodes[stage]) {
-    markArtifactsConsumed(stage);
+    markArtifactInputsActive(stage);
     if (invocationId) {
       const active = state.activeInvocations[stage] || new Set();
       active.add(invocationId);
@@ -477,6 +493,7 @@ function applyPipelineTrace(trace) {
       stillActive ? "仍有并发调用正在执行" : (trace.operation || "阶段完成"),
       telemetry,
     );
+    if (!stillActive) completeArtifactInputs(stage);
     if (!stillActive) markArtifactsReady(stage, trace);
   } else if (eventName === "stage_error" && pipelineNodes[stage]) {
     if (invocationId) state.activeInvocations[stage]?.delete(invocationId);

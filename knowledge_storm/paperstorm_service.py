@@ -299,7 +299,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v6.4",
+                "version": "v6.5",
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -635,7 +635,7 @@ class PaperStormTaskService:
                 "chat_id": chat_id,
                 "run_mode": session.get("run_mode", ""),
                 "retriever": session.get("retriever", ""),
-                "version": "6.4.0",
+                "version": "6.5.0",
             },
             session_id=chat_id,
             user_id=session.get("user_id", ""),

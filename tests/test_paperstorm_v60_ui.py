@@ -11,7 +11,7 @@ class PaperStormV60UITest(unittest.TestCase):
         cls.js = (root / "app.js").read_text(encoding="utf-8")
 
     def test_release_and_memory_mode_controls_are_visible(self):
-        self.assertIn("v6.4", self.html)
+        self.assertIn("v6.5", self.html)
         self.assertIn('id="chat-memory-mode"', self.html)
         self.assertIn('value="semantic"', self.html)
 
@@ -105,6 +105,11 @@ class PaperStormV60UITest(unittest.TestCase):
     def test_artifact_highlights_settle_and_cannot_reactivate(self):
         self.assertIn("settleArtifactStatuses", self.js)
         self.assertIn("failActiveArtifactStatuses", self.js)
+        self.assertIn("markArtifactInputsActive", self.js)
+        self.assertIn("completeArtifactInputs", self.js)
+        self.assertIn('sourceStatus === "active"', self.js)
+        self.assertIn('markArtifactInputsActive(stage)', self.js)
+        self.assertIn('if (!stillActive) completeArtifactInputs(stage)', self.js)
         self.assertIn('state.artifactStatus[edge.id] !== "complete"', self.js)
         self.assertIn('payload.task_status === "succeeded"', self.js)
         self.assertIn('payload.task_status === "failed"', self.js)
