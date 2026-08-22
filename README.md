@@ -43,10 +43,10 @@ PaperStorm 提供两类核心业务能力：一是面向 arXiv、本地 PDF、Zo
 | 领域 | 改进内容 | 验收结果 |
 | --- | --- | --- |
 | 工作流可视化 | 11 节点行优先编排；粗线表示执行顺序，三次贝塞尔虚线表示文件依赖；输入、中间输出和终端产物使用不同端口 | 23 条路径不穿过无关卡片，13 条文件线轨迹互异且端点误差为 0 px |
-| 状态一致性 | 产物状态采用单调迁移，迟到事件不能重新激活已完成连线；任务成功时统一收敛传输状态 | 完成后的文件线不再保持动画高亮 |
+| 状态一致性 | 产物状态采用单调迁移，迟到事件不能重新激活已完成连线；成功与失败终态统一收敛传输状态 | 终态文件线不再保持动画高亮，失败传输显示静态失败态 |
 | 问答遥测 | 每条回复展示输入、输出、总 Token、墙钟耗时及真实/估算标识；旧会话自动补齐 token 估算 | 新消息显示实际耗时；历史消息明确标注“耗时未记录” |
 | Agent 行为 | 动作级 LLM Planner、动态输出预算、长度截断续接、类型化模型错误与真实语义 Memory 开关 | 普通生成不受固定内容类型限制，工具调用边界可追踪 |
-| PDF 交付 | 原始标题和作者进入参考文献；`$...$`、`$$...$$`、`\(...\)`、`\[...\]` 转换为 MathML，并记录公式转换指标 | 转换不完整时返回类型化错误，PDF 与打印 HTML 可验证 |
+| PDF 交付 | 原始标题和作者进入参考文献；`$...$`、`$$...$$`、`\(...\)`、`\[...\]` 转换为 MathML，并记录公式转换指标 | 公式降级或转换不完整时返回类型化错误；真实浏览器 PDF 集成测试验证公式文本 |
 | Benchmark | 集成 SciFact、QASPER、LongMemEval-S、Context Pareto 与端到端 Reader/Judge | 开发者控制台可加载数据集、运行实验并查看结果与限制 |
 
 在“交付产物”卡片中启用 PDF 后，任务会生成 `paperstorm_report.pdf` 与对应的
@@ -158,6 +158,7 @@ python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
 | `PAPERSTORM_MODEL_CACHE` | sentence-transformers 模型缓存目录 |
 | `PAPERSTORM_BENCHMARK_ROOT` | SciFact/QASPER/LongMemEval 等公开评测数据根目录；未设置时自动检查 `~/Desktop/codex/paperstorm-benchmarks` 与 `data/benchmarks` |
 | `PAPERSTORM_TEST_OFFLINE` | 测试默认 `1`：禁止外网、真实 LLM 和模型下载；仅显式设置 `0` 才允许联网测试 |
+| `PAPERSTORM_PDF_ALLOW_NO_SANDBOX` | 默认关闭；仅在受控 Windows 主机的 Chrome GPU 沙箱打印失败时设为 `1` 启用兼容重试 |
 | `PAPERSTORM_OBSERVABILITY` | 设置为 `langfuse` 启用远程 Trace；未设置时仅写本地 JSONL |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Langfuse 项目凭据；仅在启用远程 Trace 时需要 |
 | `LANGFUSE_BASE_URL` | Langfuse Cloud 区域或自部署地址 |

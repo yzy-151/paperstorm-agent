@@ -209,8 +209,12 @@ class PaperStormPdfRenderer:
             }
             try:
                 completed = self.command_runner(command, **runner_kwargs)
-                if "chrome" in browser.name.lower() and (
-                    completed.returncode != 0 or not output_path.is_file()
+                if (
+                    os.getenv("PAPERSTORM_PDF_ALLOW_NO_SANDBOX", "").strip() == "1"
+                    and "chrome" in browser.name.lower()
+                    and (
+                        completed.returncode != 0 or not output_path.is_file()
+                    )
                 ):
                     # Some Windows GPU policies terminate Chrome before print.
                     # Retry only after failure; the input remains local and CSP-restricted.
@@ -302,11 +306,18 @@ def _formula_render_metrics(markdown_text, print_html):
     html_text = str(print_html or "")
     mathml_count = html_text.count("<math")
     fallback_count = html_text.count('class="math-fallback"')
-    if expression_count and mathml_count + fallback_count < expression_count:
+    if fallback_count:
+        raise PdfRenderError(
+            "pdf_formula_conversion_degraded",
+            "有 {0} 个公式无法转换为 MathML，已停止生成正式 PDF。".format(
+                fallback_count
+            ),
+        )
+    if expression_count and mathml_count < expression_count:
         raise PdfRenderError(
             "pdf_formula_conversion_incomplete",
             "公式转换不完整：检测到 {0} 个表达式，仅生成 {1} 个公式节点。".format(
-                expression_count, mathml_count + fallback_count
+                expression_count, mathml_count
             ),
         )
     return {

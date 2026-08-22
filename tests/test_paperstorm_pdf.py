@@ -3,6 +3,7 @@ import json
 import inspect
 import threading
 import time
+import unicodedata
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -10,6 +11,7 @@ from unittest import mock
 from knowledge_storm.paperstorm_pdf import (
     PaperStormPdfRenderer,
     PdfRenderError,
+    _formula_render_metrics,
     discover_browser_executable,
     markdown_to_print_html,
 )
@@ -67,6 +69,15 @@ print("PIM")
 
         self.assertIn("broken_formula", rendered)
         self.assertIn("math-fallback", rendered)
+
+    def test_formal_pdf_rejects_formula_source_fallback(self):
+        with self.assertRaises(PdfRenderError) as caught:
+            _formula_render_metrics(
+                r"Formula: \(broken\)",
+                '<code class="math-fallback">broken</code>',
+            )
+
+        self.assertEqual(caught.exception.code, "pdf_formula_conversion_degraded")
 
     def test_renderer_uses_browser_without_shell_and_registers_verified_pdf(self):
         calls = []
@@ -128,7 +139,9 @@ print("PIM")
             Path(output_arg.split("=", 1)[1]).write_bytes(b"%PDF-retry")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            "os.environ", {"PAPERSTORM_PDF_ALLOW_NO_SANDBOX": "1"}
+        ):
             markdown_path = Path(temp_dir) / "article.md"
             markdown_path.write_text("# Formula\n\n$x^2$", encoding="utf-8")
             renderer = PaperStormPdfRenderer(
@@ -146,6 +159,33 @@ print("PIM")
         self.assertEqual(len(calls), 2)
         self.assertNotIn("--no-sandbox", calls[0])
         self.assertIn("--no-sandbox", calls[1])
+
+    def test_real_browser_pdf_contains_rendered_formula_text(self):
+        from pypdf import PdfReader
+
+        browser = discover_browser_executable()
+        if not browser:
+            self.skipTest("Chromium browser is unavailable")
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            "os.environ", {"PAPERSTORM_PDF_ALLOW_NO_SANDBOX": "1"}
+        ):
+            markdown_path = Path(temp_dir) / "formula.md"
+            output_path = Path(temp_dir) / "formula.pdf"
+            markdown_path.write_text(
+                "# Formula verification\n\n\\[E = mc^2\\]", encoding="utf-8"
+            )
+            result = PaperStormPdfRenderer(browser_path=browser).render(
+                markdown_path, output_path
+            )
+            extracted = " ".join(
+                page.extract_text() or "" for page in PdfReader(str(output_path)).pages
+            )
+            normalized = unicodedata.normalize("NFKC", extracted).replace(" ", "")
+
+        self.assertEqual(result["formula_metrics"]["mathml_count"], 1)
+        self.assertEqual(result["formula_metrics"]["fallback_count"], 0)
+        self.assertIn("E", normalized)
+        self.assertIn("mc", normalized)
 
     def test_renderer_reports_missing_browser_with_typed_error(self):
         with tempfile.TemporaryDirectory() as temp_dir:

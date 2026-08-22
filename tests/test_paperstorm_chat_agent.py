@@ -49,6 +49,30 @@ class PaperStormChatAgentTest(unittest.TestCase):
         self.assertIsNone(assistant_usage["duration_ms"])
         self.assertTrue(assistant_usage["legacy"])
 
+    def test_partial_legacy_telemetry_is_completed_without_overwriting_values(self):
+        from knowledge_storm.paperstorm_chat_agent import PaperStormChatAgent
+
+        service = self.make_service()
+        agent = PaperStormChatAgent(service)
+        session = agent.create_session(run_mode="fake")
+        session["messages"] = [
+            {
+                "role": "assistant",
+                "content": "历史回答。",
+                "metadata": {"telemetry": {"prompt_tokens": 37}},
+            }
+        ]
+        agent._write_session(session)
+
+        loaded = service.get_chat_session(session["chat_id"])
+        telemetry = loaded["messages"][0]["metadata"]["telemetry"]
+
+        self.assertEqual(telemetry["prompt_tokens"], 37)
+        self.assertGreater(telemetry["completion_tokens"], 0)
+        self.assertGreater(telemetry["total_tokens"], 37)
+        self.assertIsNone(telemetry["duration_ms"])
+        self.assertTrue(telemetry["legacy"])
+
     def make_service(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

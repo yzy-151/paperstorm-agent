@@ -25,6 +25,7 @@ class PaperStormChatAgent:
         self.chat_dir.mkdir(parents=True, exist_ok=True)
         self._cancelled_ids = set()
         self._cancel_lock = threading.Lock()
+        self._session_lock = threading.RLock()
 
     def create_session(
         self,
@@ -539,14 +540,15 @@ class PaperStormChatAgent:
         return self.chat_dir / "{0}.json".format(chat_id)
 
     def _read_session(self, chat_id: str):
-        path = self._session_path(chat_id)
-        if not path.exists():
-            raise KeyError("Unknown chat_id: {0}".format(chat_id))
-        session = json.loads(path.read_text(encoding="utf-8"))
-        self._rehydrate_article_citations(session)
-        if self._rehydrate_message_telemetry(session):
-            self._write_session(session)
-        return session
+        with self._session_lock:
+            path = self._session_path(chat_id)
+            if not path.exists():
+                raise KeyError("Unknown chat_id: {0}".format(chat_id))
+            session = json.loads(path.read_text(encoding="utf-8"))
+            self._rehydrate_article_citations(session)
+            if self._rehydrate_message_telemetry(session):
+                self._write_session(session)
+            return session
 
     @staticmethod
     def _rehydrate_message_telemetry(session: Dict):
@@ -561,26 +563,29 @@ class PaperStormChatAgent:
                 metadata = {}
                 message["metadata"] = metadata
                 changed = True
-            if not isinstance(metadata.get("telemetry"), dict):
-                if message.get("role") == "user":
-                    metadata["telemetry"] = {
-                        "message_tokens": content_tokens,
-                        "estimated": True,
-                        "legacy": True,
-                    }
-                else:
-                    prompt_tokens = max(1, prior_tokens)
-                    metadata["telemetry"] = {
-                        "prompt_tokens": prompt_tokens,
-                        "completion_tokens": content_tokens,
-                        "total_tokens": prompt_tokens + content_tokens,
-                        "duration_ms": None,
-                        "cost_usd": 0.0,
-                        "finish_reason": "",
-                        "estimated": True,
-                        "legacy": True,
-                    }
+            telemetry = metadata.get("telemetry")
+            if not isinstance(telemetry, dict):
+                telemetry = {}
+                metadata["telemetry"] = telemetry
                 changed = True
+            before = dict(telemetry)
+            if message.get("role") == "user":
+                telemetry.setdefault("message_tokens", content_tokens)
+            else:
+                prompt_tokens = max(1, prior_tokens)
+                telemetry.setdefault("prompt_tokens", prompt_tokens)
+                telemetry.setdefault("completion_tokens", content_tokens)
+                telemetry.setdefault(
+                    "total_tokens",
+                    int(telemetry.get("prompt_tokens") or 0)
+                    + int(telemetry.get("completion_tokens") or 0),
+                )
+                telemetry.setdefault("duration_ms", None)
+                telemetry.setdefault("cost_usd", 0.0)
+                telemetry.setdefault("finish_reason", "")
+            telemetry.setdefault("estimated", True)
+            telemetry.setdefault("legacy", True)
+            changed = changed or telemetry != before
             prior_tokens += content_tokens
         return changed
 
@@ -621,10 +626,19 @@ class PaperStormChatAgent:
                 )
 
     def _write_session(self, session: Dict):
-        self._session_path(session["chat_id"]).write_text(
-            json.dumps(session, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        with self._session_lock:
+            path = self._session_path(session["chat_id"])
+            temporary = path.with_name(
+                "{0}.{1}.tmp".format(path.name, uuid.uuid4().hex)
+            )
+            try:
+                temporary.write_text(
+                    json.dumps(session, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def _context_engine(self, session: Dict):
         from .paperstorm_router_llm import build_context_summarizer_callable
