@@ -11,7 +11,7 @@ class PaperStormV60UITest(unittest.TestCase):
         cls.js = (root / "app.js").read_text(encoding="utf-8")
 
     def test_release_and_memory_mode_controls_are_visible(self):
-        self.assertIn("v6.2", self.html)
+        self.assertIn("v6.3", self.html)
         self.assertIn('id="chat-memory-mode"', self.html)
         self.assertIn('value="semantic"', self.html)
 
@@ -33,14 +33,14 @@ class PaperStormV60UITest(unittest.TestCase):
         self.assertIn("node-time", self.js)
 
     def test_active_node_has_flowing_border_and_breathing_animation(self):
-        self.assertIn("@keyframes node-border-flow", self.css)
-        self.assertIn("node-border-flow", self.css)
+        self.assertIn("@keyframes node-outline-flow", self.css)
+        self.assertIn("node-outline-flow", self.css)
         self.assertIn("node-breathe", self.css)
 
     def test_pipeline_uses_named_ports_and_separate_edge_layers(self):
         for marker in (
             'class="node-port input-port"',
-            'class="node-port output-port"',
+            'node-port output-port',
             'id="pipeline-execution-wires"',
             'id="pipeline-artifact-wires"',
             "pipelineExecutionEdges",
@@ -62,10 +62,44 @@ class PaperStormV60UITest(unittest.TestCase):
             "avatar-paperstorm.svg",
             "avatar-user.svg",
             "message-telemetry",
+            "message-usage",
+            "总计",
+            "估算用量",
+            "真实用量",
             "prompt_tokens",
             "completion_tokens",
         ):
             self.assertIn(marker, bundle)
+
+    def test_pipeline_uses_row_major_snake_layout_and_semantic_ports(self):
+        for marker in (
+            'data-node="retrieval" style="--col:1;--row:3"',
+            'data-node="evidence" style="--col:2;--row:3"',
+            'data-node="outline" style="--col:3;--row:3"',
+            'data-node="writer" style="--col:4;--row:3"',
+            'class="pipeline-node aux-node" data-node="polish"',
+            'class="pipeline-node aux-node" data-node="evaluate"',
+            'relay-output',
+            'terminal-output',
+            'id="pipeline-legend"',
+        ):
+            self.assertIn(marker, self.html)
+
+    def test_pipeline_uses_monochrome_active_border_and_routed_curves(self):
+        self.assertIn("node-outline-flow", self.css)
+        self.assertNotIn("linear-gradient(90deg, #24c9b1, #72a7ff", self.css)
+        self.assertIn("pipelineExecutionPath", self.js)
+        self.assertIn("pipelineArtifactPath", self.js)
+        self.assertIn("pipelineRowWrapPath", self.js)
+
+    def test_artifact_edges_connect_port_markers_and_keep_labels_upright(self):
+        self.assertIn('.output-port[data-port="${sourcePort}"] i', self.js)
+        self.assertIn('.input-port[data-port="${targetPort}"] i', self.js)
+        self.assertIn("positionArtifactLabels", self.js)
+        self.assertNotIn("<textPath", self.js)
+        self.assertIn("pipelineArtifactRoute", self.js)
+        self.assertIn("artifactLaneOffset", self.js)
+        self.assertNotIn(" L ${points.x2", self.js)
 
 
 if __name__ == "__main__":

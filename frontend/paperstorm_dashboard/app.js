@@ -231,19 +231,19 @@ function drawPipelineWires() {
   executionSvg.innerHTML = pipelineExecutionEdges.map(([from, to], index) => {
     const source = $(`.pipeline-node[data-node="${from}"] .flow-out`);
     const target = $(`.pipeline-node[data-node="${to}"] .flow-in`);
-    const points = pipelinePortPoints(source, target, canvasRect);
-    return points ? `<path class="execution-wire" data-from="${from}" data-to="${to}" d="${pipelineCurve(points, index)}" />` : "";
+    return source && target ? `<path class="execution-wire" data-from="${from}" data-to="${to}" d="${pipelineExecutionPath(source, target, canvasRect)}" />` : "";
   }).join("");
   artifactSvg.innerHTML = pipelineArtifactEdges.map((edge, index) => {
     const sourcePort = edge.sourcePort || edge.port;
     const targetPort = edge.targetPort || edge.port;
-    const source = $(`.pipeline-node[data-node="${edge.from}"] .output-port[data-port="${sourcePort}"]`);
-    const target = $(`.pipeline-node[data-node="${edge.to}"] .input-port[data-port="${targetPort}"]`);
-    const points = pipelinePortPoints(source, target, canvasRect);
-    if (!points) return "";
+    const source = $(`.pipeline-node[data-node="${edge.from}"] .output-port[data-port="${sourcePort}"] i`);
+    const target = $(`.pipeline-node[data-node="${edge.to}"] .input-port[data-port="${targetPort}"] i`);
+    if (!source || !target) return "";
     const pathId = `artifact-path-${edge.id}`;
-    return `<path id="${pathId}" class="artifact-wire" data-edge-id="${edge.id}" data-from="${edge.from}" data-to="${edge.to}" d="${pipelineCurve(points, index + 20)}" /><text class="artifact-label"><textPath href="#${pathId}" startOffset="50%">${escapeHtml(edge.label)}</textPath></text>`;
+    const route = pipelineArtifactRoute(source, target, canvasRect, index);
+    return `<path id="${pathId}" class="artifact-wire" data-edge-id="${edge.id}" data-from="${edge.from}" data-to="${edge.to}" d="${route.path}" /><text class="artifact-label" data-label-x="${route.labelX}" data-label-y="${route.labelY}">${escapeHtml(edge.label)}</text>`;
   }).join("");
+  positionArtifactLabels();
   updatePipelineWires();
 }
 
@@ -259,11 +259,83 @@ function pipelinePortPoints(sourceNode, targetNode, canvasRect) {
   };
 }
 
-function pipelineCurve({x1, y1, x2, y2}, offsetSeed = 0) {
-  const direction = x2 >= x1 ? 1 : -1;
-  const horizontal = Math.max(52, Math.abs(x2 - x1) * 0.45);
-  const laneOffset = (offsetSeed % 3 - 1) * 10;
-  return `M ${x1} ${y1} C ${x1 + direction * horizontal} ${y1 + laneOffset}, ${x2 - direction * horizontal} ${y2 - laneOffset}, ${x2} ${y2}`;
+function pipelineExecutionPath(source, target, canvasRect) {
+  const points = pipelinePortPoints(source, target, canvasRect);
+  if (!points) return "";
+  if (Math.abs(points.y1 - points.y2) < 24 && points.x2 > points.x1) {
+    const bend = Math.max(24, Math.min(48, (points.x2 - points.x1) * .42));
+    return `M ${points.x1} ${points.y1} C ${points.x1 + bend} ${points.y1}, ${points.x2 - bend} ${points.y2}, ${points.x2} ${points.y2}`;
+  }
+  return pipelineRowWrapPath(points, canvasRect);
+}
+
+function pipelineRowWrapPath({x1, y1, x2, y2}, canvasRect) {
+  const rightGutter = canvasRect.width - 14;
+  const leftGutter = 14;
+  const laneY = (y1 + y2) / 2;
+  const radius = 12;
+  return [
+    `M ${x1} ${y1}`,
+    `L ${rightGutter - radius} ${y1}`,
+    `Q ${rightGutter} ${y1} ${rightGutter} ${y1 + radius}`,
+    `L ${rightGutter} ${laneY - radius}`,
+    `Q ${rightGutter} ${laneY} ${rightGutter - radius} ${laneY}`,
+    `L ${leftGutter + radius} ${laneY}`,
+    `Q ${leftGutter} ${laneY} ${leftGutter} ${laneY + radius}`,
+    `L ${leftGutter} ${y2 - radius}`,
+    `Q ${leftGutter} ${y2} ${leftGutter + radius} ${y2}`,
+    `L ${x2} ${y2}`,
+  ].join(" ");
+}
+
+function pipelineArtifactPath(source, target, canvasRect, offsetSeed = 0) {
+  return pipelineArtifactRoute(source, target, canvasRect, offsetSeed).path;
+}
+
+function pipelineArtifactRoute(source, target, canvasRect, offsetSeed = 0) {
+  const points = pipelinePortPoints(source, target, canvasRect);
+  if (!points) return {path: "", labelX: 0, labelY: 0};
+  const sourceNode = source.closest(".pipeline-node")?.getBoundingClientRect();
+  const targetNode = target.closest(".pipeline-node")?.getBoundingClientRect();
+  if (!sourceNode || !targetNode) return {path: "", labelX: 0, labelY: 0};
+  const sameRow = Math.abs(sourceNode.top - targetNode.top) < 30;
+  const adjacent = sameRow && points.x2 > points.x1 && points.x2 - points.x1 < 180;
+  if (adjacent) {
+    const bend = Math.max(20, (points.x2 - points.x1) * .44);
+    return {
+      path: `M ${points.x1} ${points.y1} C ${points.x1 + bend} ${points.y1}, ${points.x2 - bend} ${points.y2}, ${points.x2} ${points.y2}`,
+      labelX: (points.x1 + points.x2) / 2,
+      labelY: Math.min(points.y1, points.y2) - 7,
+    };
+  }
+  const sourceBottom = sourceNode.bottom - canvasRect.top;
+  const targetTop = targetNode.top - canvasRect.top;
+  const laneOffset = artifactLaneOffset(offsetSeed);
+  const laneY = sameRow
+    ? Math.min(canvasRect.height - 12, sourceBottom + 16 + laneOffset)
+    : Math.min(targetTop - 14, sourceBottom + 16 + laneOffset);
+  const curve = 28;
+  const exitX = points.x1 + curve * 1.7;
+  const entryX = points.x2 - curve * 1.7;
+  const reverse = entryX < exitX;
+  const exitControlX = exitX + (reverse ? 18 : -18);
+  return {
+    path: `M ${points.x1} ${points.y1} C ${points.x1 + curve} ${points.y1}, ${exitControlX} ${laneY}, ${exitX} ${laneY} C ${exitX + (reverse ? -18 : 18)} ${laneY}, ${entryX - 18} ${laneY}, ${entryX} ${laneY} C ${entryX + 18} ${laneY}, ${points.x2 - curve} ${points.y2}, ${points.x2} ${points.y2}`,
+    labelX: (points.x1 + points.x2) / 2,
+    labelY: laneY - 7,
+  };
+}
+
+function artifactLaneOffset(offsetSeed) {
+  return Number(offsetSeed || 0) * 6;
+}
+
+function positionArtifactLabels() {
+  $$("#pipeline-artifact-wires .artifact-label").forEach((label) => {
+    label.setAttribute("x", label.dataset.labelX || "0");
+    label.setAttribute("y", label.dataset.labelY || "0");
+    label.setAttribute("text-anchor", "middle");
+  });
 }
 
 function updatePipelineWires() {
@@ -724,13 +796,14 @@ function renderMessageNode(message) {
     citationsHtml = `<details class="citations"><summary>引用 ${citations.length} 条</summary><ul>${items}</ul></details>`;
   }
   const metricPrefix = telemetry.estimated ? "≈" : "";
+  const usageKind = telemetry.estimated ? "估算用量" : "真实用量";
   const metricHtml = role === "user"
-    ? (telemetry.message_tokens ? `<span class="message-telemetry">${metricPrefix}${escapeHtml(telemetry.message_tokens)} tokens</span>` : "")
+    ? (telemetry.message_tokens ? `<span class="message-usage message-telemetry">输入 ${metricPrefix}${escapeHtml(telemetry.message_tokens)} tokens · ${usageKind}</span>` : "")
     : ((telemetry.total_tokens || telemetry.duration_ms !== undefined)
-      ? `<span class="message-telemetry">${metricPrefix}${escapeHtml(telemetry.prompt_tokens || 0)} in · ${metricPrefix}${escapeHtml(telemetry.completion_tokens || 0)} out · ${formatDuration(Number(telemetry.duration_ms || 0))}</span>`
+      ? `<span class="message-usage message-telemetry">输入 ${metricPrefix}${escapeHtml(telemetry.prompt_tokens || 0)} · 输出 ${metricPrefix}${escapeHtml(telemetry.completion_tokens || 0)} · 总计 ${metricPrefix}${escapeHtml(telemetry.total_tokens || (Number(telemetry.prompt_tokens || 0) + Number(telemetry.completion_tokens || 0)))} tokens · ${formatDuration(Number(telemetry.duration_ms || 0))} · ${usageKind}</span>`
       : "");
   const avatar = role === "user" ? "/dashboard/assets/avatar-user.svg" : "/dashboard/assets/avatar-paperstorm.svg";
-  node.innerHTML = `<img class="message-avatar" src="${avatar}" alt="" /><div class="message-body"><div class="message-head"><strong>${role === "user" ? "你" : "PaperStorm"}${version}${regenerated}</strong>${metricHtml}</div><p>${escapeHtml(message.content)}</p>${citationsHtml}</div>`;
+  node.innerHTML = `<img class="message-avatar" src="${avatar}" alt="" /><div class="message-body"><div class="message-head"><strong>${role === "user" ? "你" : "PaperStorm"}${version}${regenerated}</strong></div><p>${escapeHtml(message.content)}</p>${citationsHtml}${metricHtml}</div>`;
   node.querySelectorAll("[data-article-anchor]").forEach((button) => {
     button.addEventListener("click", () => focusArticleCitation(button.dataset.articleAnchor, button.dataset.taskId));
   });
