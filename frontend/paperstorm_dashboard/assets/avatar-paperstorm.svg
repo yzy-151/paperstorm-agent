@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PaperStorm 头像">
+  <rect width="64" height="64" fill="#071916"/>
+  <path d="M15 13h25c8 0 13 5 13 13v12c0 8-5 13-13 13H15z" fill="#102a27" stroke="#27d3bd" stroke-width="3"/>
+  <circle cx="27" cy="31" r="4" fill="#27d3bd"/><circle cx="42" cy="31" r="4" fill="#79a9ff"/>
+  <path d="M25 42h19M15 23H8m7 15H8" stroke="#d8f7f2" stroke-width="3"/>
+  <path d="M45 13l5-7 3 10" fill="none" stroke="#f1c75b" stroke-width="3"/>
+</svg>

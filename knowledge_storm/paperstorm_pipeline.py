@@ -151,6 +151,11 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
                 "status": "ready",
             }
         )
+        trace.emit(
+            "artifact_ready",
+            stage="request",
+            artifact_name="research_task.json",
+        )
         runner.run(
             topic=config.topic_for_storm,
             output_dir_name=config.output_dir_name,
@@ -176,6 +181,9 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
             else {}
         )
         trace.end_stage(output_summary={"scorecard": scorecard.get("scores", {})})
+        trace.emit(
+            "artifact_ready", stage="evaluate", artifact_name="scorecard.json"
+        )
         trace.start_stage(
             "deliver",
             "登记文章、Trace 与评估产物",
@@ -273,6 +281,14 @@ def _wrap_runner_method(runner, method_name, trace, stage, operation):
             output_summary={"status": "completed"},
             **_telemetry_delta(before, after),
         )
+        artifact_name = {
+            "writer": "storm_gen_article.txt",
+            "polish": "article_polished.txt",
+        }.get(stage)
+        if artifact_name:
+            trace.emit(
+                "artifact_ready", stage=stage, artifact_name=artifact_name
+            )
         return result
 
     setattr(runner, method_name, traced_method)

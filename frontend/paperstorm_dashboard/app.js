@@ -14,6 +14,7 @@ const state = {
   pipelineStatus: {},
   hasStageTrace: false,
   activeInvocations: {},
+  artifactStatus: {},
 };
 
 const pipelineNodes = {
@@ -30,11 +31,27 @@ const pipelineNodes = {
   deliver: {title: "交付产物", description: "汇总 Markdown、Trace、检索结果和评估报告。", input: "全部流水线产物", output: "Article + Trace + Score"},
 };
 
-const pipelineEdges = [
+const pipelineExecutionEdges = [
   ["request", "persona"], ["persona", "dialogue"], ["dialogue", "query"],
-  ["request", "query"], ["query", "retrieval"], ["retrieval", "evidence"],
-  ["evidence", "outline"], ["outline", "writer"], ["writer", "polish"],
-  ["polish", "evaluate"], ["evaluate", "deliver"],
+  ["query", "retrieval"], ["retrieval", "evidence"], ["evidence", "outline"],
+  ["outline", "writer"], ["writer", "polish"], ["polish", "evaluate"],
+  ["evaluate", "deliver"],
+];
+
+const pipelineArtifactEdges = [
+  {id: "task-persona", from: "request", to: "persona", port: "research_task", label: "research_task.json"},
+  {id: "task-query", from: "request", to: "query", port: "research_task", label: "research_task.json"},
+  {id: "personas-dialogue", from: "persona", to: "dialogue", port: "personas", label: "personas.json"},
+  {id: "conversation-outline", from: "dialogue", to: "outline", sourcePort: "conversation", targetPort: "conversation", label: "conversation_log.json"},
+  {id: "queries-retrieval", from: "query", to: "retrieval", port: "queries", label: "queries.json"},
+  {id: "results-evidence", from: "retrieval", to: "evidence", port: "raw_results", label: "raw_search_results.json"},
+  {id: "evidence-outline", from: "evidence", to: "outline", port: "evidence", label: "evidence_index.json"},
+  {id: "evidence-writer", from: "evidence", to: "writer", sourcePort: "evidence", targetPort: "evidence", label: "evidence_index.json"},
+  {id: "outline-writer", from: "outline", to: "writer", port: "outline", label: "storm_gen_outline.txt"},
+  {id: "draft-polish", from: "writer", to: "polish", port: "draft", label: "storm_gen_article.txt"},
+  {id: "article-evaluate", from: "polish", to: "evaluate", port: "article", label: "article_polished.txt"},
+  {id: "article-deliver", from: "polish", to: "deliver", sourcePort: "article", targetPort: "article", label: "article_polished.txt"},
+  {id: "score-deliver", from: "evaluate", to: "deliver", port: "scorecard", label: "scorecard.json"},
 ];
 
 const $ = (selector) => document.querySelector(selector);
@@ -126,6 +143,7 @@ function renderResearchProgress(stage, failed = false) {
 function resetPipelineGraph() {
   state.pipelineStatus = {};
   state.activeInvocations = {};
+  state.artifactStatus = {};
   state.hasStageTrace = false;
   state.lastPdfUrl = "";
   $("#open-article-pdf").disabled = true;
@@ -205,40 +223,76 @@ function initializePipelineGraph() {
 
 function drawPipelineWires() {
   const canvas = $("#pipeline-canvas");
-  const svg = $("#pipeline-wires");
-  if (!canvas || !svg) return;
+  const executionSvg = $("#pipeline-execution-wires");
+  const artifactSvg = $("#pipeline-artifact-wires");
+  if (!canvas || !executionSvg || !artifactSvg) return;
   const canvasRect = canvas.getBoundingClientRect();
-  svg.setAttribute("viewBox", `0 0 ${canvasRect.width} ${canvasRect.height}`);
-  svg.innerHTML = pipelineEdges.map(([from, to]) => {
-    const source = $(`.pipeline-node[data-node="${from}"]`)?.getBoundingClientRect();
-    const target = $(`.pipeline-node[data-node="${to}"]`)?.getBoundingClientRect();
-    if (!source || !target) return "";
-    const sourceY = source.top + source.height / 2 - canvasRect.top;
-    const targetY = target.top + target.height / 2 - canvasRect.top;
-    if (Math.abs(sourceY - targetY) < 24) {
-      const forward = target.left > source.left;
-      const x1 = (forward ? source.right : source.left) - canvasRect.left;
-      const x2 = (forward ? target.left : target.right) - canvasRect.left;
-      const direction = forward ? 1 : -1;
-      const bend = Math.max(24, Math.abs(x2 - x1) * 0.42);
-      return `<path data-from="${from}" data-to="${to}" d="M ${x1} ${sourceY} C ${x1 + direction * bend} ${sourceY}, ${x2 - direction * bend} ${targetY}, ${x2} ${targetY}" />`;
-    }
-    const x1 = source.left + source.width / 2 - canvasRect.left;
-    const y1 = source.bottom - canvasRect.top;
-    const x2 = target.left + target.width / 2 - canvasRect.left;
-    const y2 = target.top - canvasRect.top;
-    const bend = Math.max(30, Math.abs(y2 - y1) * 0.48);
-    return `<path data-from="${from}" data-to="${to}" d="M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}" />`;
+  [executionSvg, artifactSvg].forEach((svg) => svg.setAttribute("viewBox", `0 0 ${canvasRect.width} ${canvasRect.height}`));
+  executionSvg.innerHTML = pipelineExecutionEdges.map(([from, to], index) => {
+    const source = $(`.pipeline-node[data-node="${from}"] .flow-out`);
+    const target = $(`.pipeline-node[data-node="${to}"] .flow-in`);
+    const points = pipelinePortPoints(source, target, canvasRect);
+    return points ? `<path class="execution-wire" data-from="${from}" data-to="${to}" d="${pipelineCurve(points, index)}" />` : "";
+  }).join("");
+  artifactSvg.innerHTML = pipelineArtifactEdges.map((edge, index) => {
+    const sourcePort = edge.sourcePort || edge.port;
+    const targetPort = edge.targetPort || edge.port;
+    const source = $(`.pipeline-node[data-node="${edge.from}"] .output-port[data-port="${sourcePort}"]`);
+    const target = $(`.pipeline-node[data-node="${edge.to}"] .input-port[data-port="${targetPort}"]`);
+    const points = pipelinePortPoints(source, target, canvasRect);
+    if (!points) return "";
+    const pathId = `artifact-path-${edge.id}`;
+    return `<path id="${pathId}" class="artifact-wire" data-edge-id="${edge.id}" data-from="${edge.from}" data-to="${edge.to}" d="${pipelineCurve(points, index + 20)}" /><text class="artifact-label"><textPath href="#${pathId}" startOffset="50%">${escapeHtml(edge.label)}</textPath></text>`;
   }).join("");
   updatePipelineWires();
 }
 
+function pipelinePortPoints(sourceNode, targetNode, canvasRect) {
+  const source = sourceNode?.getBoundingClientRect();
+  const target = targetNode?.getBoundingClientRect();
+  if (!source || !target) return null;
+  return {
+    x1: source.left + source.width / 2 - canvasRect.left,
+    y1: source.top + source.height / 2 - canvasRect.top,
+    x2: target.left + target.width / 2 - canvasRect.left,
+    y2: target.top + target.height / 2 - canvasRect.top,
+  };
+}
+
+function pipelineCurve({x1, y1, x2, y2}, offsetSeed = 0) {
+  const direction = x2 >= x1 ? 1 : -1;
+  const horizontal = Math.max(52, Math.abs(x2 - x1) * 0.45);
+  const laneOffset = (offsetSeed % 3 - 1) * 10;
+  return `M ${x1} ${y1} C ${x1 + direction * horizontal} ${y1 + laneOffset}, ${x2 - direction * horizontal} ${y2 - laneOffset}, ${x2} ${y2}`;
+}
+
 function updatePipelineWires() {
-  $$("#pipeline-wires path").forEach((path) => {
+  $$("#pipeline-execution-wires path").forEach((path) => {
     const source = state.pipelineStatus[path.dataset.from]?.status || "waiting";
     const target = state.pipelineStatus[path.dataset.to]?.status || "waiting";
-    path.className.baseVal = target === "active" ? "active" : source === "complete" && target === "complete" ? "complete" : target === "failed" ? "failed" : "";
+    path.className.baseVal = `execution-wire ${target === "active" ? "active" : source === "complete" && target === "complete" ? "complete" : target === "failed" ? "failed" : "waiting"}`;
   });
+  $$("#pipeline-artifact-wires path").forEach((path) => {
+    const status = state.artifactStatus[path.dataset.edgeId] || "waiting";
+    path.className.baseVal = `artifact-wire ${status}`;
+  });
+}
+
+function markArtifactsReady(stage, trace = {}) {
+  const artifactName = String(trace.artifact_name || trace.path || "").toLowerCase();
+  pipelineArtifactEdges.forEach((edge) => {
+    if (edge.from !== stage) return;
+    if (artifactName && !artifactName.includes(edge.label.toLowerCase().replace("storm_gen_", ""))) return;
+    state.artifactStatus[edge.id] = "active";
+  });
+  updatePipelineWires();
+}
+
+function markArtifactsConsumed(stage) {
+  pipelineArtifactEdges.forEach((edge) => {
+    if (edge.to === stage && state.artifactStatus[edge.id] === "active") state.artifactStatus[edge.id] = "complete";
+  });
+  updatePipelineWires();
 }
 
 function showPipelineNode(nodeId) {
@@ -310,6 +364,7 @@ function applyPipelineTrace(trace) {
   const invocationId = String(trace.invocation_id || "");
   if (eventName.startsWith("stage_")) state.hasStageTrace = true;
   if (eventName === "stage_start" && pipelineNodes[stage]) {
+    markArtifactsConsumed(stage);
     if (invocationId) {
       const active = state.activeInvocations[stage] || new Set();
       active.add(invocationId);
@@ -329,6 +384,7 @@ function applyPipelineTrace(trace) {
       stillActive ? "仍有并发调用正在执行" : (trace.operation || "阶段完成"),
       telemetry,
     );
+    if (!stillActive) markArtifactsReady(stage, trace);
   } else if (eventName === "stage_error" && pipelineNodes[stage]) {
     if (invocationId) state.activeInvocations[stage]?.delete(invocationId);
     setPipelineNodeStatus(stage, "failed", trace.operation || trace.error_message || "阶段失败", telemetry);
@@ -337,6 +393,8 @@ function applyPipelineTrace(trace) {
   } else if (eventName === "stage_usage" && pipelineNodes[stage]) {
     const status = state.pipelineStatus[stage]?.status || "complete";
     setPipelineNodeStatus(stage, status, trace.operation || "用量已汇总", telemetry);
+  } else if (eventName === "artifact_ready" || eventName === "artifact_written") {
+    if (pipelineNodes[stage]) markArtifactsReady(stage, trace);
   } else if (eventName === "run_start") {
     setPipelineNodeStatus("request", "active", "运行配置已冻结，正在初始化", telemetry);
   } else if (!state.hasStageTrace && (eventName.includes("retrieval_start") || eventName === "tool_start")) {
@@ -635,6 +693,7 @@ function renderMessageNode(message) {
   const role = message.role === "user" ? "user" : "assistant";
   node.className = `message ${role}`;
   const metadata = message.metadata || {};
+  const telemetry = metadata.telemetry || {};
   const version = metadata.version ? ` <span class="version-badge">v${escapeHtml(metadata.version)}</span>` : "";
   const regenerated = metadata.regenerated ? " <span class=\"version-badge\">重新生成</span>" : "";
   let citationsHtml = "";
@@ -645,23 +704,33 @@ function renderMessageNode(message) {
       const url = citation.url || "";
       const page = citation.page ? ` · 第 ${escapeHtml(citation.page)} 页` : "";
       const chunk = citation.chunk ? ` · ${escapeHtml(citation.chunk)}` : "";
+      const authors = Array.isArray(citation.authors) ? citation.authors.filter(Boolean) : [];
+      const authorText = authors.length ? `<small class="citation-authors">${escapeHtml(authors.join(", "))}</small>` : "";
       const originalSources = Array.isArray(citation.original_sources) ? citation.original_sources : [];
       const articleLink = citation.article_anchor
         ? `<button class="citation-locator" type="button" data-article-anchor="${escapeHtml(citation.article_anchor)}" data-task-id="${escapeHtml(metadata.used_task_id || "")}">定位文章</button>`
         : "";
       const source = url
-        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${title}</a>`
+        ? `<span class="citation-source"><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${title}</a>${authorText}</span>`
         : articleLink ? `<span class="citation-title">${title}</span>` : `<span class="citation-title">${title}</span><b class="missing-badge">无可用链接</b>`;
       const originals = originalSources.length ? `<ul class="original-sources">${originalSources.map((item) => {
         const sourceTitle = escapeHtml(item.title || `来源 ${item.citation_index || ""}`);
         const sourceUrl = item.url || "";
-        return `<li><span>[${escapeHtml(item.citation_index || "-")}]</span>${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener">${sourceTitle}</a>` : sourceTitle}</li>`;
+        const sourceAuthors = Array.isArray(item.authors) && item.authors.length ? `<small>${escapeHtml(item.authors.join(", "))}</small>` : "";
+        return `<li><span>[${escapeHtml(item.citation_index || "-")}]</span><span>${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener">${sourceTitle}</a>` : sourceTitle}${sourceAuthors}</span></li>`;
       }).join("")}</ul>` : "";
       return `<li><div class="citation-row">${source}${articleLink}${page}${chunk}</div>${originals}</li>`;
     }).join("");
     citationsHtml = `<details class="citations"><summary>引用 ${citations.length} 条</summary><ul>${items}</ul></details>`;
   }
-  node.innerHTML = `<strong>${role === "user" ? "你" : "PaperStorm"}${version}${regenerated}</strong><p>${escapeHtml(message.content)}</p>${citationsHtml}`;
+  const metricPrefix = telemetry.estimated ? "≈" : "";
+  const metricHtml = role === "user"
+    ? (telemetry.message_tokens ? `<span class="message-telemetry">${metricPrefix}${escapeHtml(telemetry.message_tokens)} tokens</span>` : "")
+    : ((telemetry.total_tokens || telemetry.duration_ms !== undefined)
+      ? `<span class="message-telemetry">${metricPrefix}${escapeHtml(telemetry.prompt_tokens || 0)} in · ${metricPrefix}${escapeHtml(telemetry.completion_tokens || 0)} out · ${formatDuration(Number(telemetry.duration_ms || 0))}</span>`
+      : "");
+  const avatar = role === "user" ? "/dashboard/assets/avatar-user.svg" : "/dashboard/assets/avatar-paperstorm.svg";
+  node.innerHTML = `<img class="message-avatar" src="${avatar}" alt="" /><div class="message-body"><div class="message-head"><strong>${role === "user" ? "你" : "PaperStorm"}${version}${regenerated}</strong>${metricHtml}</div><p>${escapeHtml(message.content)}</p>${citationsHtml}</div>`;
   node.querySelectorAll("[data-article-anchor]").forEach((button) => {
     button.addEventListener("click", () => focusArticleCitation(button.dataset.articleAnchor, button.dataset.taskId));
   });

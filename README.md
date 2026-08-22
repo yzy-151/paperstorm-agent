@@ -1,10 +1,10 @@
-# PaperStorm Agent（v6.1）
+# PaperStorm Agent（v6.2）
 
-> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v6.1 使用真实
-> STORM 阶段事件驱动执行图，能够准确定位 Persona、对话、检索、写作与交付故障，
-> 并新增支持中文、表格、代码和数学公式的正式 PDF 交付。
+> 基于 Stanford STORM 二次开发的论文调研与知识问答 Agent 平台。v6.2 将阶段执行、
+> 文件依赖与运行遥测汇入同一张可观测工作流图，并补齐消息级 Token/耗时、原始论文
+> 元数据引用，以及支持 LaTeX 公式的正式 PDF 交付。
 
-![PaperStorm 调研工作台](docs/screenshots/dashboard-research-v60.png)
+![PaperStorm 调研工作台](docs/screenshots/dashboard-research-v62.png)
 
 **论文调研** · **智能问答** · **混合检索** · **长期记忆** · **上下文治理** ·
 **Multi-Agent Research** · **公开 Benchmark** · **Langfuse Observability**
@@ -33,8 +33,18 @@ Agent 平台原型：
 - **v5.8 可观测性**：Research / Chat / Benchmark 统一 Trace 模型，本地 JSONL
   镜像与 Langfuse 可选双写；递归脱敏、用户 ID 哈希、失败降级、Trace Score 回传。
 - **工作台**：调研模式释放右侧配置栏；节点显示输入、当前活动、输出、耗时、
-  Token、费用、结束原因和错误，运行中提供流动边框与呼吸反馈。开发者控制台注册
+  Token、费用、结束原因和错误；粗曲线表达执行顺序，细曲线表达带文件名的产物流，
+  仅在运行和传递时提供方向流动光效。开发者控制台注册
   SciFact、QASPER、LongMemEval-S 与 Context Pareto 实验。
+
+## v6.2 核心变化
+
+| 原因 | 旧行为造成的问题 | v6.2 改动 | 当前结果 |
+| --- | --- | --- | --- |
+| 单一进度条无法表达依赖 | 看得到阶段先后，但看不到具体文件从哪里产生、被谁消费 | 11 节点工作流拆分粗执行曲线与细产物曲线；输入/输出圆点绑定文件名，多输入节点使用独立端口 | 等待、运行、完成、失败状态可区分；运行主线和正在传递的文件线独立高亮并流动 |
+| 卡片缺少实时诊断 | 无法沿节点定位输入、输出、耗时、Token、费用和错误 | SSE 阶段事件与 `artifact_ready` 事件共同驱动卡片检查器 | 点击任意卡片可查看职责与脱敏运行信息，完成后卡片顶部保留耗时 |
+| 聊天回复缺少成本反馈 | 用户无法判断每轮对话的时间和上下文开销 | 用户消息与助手消息持久化消息级 Token、耗时及估算标识，并增加本地头像 | 会话恢复后仍保留同一份遥测信息 |
+| 引用与 PDF 丢失论文身份 | 页面只显示生成段落，公式或来源不适合正式交付 | 引用保留原始标题、作者与年份；LaTeX 转 MathML，失败时保留可见公式源码 | 网页与 PDF 均能追溯原论文，中文、表格、代码和公式可打印 |
 
 ## v6.1 核心变化
 
@@ -575,7 +585,8 @@ v5.9 的边界定义、根因分析和逐项验收见
 | v5.8.1 Citation Fix | 原始论文来源回填、历史会话兼容迁移、文章段落锚点定位 | 历史版本 |
 | v5.9 Context & Agent Graph | LLM-first Turn Planner、跨会话 FTS5、结构化压缩、1M 模型窗口适配、实时节点执行图 | 历史版本 |
 | v6.0 Action & Evaluation | Action Planner、动态输出续接、显式 LLM 错误、真实语义记忆开关、节点遥测、Context Pareto、LongMemEval-S E2E | 历史版本 |
-| **v6.1 Stage Trace & PDF Delivery** | 真实阶段事件、精确故障归因、节点输入输出与成本检查器、可选正式 PDF 交付 | 当前版本 |
+| v6.1 Stage Trace & PDF Delivery | 真实阶段事件、精确故障归因、节点输入输出与成本检查器、可选正式 PDF 交付 | 历史版本 |
+| **v6.2 Observable Workflow** | 执行流与产物流双层曲线、多输入文件端口、消息级遥测、原始论文引用与公式 PDF | 当前版本 |
 
 ## License
 

@@ -1,4 +1,5 @@
 import tempfile
+import json
 import threading
 import time
 import unittest
@@ -18,9 +19,15 @@ class PaperStormPdfTest(unittest.TestCase):
 
 正文包含行内公式 $y=x^2$ 和引用 [1]。
 
+括号行内公式 \(a^2+b^2=c^2\)。
+
 $$
 E = mc^2
 $$
+
+\[
+F = ma
+\]
 
 | 方法 | 效果 |
 | --- | --- |
@@ -37,10 +44,23 @@ print("PIM")
         self.assertIn("<h1>无源互调抑制</h1>", html)
         self.assertIn("<table>", html)
         self.assertIn("<code", html)
-        self.assertIn("<math", html)
+        self.assertGreaterEqual(html.count("<math"), 4)
+        self.assertNotIn(r"\(a^2+b^2=c^2\)", html)
+        self.assertNotIn(r"\[\nF = ma\n\]", html)
         self.assertIn("@page", html)
         self.assertIn("page-break", html)
         self.assertIn("default-src &#x27;none&#x27;", html)
+
+    def test_math_conversion_failure_keeps_formula_visible(self):
+        from knowledge_storm.paperstorm_pdf import _replace_latex_math
+
+        rendered = _replace_latex_math(
+            r"before \(broken_formula\) after",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad math")),
+        )
+
+        self.assertIn("broken_formula", rendered)
+        self.assertIn("math-fallback", rendered)
 
     def test_renderer_uses_browser_without_shell_and_registers_verified_pdf(self):
         calls = []
@@ -100,6 +120,28 @@ print("PIM")
                     )
 
         self.assertEqual(caught.exception.code, "pdf_renderer_unavailable")
+
+    def test_pdf_bibliography_preserves_original_title_and_authors(self):
+        from knowledge_storm.paperstorm_pdf import _append_original_references
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            Path(temp_dir, "url_to_info.json").write_text(
+                json.dumps({
+                    "url_to_unified_index": {"https://arxiv.org/abs/1": 1},
+                    "url_to_info": {
+                        "https://arxiv.org/abs/1": {
+                            "title": "Original English Paper Title",
+                            "url": "https://arxiv.org/abs/1",
+                            "meta": {"authors": ["Ada Lovelace", "Alan Turing"]},
+                        }
+                    },
+                }),
+                encoding="utf-8",
+            )
+            enriched = _append_original_references("# 报告\n\n正文 [1]。", temp_dir)
+
+        self.assertIn("Original English Paper Title", enriched)
+        self.assertIn("Ada Lovelace, Alan Turing", enriched)
 
     def test_renderer_waits_for_browser_to_finish_writing_pdf(self):
         def delayed_runner(command, **_kwargs):

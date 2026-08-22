@@ -220,6 +220,9 @@ class PaperStormStageCallback:
         self.trace_recorder.end_stage(
             output_summary={"perspectives": list(perspectives or [])}
         )
+        self.trace_recorder.emit(
+            "artifact_ready", stage="persona", artifact_name="personas.json"
+        )
 
     def on_information_gathering_start(self, **kwargs):
         self.trace_recorder.start_stage(
@@ -249,6 +252,9 @@ class PaperStormStageCallback:
         self.trace_recorder.end_stage(
             output_summary={"dialogue_turns": self.dialogue_turn_count}
         )
+        self.trace_recorder.emit(
+            "artifact_ready", stage="dialogue", artifact_name="conversation_log.json"
+        )
         self.trace_recorder.start_stage(
             "evidence",
             "汇总对话证据并建立信息表",
@@ -256,6 +262,9 @@ class PaperStormStageCallback:
         )
         self.trace_recorder.end_stage(
             output_summary={"status": "information_table_ready"}
+        )
+        self.trace_recorder.emit(
+            "artifact_ready", stage="evidence", artifact_name="evidence_index.json"
         )
 
     def on_information_organization_start(self, **kwargs):
@@ -273,6 +282,9 @@ class PaperStormStageCallback:
 
     def on_outline_refinement_end(self, outline, **kwargs):
         self.trace_recorder.end_stage(output_summary={"outline": outline})
+        self.trace_recorder.emit(
+            "artifact_ready", stage="outline", artifact_name="storm_gen_outline.txt"
+        )
 
 
 class TracedRetrievalModel:
@@ -303,6 +315,12 @@ class TracedRetrievalModel:
             invocation_id=invocation_id,
             output_summary={"queries": queries, "query_count": len(queries)},
             duration_ms=0,
+        )
+        self.trace_recorder.emit(
+            "artifact_ready",
+            stage="query",
+            artifact_name="queries.json",
+            output_summary={"query_count": len(queries)},
         )
         self.trace_recorder.emit(
             "stage_start",
@@ -383,6 +401,12 @@ class TracedRetrievalModel:
             operation="论文检索完成",
             invocation_id=invocation_id,
             duration_ms=round(duration_sec * 1000, 2),
+            output_summary=output_summary,
+        )
+        self.trace_recorder.emit(
+            "artifact_ready",
+            stage="retrieval",
+            artifact_name="raw_search_results.json",
             output_summary=output_summary,
         )
         return results

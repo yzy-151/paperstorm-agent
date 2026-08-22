@@ -138,12 +138,23 @@ class PaperStormStageTraceTest(unittest.TestCase):
             [
                 ("stage_start", "persona"),
                 ("stage_end", "persona"),
+                ("artifact_ready", "persona"),
                 ("stage_start", "dialogue"),
                 ("stage_progress", "dialogue"),
                 ("stage_end", "dialogue"),
+                ("artifact_ready", "dialogue"),
                 ("stage_start", "evidence"),
                 ("stage_end", "evidence"),
+                ("artifact_ready", "evidence"),
             ],
+        )
+        self.assertEqual(
+            [
+                event["artifact_name"]
+                for event in recorder.events
+                if event["event"] == "artifact_ready"
+            ],
+            ["personas.json", "conversation_log.json", "evidence_index.json"],
         )
         self.assertEqual(
             recorder.events[1]["output_summary"]["perspectives"],

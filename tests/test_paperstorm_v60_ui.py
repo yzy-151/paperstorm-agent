@@ -11,7 +11,7 @@ class PaperStormV60UITest(unittest.TestCase):
         cls.js = (root / "app.js").read_text(encoding="utf-8")
 
     def test_release_and_memory_mode_controls_are_visible(self):
-        self.assertIn("v6.1", self.html)
+        self.assertIn("v6.2", self.html)
         self.assertIn('id="chat-memory-mode"', self.html)
         self.assertIn('value="semantic"', self.html)
 
@@ -36,6 +36,36 @@ class PaperStormV60UITest(unittest.TestCase):
         self.assertIn("@keyframes node-border-flow", self.css)
         self.assertIn("node-border-flow", self.css)
         self.assertIn("node-breathe", self.css)
+
+    def test_pipeline_uses_named_ports_and_separate_edge_layers(self):
+        for marker in (
+            'class="node-port input-port"',
+            'class="node-port output-port"',
+            'id="pipeline-execution-wires"',
+            'id="pipeline-artifact-wires"',
+            "pipelineExecutionEdges",
+            "pipelineArtifactEdges",
+            "artifact_ready",
+        ):
+            self.assertIn(marker, self.html + self.js)
+        self.assertIn("artifact-wire", self.css)
+        self.assertIn("execution-wire", self.css)
+        self.assertIn('data-port="conversation"', self.html)
+        self.assertIn('data-port="scorecard"', self.html)
+        self.assertIn("port-row-2", self.css)
+        self.assertIn("animation: artifact-flow", self.css)
+        self.assertIn("animation: execution-flow", self.css)
+
+    def test_chat_messages_show_local_avatars_and_telemetry(self):
+        bundle = self.html + self.js + self.css
+        for marker in (
+            "avatar-paperstorm.svg",
+            "avatar-user.svg",
+            "message-telemetry",
+            "prompt_tokens",
+            "completion_tokens",
+        ):
+            self.assertIn(marker, bundle)
 
 
 if __name__ == "__main__":

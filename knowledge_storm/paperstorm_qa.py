@@ -36,6 +36,7 @@ class PaperStormKnowledgeBase:
 
         raw_results = _read_json(run_dir / "raw_search_results.json", [])
         for index, result in enumerate(raw_results if isinstance(raw_results, list) else [], start=1):
+            result_meta = result.get("meta") or {}
             snippets = result.get("snippets") or []
             content = "\n".join(
                 [
@@ -53,11 +54,14 @@ class PaperStormKnowledgeBase:
                         "content": content,
                         "url": result.get("url") or "",
                         "source": "retrieval",
-                        "source_type": result.get("source_type") or "retrieval",
+                        "source_type": result_meta.get("source_type") or result.get("source_type") or "retrieval",
                         "score": 0,
                         "metadata": {
                             "result_index": index,
                             "query": result.get("query", ""),
+                            "authors": result_meta.get("authors") or result.get("authors") or [],
+                            "published": result_meta.get("published") or result.get("published") or "",
+                            "original_title": result.get("title") or "",
                         },
                     }
                 )
@@ -171,6 +175,8 @@ def _citation_from_doc(index: int, doc: Dict):
         "document_id": doc.get("id") or "",
         "chunk_id": doc.get("chunk_id") or doc.get("id") or "",
         "score": doc.get("score", 0),
+        "authors": metadata.get("authors") or doc.get("authors") or [],
+        "published": metadata.get("published") or doc.get("published") or "",
     }
     if citation["source_type"] == "article":
         citation.update(
@@ -223,6 +229,8 @@ def _rag_chunk_to_doc(chunk: Dict):
         "source_type": chunk.get("source_type") or "",
         "score": chunk.get("score", 0),
         "metadata": chunk.get("metadata") or {},
+        "authors": (chunk.get("metadata") or {}).get("authors") or chunk.get("authors") or [],
+        "published": (chunk.get("metadata") or {}).get("published") or chunk.get("published") or "",
         "lexical_score": chunk.get("lexical_score", 0),
         "vector_score": chunk.get("vector_score", 0),
         "hybrid_score": chunk.get("hybrid_score", 0),

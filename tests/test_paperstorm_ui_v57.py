@@ -16,7 +16,7 @@ class PaperStormUIV57Test(unittest.TestCase):
         cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     def test_product_uses_v57_workspace_shell(self):
-        self.assertIn("v6.1", self.html)
+        self.assertIn("v6.2", self.html)
         self.assertIn('class="workspace-rail"', self.html)
         self.assertIn('class="workspace-main"', self.html)
         self.assertIn('class="workspace-inspector product-only"', self.html)
@@ -73,14 +73,17 @@ class PaperStormUIV57Test(unittest.TestCase):
         for marker in (
             'id="pipeline-canvas"',
             'class="pipeline-node',
-            'id="pipeline-wires"',
+            'id="pipeline-execution-wires"',
+            'id="pipeline-artifact-wires"',
             'id="pipeline-node-title"',
             "applyPipelineTrace",
             "new EventSource",
-            "pipelineEdges",
+            "pipelineExecutionEdges",
+            "pipelineArtifactEdges",
         ):
             self.assertIn(marker, bundle)
-        self.assertIn("@keyframes wire-flow", self.css)
+        self.assertIn("@keyframes execution-flow", self.css)
+        self.assertIn("@keyframes artifact-flow", self.css)
 
     def test_public_readme_has_no_recruiting_or_leadership_copy(self):
         for marker in ("面试", "领导"):

@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -194,6 +195,35 @@ class PaperStormResearchQATest(unittest.TestCase):
             self.assertTrue(payload["retrieval_triggered"])
             self.assertEqual(payload["decision"]["action"], "retrieve_then_answer")
             self.assertTrue(payload["citations"])
+
+    def test_retrieval_citation_preserves_original_title_and_authors(self):
+        from knowledge_storm.paperstorm_qa import PaperStormKnowledgeBase
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            (run_dir / "raw_search_results.json").write_text(
+                json.dumps([
+                    {
+                        "title": "Neural Cancellation of Passive Intermodulation",
+                        "description": "A radio-frequency cancellation method.",
+                        "snippets": ["passive intermodulation neural cancellation"],
+                        "url": "https://arxiv.org/abs/2601.00001",
+                        "meta": {
+                            "authors": ["Alice Zhang", "Bob Smith"],
+                            "published": "2026-01-01",
+                            "source_type": "arxiv",
+                        },
+                    }
+                ]),
+                encoding="utf-8",
+            )
+            kb = PaperStormKnowledgeBase.from_run_dir(run_dir)
+            result = kb.answer_question("passive intermodulation cancellation", top_k=1)
+
+        citation = result["citations"][0]
+        self.assertEqual(citation["title"], "Neural Cancellation of Passive Intermodulation")
+        self.assertEqual(citation["authors"], ["Alice Zhang", "Bob Smith"])
+        self.assertEqual(citation["published"], "2026-01-01")
 
 
 if __name__ == "__main__":

@@ -313,6 +313,7 @@ class HybridPaperIndex:
         for index, result in enumerate(
             _read_json(run_dir / "raw_search_results.json", []), start=1
         ):
+            result_meta = result.get("meta") or {}
             snippets = result.get("snippets") or []
             text = "\n".join(
                 [
@@ -328,11 +329,14 @@ class HybridPaperIndex:
                         "title": result.get("title")
                         or "Retrieved source {0}".format(index),
                         "text": text,
-                        "source_type": result.get("source_type") or "retrieval",
+                        "source_type": result_meta.get("source_type") or result.get("source_type") or "retrieval",
                         "url": result.get("url") or "",
                         "metadata": {
                             "result_index": index,
                             "query": result.get("query", ""),
+                            "authors": result_meta.get("authors") or result.get("authors") or [],
+                            "published": result_meta.get("published") or result.get("published") or "",
+                            "original_title": result.get("title") or "",
                         },
                     }
                 )

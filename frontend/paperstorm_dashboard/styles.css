@@ -107,26 +107,26 @@ summary { color: var(--muted); font-size: 12px; cursor: pointer; }
 .advanced-row { margin-top: 13px; }.advanced-row label { flex: 1; }
 .activity-line { max-width: 55%; margin: 0; font-size: 11px; text-align: right; }
 .pipeline-workbench { padding-bottom: 18px; overflow: hidden; }
-.pipeline-layout { display: grid; grid-template-columns: minmax(660px, 1fr) 260px; min-height: 690px; border: 1px solid var(--line); background: #080d12; }
-.pipeline-canvas { position: relative; display: grid; min-width: 0; grid-template-columns: repeat(4, minmax(145px, 1fr)); grid-template-rows: repeat(5, 94px); gap: 20px 18px; align-content: center; padding: 54px 26px 42px; overflow: hidden; background-color: #080d12; background-image: linear-gradient(rgba(68,82,97,.12) 1px, transparent 1px), linear-gradient(90deg, rgba(68,82,97,.12) 1px, transparent 1px); background-size: 22px 22px; }
-.pipeline-canvas::before { position: absolute; top: 30px; left: calc(25% + 8px); width: calc(50% - 16px); height: 126px; border: 1px dashed rgba(36,201,177,.3); background: rgba(13,29,29,.2); content: ""; pointer-events: none; }
-.agent-cluster-label { position: absolute; top: 35px; left: 42%; z-index: 2; padding: 2px 7px; background: #080d12; color: var(--teal); font: 800 8px "Cascadia Code", monospace; }
-.pipeline-wires { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.pipeline-wires path { fill: none; stroke: #35414e; stroke-width: 1.5; vector-effect: non-scaling-stroke; transition: stroke .25s ease, filter .25s ease; }
-.pipeline-wires path.complete { stroke: var(--green); opacity: .74; }
-.pipeline-wires path.active { stroke: var(--teal); stroke-width: 2.5; stroke-dasharray: 8 10; filter: drop-shadow(0 0 5px rgba(36,201,177,.8)); animation: wire-flow .8s linear infinite; }
-.pipeline-wires path.failed { stroke: var(--red); stroke-width: 2.5; filter: drop-shadow(0 0 5px rgba(255,115,125,.7)); }
-.pipeline-node { position: relative; z-index: 3; display: grid; min-width: 0; min-height: 82px; grid-column: var(--col); grid-row: var(--row); grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 10px; border: 1px solid #35414e; border-radius: 2px; padding: 12px 10px; background: #101720; color: var(--text); text-align: left; box-shadow: 0 8px 20px rgba(0,0,0,.2); }
-.pipeline-node::before, .pipeline-node::after { position: absolute; top: 50%; width: 8px; height: 8px; border: 2px solid #080d12; border-radius: 50%; background: #596776; content: ""; transform: translateY(-50%); }
-.pipeline-node::before { left: -5px; }.pipeline-node::after { right: -5px; }
+.pipeline-layout { display: grid; grid-template-columns: minmax(820px, 1fr) 270px; min-height: 780px; border: 1px solid var(--line); background: #080d12; }
+.pipeline-canvas { position: relative; display: grid; min-width: 820px; grid-template-columns: repeat(4, minmax(176px, 1fr)); grid-template-rows: repeat(5, 126px); gap: 24px 28px; align-content: center; padding: 62px 34px 44px; overflow: hidden; background-color: #080d12; background-image: linear-gradient(rgba(68,82,97,.12) 1px, transparent 1px), linear-gradient(90deg, rgba(68,82,97,.12) 1px, transparent 1px); background-size: 22px 22px; }
+.pipeline-canvas::before { position: absolute; top: 30px; left: calc(25% + 8px); width: calc(50% - 16px); height: 168px; border: 1px dashed rgba(36,201,177,.24); background: rgba(13,29,29,.16); content: ""; pointer-events: none; }
+.agent-cluster-label { position: absolute; top: 35px; left: 42%; z-index: 4; padding: 2px 7px; background: #080d12; color: var(--teal); font: 800 8px "Cascadia Code", monospace; }
+.pipeline-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }.execution-layer { z-index: 1; }.artifact-layer { z-index: 2; }
+.pipeline-wires path { fill: none; vector-effect: non-scaling-stroke; transition: stroke .25s ease, opacity .25s ease, filter .25s ease; }
+.execution-wire { stroke: #26313d; stroke-width: 4; opacity: .5; }.execution-wire.complete { stroke: #31594e; opacity: .75; }.execution-wire.active { stroke: var(--teal); stroke-width: 4; stroke-dasharray: 12 10; opacity: 1; filter: drop-shadow(0 0 6px rgba(36,201,177,.85)); animation: execution-flow .68s linear infinite; }.execution-wire.failed { stroke: var(--red); opacity: 1; filter: drop-shadow(0 0 5px rgba(255,115,125,.75)); }
+.artifact-wire { stroke: #536b83; stroke-width: 1.55; stroke-dasharray: 4 7; opacity: .5; }.artifact-wire.complete { stroke: #5d8878; opacity: .72; }.artifact-wire.active { stroke: #7eb6ff; stroke-width: 2.35; stroke-dasharray: 5 8; opacity: 1; filter: drop-shadow(0 0 7px rgba(121,169,255,.95)); animation: artifact-flow .5s linear infinite; }.artifact-wire.failed { stroke: var(--red); opacity: .95; }
+.artifact-label { fill: #7f93a8; font: 700 8px "Cascadia Code", monospace; letter-spacing: 0; pointer-events: none; }.artifact-label textPath { text-anchor: middle; }
+.pipeline-node { position: relative; z-index: 3; display: grid; min-width: 0; min-height: 118px; grid-column: var(--col); grid-row: var(--row); grid-template-rows: 31px auto 1fr; align-items: start; border: 1px solid #35414e; border-radius: 2px; padding: 0 10px 9px; background: #101720; color: var(--text); text-align: left; box-shadow: 0 8px 20px rgba(0,0,0,.24); overflow: visible; }
+.pipeline-node.system-node { clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px); border-color: #53667b; }.pipeline-node.agent-node { border-top: 3px double #38bba9; background: #0c191a; }.pipeline-node.process-node { border-top-color: #56708c; }
+.node-head { display: grid; grid-template-columns: 27px minmax(0,1fr) auto; align-items: center; gap: 7px; margin: 0 -10px 7px; border-bottom: 1px solid #2b3743; padding: 6px 8px; background: #151e28; }.node-head > i { color: var(--blue); font: 800 8px "Cascadia Code", monospace; font-style: normal; }.node-head b { min-width: 0; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.node-head em { color: #647180; font: 800 7px "Cascadia Code", monospace; font-style: normal; }
+.node-description { display: block; min-height: 26px; color: #8795a4; font-size: 8px; line-height: 1.4; }
+.node-port { position: absolute; display: flex; max-width: 74%; align-items: center; gap: 5px; color: #8da0b3; font: 700 7px "Cascadia Code", monospace; white-space: nowrap; }.node-port i { width: 8px; height: 8px; flex: 0 0 auto; border: 1px solid #111923; border-radius: 50%; background: #586a7c; box-shadow: 0 0 0 1px #45586a; }.input-port { bottom: 9px; left: -5px; }.input-port.port-row-2 { bottom: 25px; }.output-port { right: -5px; bottom: 9px; flex-direction: row-reverse; text-align: right; }.output-port i { background: #5578a6; }
+.flow-port { position: absolute; top: -6px; width: 9px; height: 9px; border: 2px solid #080d12; border-radius: 50%; background: #596776; }.flow-in { left: 13px; }.flow-out { right: 13px; }
 .pipeline-node:hover:not(:disabled), .pipeline-node.selected { border-color: var(--blue); background: #16212d; }
-.pipeline-node > i { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid var(--line-strong); color: var(--blue); font: 800 9px "Cascadia Code", monospace; font-style: normal; }
-.pipeline-node > span { min-width: 0; }.pipeline-node b, .pipeline-node small { display: block; overflow-wrap: anywhere; }.pipeline-node b { padding-right: 22px; font-size: 10px; line-height: 1.25; }.pipeline-node small { margin-top: 5px; color: var(--muted); font-size: 8px; font-weight: 500; line-height: 1.3; }.pipeline-node em { position: absolute; top: 7px; right: 7px; color: #647180; font: 800 7px "Cascadia Code", monospace; font-style: normal; }
-.pipeline-node.agent-node { border-color: #315d59; background: #0d1a1b; }
-.pipeline-node.active { border-color: transparent; background: linear-gradient(#101a21, #101a21) padding-box, linear-gradient(90deg, #24c9b1, #72a7ff, #24c9b1, #f0ca62, #24c9b1) border-box; background-size: 100% 100%, 320% 100%; box-shadow: inset 3px 0 0 var(--teal), 0 0 20px rgba(36,201,177,.22); animation: node-breathe 1.5s ease-in-out infinite, node-border-flow 1.25s linear infinite; }.pipeline-node.active::before, .pipeline-node.active::after { background: var(--teal); box-shadow: 0 0 9px var(--teal); animation: node-breathe 1.5s ease-in-out infinite; }.pipeline-node.active em { color: var(--teal); }
-.pipeline-node.complete { border-color: #2f7652; background: #0c1b15; }.pipeline-node.complete::before, .pipeline-node.complete::after { background: var(--green); }.pipeline-node.complete em { color: var(--green); }
-.pipeline-node.failed { border-color: var(--red); background: #251116; }.pipeline-node.failed::before, .pipeline-node.failed::after { background: var(--red); }.pipeline-node.failed em { color: var(--red); }
-.pipeline-node.skipped { border-color: #29323c; background: #0a0f14; opacity: .58; }.pipeline-node.skipped::before, .pipeline-node.skipped::after { background: #536171; }.pipeline-node.skipped em { color: #788696; }
+.pipeline-node.active { border-color: transparent; background: linear-gradient(#101a21, #101a21) padding-box, linear-gradient(90deg, #24c9b1, #72a7ff, #24c9b1, #f0ca62, #24c9b1) border-box; background-size: 100% 100%, 320% 100%; box-shadow: inset 3px 0 0 var(--teal), 0 0 20px rgba(36,201,177,.22); animation: node-breathe 1.5s ease-in-out infinite, node-border-flow 1.25s linear infinite; }.pipeline-node.active .flow-port, .pipeline-node.active .node-port i { background: var(--teal); box-shadow: 0 0 9px var(--teal); }.pipeline-node.active em { color: var(--teal); }
+.pipeline-node.complete { border-color: #2f7652; background: #0c1714; }.pipeline-node.complete .flow-port, .pipeline-node.complete .node-port i { background: var(--green); }.pipeline-node.complete em { color: var(--green); }
+.pipeline-node.failed { border-color: var(--red); background: #251116; }.pipeline-node.failed .flow-port, .pipeline-node.failed .node-port i { background: var(--red); box-shadow: 0 0 8px rgba(255,115,125,.7); }.pipeline-node.failed em { color: var(--red); }
+.pipeline-node.skipped { border-color: #29323c; background: #0a0f14; opacity: .58; }.pipeline-node.skipped em { color: #788696; }
 .pipeline-node .node-time { position: absolute; top: -9px; left: 9px; z-index: 4; border: 1px solid #2f7652; padding: 2px 5px; background: #07120d; color: var(--green); font: 800 7px "Cascadia Code", monospace; font-style: normal; }
 .pipeline-inspector { border-left: 1px solid var(--line); padding: 20px; background: #0c1218; }
 .pipeline-inspector > div { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 12px; }.pipeline-inspector > div span { color: var(--teal); font-size: 8px; font-weight: 800; }.pipeline-inspector > div b { color: var(--muted); font: 800 8px "Cascadia Code", monospace; }.pipeline-inspector > div b.active { color: var(--teal); }.pipeline-inspector > div b.complete { color: var(--green); }.pipeline-inspector > div b.failed { color: var(--red); }
@@ -157,9 +157,8 @@ summary { color: var(--muted); font-size: 12px; cursor: pointer; }
 .chat-workspace { display: grid; min-width: 0; grid-template-rows: auto minmax(410px, 1fr) auto auto; padding: 20px 24px; }
 .chat-header { align-items: center; margin-bottom: 0; }
 .chat-messages { overflow-y: auto; padding: 22px 0; }
-.message { width: min(82%, 720px); margin-bottom: 14px; border-left: 2px solid var(--teal); padding: 13px 15px; background: #0b1117; }
-.message.user { margin-left: auto; border-left: 0; border-right: 2px solid var(--blue); background: #111b28; }
-.message p { margin: 6px 0 0; color: var(--text); white-space: pre-wrap; }
+.message { display: grid; width: min(86%, 780px); grid-template-columns: 34px minmax(0,1fr); gap: 10px; margin-bottom: 16px; }.message.user { grid-template-columns: minmax(0,1fr) 34px; margin-left: auto; }.message.user .message-avatar { grid-column: 2; }.message.user .message-body { grid-column: 1; grid-row: 1; border-left: 0; border-right: 2px solid var(--blue); background: #111b28; }
+.message-avatar { width: 34px; height: 34px; border: 1px solid var(--line-strong); background: #0b1117; object-fit: cover; }.message-body { min-width: 0; border-left: 2px solid var(--teal); padding: 12px 14px; background: #0b1117; }.message-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.message-telemetry { color: #74879a; font: 700 8px "Cascadia Code", monospace; white-space: nowrap; }.message p { margin: 7px 0 0; color: var(--text); white-space: pre-wrap; }
 .chat-toolbar { display: flex; gap: 8px; padding: 8px 0; }
 .chat-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
 .session-meta { margin: 0; }.session-meta dt { color: #687583; font-size: 9px; }.session-meta dd { margin: 4px 0 13px; overflow-wrap: anywhere; font-size: 11px; }
@@ -169,6 +168,7 @@ summary { color: var(--muted); font-size: 12px; cursor: pointer; }
 .citations > ul > li { color: var(--muted); font-size: 11px; }
 .citation-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .citation-title { color: var(--text); }
+.citation-source { display: inline-flex; flex-direction: column; gap: 2px; }.citation-authors, .original-sources small { display: block; color: #7f91a3; font-size: 9px; }
 .citation-locator { min-height: 24px; padding: 2px 8px; border-color: var(--blue); background: transparent; color: var(--blue); font-size: 10px; }
 .original-sources { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 12px; list-style: none; }
 .original-sources li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 5px; }
@@ -207,6 +207,8 @@ details pre, .diagnostic-grid pre { max-height: 300px; overflow: auto; border: 1
 .toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; max-width: min(420px, calc(100vw - 40px)); border: 1px solid var(--line-strong); border-left: 3px solid var(--teal); padding: 12px 14px; background: #15202a; color: var(--text); box-shadow: 0 14px 36px rgba(0,0,0,.42); }.toast.error { border-left-color: var(--red); }
 @keyframes pulse { 50% { opacity: .35; } }
 @keyframes wire-flow { to { stroke-dashoffset: -18; } }
+@keyframes execution-flow { to { stroke-dashoffset: -22; } }
+@keyframes artifact-flow { to { stroke-dashoffset: -24; } }
 @keyframes node-breathe { 50% { box-shadow: inset 3px 0 0 var(--teal), 0 0 28px rgba(36,201,177,.34); } }
 @keyframes node-border-flow { to { background-position: 0 0, -320% 0; } }
 

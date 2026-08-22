@@ -1,6 +1,8 @@
 import hashlib
 import json
+import re
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -160,6 +162,7 @@ class PaperStormChatAgent:
             self._cancelled_ids.discard(chat_id)
 
     def send_message(self, chat_id: str, message: str) -> Dict:
+        turn_started = time.perf_counter()
         message = str(message or "").strip()
         if not message:
             raise ValueError("message is required")
@@ -168,7 +171,11 @@ class PaperStormChatAgent:
         session = self._read_session(chat_id)
         engine = self._context_engine(session)
         self._sync_event_store(session, engine.store)
-        user_message = _message("user", message)
+        user_message = _message(
+            "user",
+            message,
+            {"telemetry": {"message_tokens": _estimate_tokens(message), "estimated": True}},
+        )
         session["messages"].append(user_message)
         engine.store.append_message(user_message)
         self._session_recall_store().append_message(
@@ -213,10 +220,17 @@ class PaperStormChatAgent:
         session["working_subject"] = working_subject
         long_term_memory = graph_run.get("memory_recall") or long_term_memory
         answer = _graph_answer_payload(graph_run)
+        answer_text = answer.get("answer", "")
+        turn_telemetry = _chat_turn_telemetry(
+            graph_run,
+            context_window=routed_context["messages"],
+            answer_text=answer_text,
+            duration_ms=(time.perf_counter() - turn_started) * 1000.0,
+        )
         session["task_id"] = answer.get("used_task_id") or session.get("task_id", "")
         assistant_message = _message(
             "assistant",
-            answer.get("answer", ""),
+            answer_text,
             {
                 "grounded": answer.get("grounded", False),
                 "used_task_id": answer.get("used_task_id", ""),
@@ -228,6 +242,7 @@ class PaperStormChatAgent:
                 "citations": answer.get("citations") or [],
                 "evidence": answer.get("evidence") or [],
                 "retrieval_stack": answer.get("retrieval_stack", ""),
+                "telemetry": turn_telemetry,
             },
         )
         session["messages"].append(assistant_message)
@@ -605,6 +620,41 @@ def _message(role: str, content: str, metadata: Optional[Dict] = None):
         "content": str(content or ""),
         "metadata": metadata or {},
         "created_at": _now(),
+    }
+
+
+def _estimate_tokens(text: str) -> int:
+    """Stable offline estimate used only when the provider reports no usage."""
+    value = str(text or "")
+    if not value:
+        return 0
+    cjk = len(re.findall(r"[\u4e00-\u9fff]", value))
+    latin = len(re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_\u4e00-\u9fff]", value))
+    return max(1, cjk + latin)
+
+
+def _chat_turn_telemetry(graph_run: Dict, context_window, answer_text: str, duration_ms: float):
+    llm_call = graph_run.get("llm_call") or {}
+    usage = llm_call.get("usage") or {}
+    prompt_tokens = int(usage.get("prompt_tokens") or 0)
+    completion_tokens = int(usage.get("completion_tokens") or 0)
+    estimated = not bool(prompt_tokens or completion_tokens)
+    if estimated:
+        prompt_tokens = sum(
+            _estimate_tokens(item.get("content", ""))
+            for item in (context_window or [])
+            if isinstance(item, dict)
+        )
+        completion_tokens = _estimate_tokens(answer_text)
+    total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "duration_ms": round(max(0.0, float(duration_ms)), 2),
+        "cost_usd": float(llm_call.get("cost_usd") or 0.0),
+        "finish_reason": llm_call.get("finish_reason") or "",
+        "estimated": estimated,
     }
 
 

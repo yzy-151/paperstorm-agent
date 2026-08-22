@@ -57,9 +57,17 @@ class PaperStormChatAgentTest(unittest.TestCase):
             "storm_deep_research_tool",
         )
         self.assertTrue(reply["assistant_message"]["content"])
+        user_telemetry = reply["message"]["metadata"]["telemetry"]
+        assistant_telemetry = reply["assistant_message"]["metadata"]["telemetry"]
+        self.assertGreater(user_telemetry["message_tokens"], 0)
+        self.assertGreaterEqual(assistant_telemetry["duration_ms"], 0)
+        self.assertIn("prompt_tokens", assistant_telemetry)
+        self.assertIn("completion_tokens", assistant_telemetry)
+        self.assertIn("total_tokens", assistant_telemetry)
         self.assertGreaterEqual(len(reply["messages"]), 2)
         self.assertEqual(loaded["chat_id"], session["chat_id"])
         self.assertEqual(loaded["messages"][-1]["role"], "assistant")
+        self.assertIn("telemetry", loaded["messages"][-1]["metadata"])
         self.assertTrue(reply["context_window"])
         self.assertIn("summary", reply["compressed_context"])
         self.assertIn("semantic", reply["memory_context"])
