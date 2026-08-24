@@ -16,7 +16,7 @@ class PaperStormUIV57Test(unittest.TestCase):
         cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     def test_product_uses_v57_workspace_shell(self):
-        self.assertIn("v6.5", self.html)
+        self.assertIn("v6.6", self.html)
         self.assertIn('class="workspace-rail"', self.html)
         self.assertIn('class="workspace-main"', self.html)
         self.assertIn('class="workspace-inspector product-only"', self.html)
@@ -31,6 +31,8 @@ class PaperStormUIV57Test(unittest.TestCase):
             "dashboard-research-v64.png",
             "dashboard-chat-v64.png",
             "dashboard-developer-v64.png",
+            "paperstorm-research-flow-v65.gif",
+            "paperstorm-chat-flow-v65.gif",
             "paperstorm-executive-overview-v57.svg",
             "benchmark-icon-retrieval.svg",
             "benchmark-icon-memory.svg",

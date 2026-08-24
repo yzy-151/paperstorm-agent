@@ -1,10 +1,16 @@
-# PaperStorm Agent（v6.5）
+# PaperStorm Agent（v6.6）
 
 > 面向论文调研、证据问答与企业知识治理的可观测 Agent 平台。项目基于 Stanford
 > STORM 的多视角调研方法扩展，覆盖检索、规划、协作写作、记忆、上下文压缩、
 > 运行时治理、公开评测与正式文档交付。
 
 ![PaperStorm 调研工作台](docs/screenshots/dashboard-research-v64.png)
+
+![PaperStorm 调研工作流演示](docs/screenshots/paperstorm-research-flow-v65.gif)
+
+上图为本地可复现演示：从调研任务提交到节点级执行状态、产物流转和完成态。演示使用
+`fake` 运行模式，仅展示服务端事件驱动的工作流与前端状态；真实检索和 LLM 模式的配置、
+成本与证据边界见下文“快速开始”和“Benchmark”。
 
 **Deep Research** · **Evidence-grounded QA** · **Hybrid RAG** ·
 **Temporal Memory** · **Context Engineering** · **Agent Runtime** ·
@@ -38,7 +44,7 @@ PaperStorm 提供两类核心业务能力：一是面向 arXiv、本地 PDF、Zo
 - **正式交付**：Markdown、原始论文引用、运行 Trace、评估 Scorecard 与支持 MathML
   数学排版的 PDF 报告。
 
-## v6.5 发布说明
+## v6.6 发布说明
 
 | 领域 | 改进内容 | 验收结果 |
 | --- | --- | --- |
@@ -49,6 +55,7 @@ PaperStorm 提供两类核心业务能力：一是面向 arXiv、本地 PDF、Zo
 | Agent 行为 | 动作级 LLM Planner、动态输出预算、长度截断续接、类型化模型错误与真实语义 Memory 开关 | 普通生成不受固定内容类型限制，工具调用边界可追踪 |
 | PDF 交付 | 原始标题和作者进入参考文献；`$...$`、`$$...$$`、`\(...\)`、`\[...\]` 转换为 MathML，并记录公式转换指标 | 公式降级或转换不完整时返回类型化错误；真实浏览器 PDF 集成测试验证公式文本 |
 | Benchmark | 集成 SciFact、QASPER、LongMemEval-S、Context Pareto 与端到端 Reader/Judge | 开发者控制台可加载数据集、运行实验并查看结果与限制 |
+| 项目演示 | 增加调研工作流与智能问答两段轻量 GIF，分别呈现节点执行、产物流转、会话输入和回答遥测 | GitHub README 可直接预览，两段动图总计约 1.1 MB |
 
 在“交付产物”卡片中启用 PDF 后，任务会生成 `paperstorm_report.pdf` 与对应的
 打印 HTML。Windows 优先使用 Google Chrome，并在未安装时回退到 Microsoft Edge；
@@ -217,6 +224,11 @@ Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长�
 ### 2. 智能问答模式
 
 ![PaperStorm 智能问答模式](docs/screenshots/dashboard-chat-v64.png)
+
+![PaperStorm 智能问答会话演示](docs/screenshots/paperstorm-chat-flow-v65.gif)
+
+上图展示新建会话、输入问题和返回带 Token/耗时遥测的回答。演示使用 `fake` 运行模式，
+用于稳定复现产品交互；真实问答默认通过 paperstorm 模式调用检索器与 LLM。
 
 - 输入即问答：普通聊天/系统问题直接回复，技术问题优先复用已有调研任务，
   证据不足自动启动深度调研；说"请记住：…"保存跨会话记忆。
