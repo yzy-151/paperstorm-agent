@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import tempfile
 import unittest
 from dataclasses import FrozenInstanceError
@@ -175,6 +176,18 @@ class MilestoneManifestTest(unittest.TestCase):
             self.assertEqual(output_path.read_text(encoding="utf-8"), '{"old": true}\n')
             self.assertEqual(list(Path(temp_dir).glob(".*.tmp")), [])
 
+    def test_manifest_writer_preserves_replace_error_when_unlink_also_fails(self):
+        from knowledge_storm.badcase_reporting import write_milestone_manifest
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "manifest.json"
+            replace_error = OSError("replace failed")
+            with mock.patch("knowledge_storm.badcase_reporting.os.replace", side_effect=replace_error):
+                with mock.patch.object(Path, "unlink", side_effect=OSError("unlink failed")):
+                    with self.assertRaises(OSError) as raised:
+                        write_milestone_manifest(output_path, {"milestone": "P1"})
+            self.assertIs(raised.exception, replace_error)
+
     def test_all_milestones_are_valid(self):
         from knowledge_storm.badcase_reporting import CaseDossier
 
@@ -206,6 +219,30 @@ class MilestoneManifestTest(unittest.TestCase):
             )
         self.assertNotIn("do-not-leak", json.dumps(manifest))
 
+    def test_sensitive_text_forms_are_redacted_without_dropping_top_k(self):
+        from knowledge_storm.badcase_reporting import sanitize_json_payload
+
+        payload = sanitize_json_payload(
+            {
+                "top_k": 10,
+                "command": ["--password", "hunter2", "--password=hunter2"],
+                "environment": "DEEPSEEK_API_KEY=sk-secret",
+                "nested": {"secretKey": "camel-secret", "access token": "token-secret"},
+            }
+        )
+
+        self.assertEqual(payload["top_k"], 10)
+        serialized = json.dumps(payload, sort_keys=True)
+        for leaked in ("hunter2", "sk-secret", "camel-secret", "token-secret"):
+            self.assertNotIn(leaked, serialized)
+
+    def test_writer_rejects_non_dossiers(self):
+        from knowledge_storm.badcase_reporting import write_case_dossiers
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(TypeError):
+                write_case_dossiers(Path(temp_dir) / "cases.jsonl", [{"milestone": "P1"}])
+
 
 class PairedBootstrapTest(unittest.TestCase):
     def test_confidence_interval_is_repeatable(self):
@@ -230,6 +267,13 @@ class PairedBootstrapTest(unittest.TestCase):
             paired_bootstrap_ci([], [])
         with self.assertRaisesRegex(ValueError, "same length"):
             paired_bootstrap_ci([0.1], [0.1, 0.2])
+
+    def test_confidence_interval_rejects_non_finite_values(self):
+        from knowledge_storm.badcase_reporting import paired_bootstrap_ci
+
+        for value in (math.nan, math.inf, -math.inf):
+            with self.assertRaisesRegex(ValueError, "finite"):
+                paired_bootstrap_ci([0.1], [value])
 
 
 class PublicBenchmarkMilestoneTest(unittest.TestCase):
@@ -274,6 +318,63 @@ class PublicBenchmarkMilestoneTest(unittest.TestCase):
         self.assertNotIn("milestone", with_milestone["manifest"])
         self.assertNotIn("milestone", without_milestone)
         self.assertNotIn("milestone", without_milestone["manifest"])
+
+    def test_runner_sanitizes_metadata_before_report_and_persistence(self):
+        from knowledge_storm.evaluation.public_benchmarks.runner import (
+            HashEmbeddingProvider,
+            run_retrieval_benchmark,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report = run_retrieval_benchmark(
+                self._dataset(),
+                HashEmbeddingProvider(),
+                modes=("bm25",),
+                top_k=1,
+                bootstrap_samples=5,
+                output_dir=temp_dir,
+                milestone_metadata={
+                    "password": "hunter2",
+                    "nested": {"secretKey": "camel-secret"},
+                },
+            )
+            serialized = json.dumps(report, sort_keys=True)
+            self.assertNotIn("hunter2", serialized)
+            self.assertNotIn("camel-secret", serialized)
+            self.assertNotIn(
+                "hunter2",
+                (Path(temp_dir) / "metrics.json").read_text(encoding="utf-8"),
+            )
+
+    def test_runner_rejects_non_json_metadata_before_output(self):
+        from knowledge_storm.evaluation.public_benchmarks.runner import (
+            HashEmbeddingProvider,
+            run_retrieval_benchmark,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(TypeError):
+                run_retrieval_benchmark(
+                    self._dataset(),
+                    HashEmbeddingProvider(),
+                    modes=("bm25",),
+                    top_k=1,
+                    bootstrap_samples=5,
+                    output_dir=temp_dir,
+                    milestone_metadata={"bad": object()},
+                )
+            self.assertEqual(list(Path(temp_dir).iterdir()), [])
+
+            with self.assertRaises(ValueError):
+                run_retrieval_benchmark(
+                    self._dataset(),
+                    HashEmbeddingProvider(),
+                    modes=("bm25",),
+                    top_k=1,
+                    bootstrap_samples=5,
+                    output_dir=temp_dir,
+                    milestone_metadata={"bad": math.nan},
+                )
 
 
 if __name__ == "__main__":

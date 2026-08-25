@@ -8,6 +8,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 
+from ...badcase_reporting import sanitize_json_payload
 from ...retrieval import HybridPaperIndex
 from ...retrieval_pipeline import RetrievalPipeline, RetrievalRequest
 from .metrics import retrieval_metrics
@@ -49,6 +50,8 @@ def run_retrieval_benchmark(
     scope_field=None,
     milestone_metadata=None,
 ):
+    if milestone_metadata is not None:
+        milestone_metadata = sanitize_json_payload(milestone_metadata)
     top_k = max(1, int(top_k))
     cases = tuple(dataset.cases)
     chunks = [

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import os
 import random
 import re
@@ -12,11 +13,13 @@ from pathlib import Path
 
 
 MILESTONES = ("P1", "P1+P2", "P1+P2+P3", "P1+P2+P3+P4")
-_SENSITIVE_KEY = re.compile(
-    r"(?:^|_)(?:api_?)?(?:secret|token|key|password)(?:$|_)", re.I
-)
+_SENSITIVE_WORDS = frozenset(("secret", "password", "token", "key"))
 _SENSITIVE_OPTION = re.compile(
-    r"(?:--?(?:api[-_]?key|access[-_]?token|secret|token))(?:\s+|=)\S+",
+    r"(?P<prefix>--(?:api[-_]?key|access[-_]?token|secret|password|token|key)(?:=|\s+))(?P<value>\S+)",
+    re.I,
+)
+_ASSIGNMENT = re.compile(
+    r"(?P<key>[A-Za-z][A-Za-z0-9_-]*)\s*=\s*(?P<value>\S+)",
     re.I,
 )
 
@@ -40,14 +43,18 @@ class CaseDossier:
 
     def to_dict(self):
         validate_milestone(self.milestone)
-        return json.loads(json.dumps(asdict(self), ensure_ascii=False))
+        return sanitize_json_payload(asdict(self))
 
 
 def write_case_dossiers(path, dossiers):
     lines = []
     for dossier in dossiers:
-        row = dossier.to_dict() if isinstance(dossier, CaseDossier) else dossier
-        lines.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
+        if not isinstance(dossier, CaseDossier):
+            raise TypeError("dossiers must contain only CaseDossier instances")
+        row = dossier.to_dict()
+        lines.append(
+            json.dumps(row, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        )
     _atomic_write_text(path, "\n".join(lines) + ("\n" if lines else ""))
 
 
@@ -87,13 +94,13 @@ def build_milestone_manifest(
         "api_usage": api_usage,
         "host_profile": host_profile,
     }
-    return _sanitize(manifest)
+    return sanitize_json_payload(manifest)
 
 
 def write_milestone_manifest(path, manifest):
-    safe_manifest = _sanitize(manifest)
+    safe_manifest = sanitize_json_payload(manifest)
     payload = json.dumps(
-        safe_manifest, ensure_ascii=False, indent=2, sort_keys=True
+        safe_manifest, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False
     ) + "\n"
     _atomic_write_text(path, payload)
 
@@ -109,6 +116,8 @@ def paired_bootstrap_ci(baseline, candidate, samples=2000, seed=55):
     if samples < 1:
         raise ValueError("samples must be positive")
     differences = [float(new) - float(old) for old, new in zip(baseline, candidate)]
+    if not all(math.isfinite(value) for value in differences):
+        raise ValueError("paired bootstrap values must be finite")
     generator = random.Random(seed)
     means = sorted(
         statistics.mean(generator.choice(differences) for _ in differences)
@@ -143,12 +152,40 @@ def _path_digest(path):
     raise ValueError("dataset path does not exist: {0}".format(path))
 
 
+def sanitize_json_payload(value):
+    sanitized = _sanitize(value)
+    return json.loads(
+        json.dumps(sanitized, ensure_ascii=False, allow_nan=False)
+    )
+
+
+def _normalize_key(key):
+    key = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(key))
+    return tuple(part for part in re.split(r"[^A-Za-z0-9]+", key.lower()) if part)
+
+
+def _is_sensitive_key(key):
+    return bool(_SENSITIVE_WORDS.intersection(_normalize_key(key)))
+
+
+def _sanitize_string(value):
+    def replace_assignment(match):
+        if _is_sensitive_key(match.group("key")):
+            return "{0}=[REDACTED]".format(match.group("key"))
+        return match.group(0)
+
+    value = _SENSITIVE_OPTION.sub(
+        lambda match: match.group("prefix") + "[REDACTED]", value
+    )
+    return _ASSIGNMENT.sub(replace_assignment, value)
+
+
 def _sanitize(value):
     if isinstance(value, dict):
         return {
             str(key): _sanitize(item)
             for key, item in value.items()
-            if not _SENSITIVE_KEY.search(str(key))
+            if not _is_sensitive_key(key)
         }
     if isinstance(value, (list, tuple)):
         output = []
@@ -158,15 +195,25 @@ def _sanitize(value):
             if redact_next:
                 output.append("[REDACTED]")
                 redact_next = False
-            elif re.fullmatch(r"--?(?:api[-_]?key|access[-_]?token|secret|token)", text, re.I):
+            elif re.fullmatch(
+                r"--(?:api[-_]?key|access[-_]?token|secret|password|token|key)",
+                text,
+                re.I,
+            ):
                 output.append("[REDACTED_OPTION]")
                 redact_next = True
             else:
                 output.append(_sanitize(item))
         return output
     if isinstance(value, str):
-        return _SENSITIVE_OPTION.sub("[REDACTED]", value)
-    return value
+        return _sanitize_string(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("JSON values must be finite")
+        return value
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    raise TypeError("value is not JSON serializable: {0}".format(type(value).__name__))
 
 
 def _atomic_write_text(path, payload):
@@ -191,6 +238,6 @@ def _atomic_write_text(path, payload):
         if temporary is not None:
             try:
                 temporary.unlink()
-            except FileNotFoundError:
+            except OSError:
                 pass
         raise
