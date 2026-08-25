@@ -146,7 +146,7 @@ Query
 
 ## 8. Bad Case 治理文档
 
-新增正式文档 `docs/RAG_BAD_CASES_AND_ROADMAP.md`，每个问题采用统一结构：
+正式调研与路线已落在 `docs/RAG_BAD_CASES_AND_ROADMAP.md`，每个问题采用统一结构：
 
 1. 难点。
 2. 真实案例和来源数据集。
