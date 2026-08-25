@@ -4,7 +4,7 @@
 
 在已完成 P0 检索主链统一的基础上，连续完成 P1-P4：提高第一阶段召回、建立选择性重排与证据治理、
 形成答案和引用闭环，并补齐生产运行与在线治理。最终产物必须同时包含可运行代码、离线测试、分阶段
-消融报告、公开 Benchmark 最终结果和面向工程复盘的中文文档。
+递进对比报告、受影响 Benchmark 结果和面向工程复盘的中文文档。
 
 ## 2. 基线约束
 
@@ -15,14 +15,14 @@
   - `docs/benchmarks/paperstorm_v56_paid_quarter_summary.json`
 - 历史 baseline 只在其原有数据 split、模型、Top K 和硬件口径内比较；字段缺失时标记为不可比，
   不补造数值。
-- validation/dev 用于策略和门限选择；公开 test 只在最终冻结配置上运行一次。
+- validation/dev 用于策略和门限选择；每个里程碑只运行会被该阶段改动影响的 Benchmark。
 - API Key 只从环境变量读取，不进入源码、命令输出、Trace、报告或 Git。
 
 ## 3. 方案选择
 
-采用“分阶段能力开关 + 累积候选系统”的消融方式。每项能力都有独立 feature flag 和 Trace 决策，
-既可单独关闭，也可按 P1、P2、P3、P4 累积启用。一次性大改后再测无法判断提升来源；只做功能不做
-公开评测也无法形成可信质量结论，因此均不采用。
+采用四个累积里程碑递进开发：`P1`、`P1+P2`、`P1+P2+P3`、`P1+P2+P3+P4`。不为每个
+内部能力增加回退开关，不运行单能力排列组合。每个里程碑完成后与现有冻结基线及上一里程碑比较，
+仅运行其代码改动可能影响的 Benchmark，避免无意义的 API 与算力消耗。
 
 ## 4. 系统架构
 
@@ -63,8 +63,9 @@ terms、metadata filters、answer type 和最多三个 subquery。默认采用�
 保存 parent section ID，检索命中后按预算补回父级上下文。第一阶段仍为 BM25 + Dense + RRF，避免在
 召回阶段引入昂贵生成模型。
 
-验收：QASPER validation、SciFact dev 和 PIM 人工歧义集分别比较 raw、rewrite、subquery、
-parent-child 及累积配置，输出 Recall、MRR、nDCG、evidence-set coverage、P50/P95 和 Bootstrap CI。
+验收：将完整 P1 与现有 P0 基线比较，在 QASPER validation、SciFact dev 和 PIM 人工歧义集输出
+Recall、MRR、nDCG、evidence-set coverage、P50/P95 和 Bootstrap CI，不单独发布 rewrite、
+subquery 或 parent-child 的开关消融。
 
 ## 6. P2：选择性重排与证据治理
 
@@ -75,7 +76,7 @@ Cross-Encoder。MMR/coverage selector 优先保留互补证据，避免 Top K �
 和 next action。低置信度时仅允许有限次数的 rewrite、扩大候选或切换来源；达到预算后明确拒答。
 冲突证据保留来源、时间、条件和支持/反对关系，不由 LLM 静默选择一方。
 
-验收：比较 never/always/policy rerank 的质量-P95 Pareto；对无答案、跨域、冲突和多证据样本评估
+验收：将 `P1+P2` 与 P1 比较，报告质量-P95 Pareto；对无答案、跨域、冲突和多证据样本评估
 abstention precision/recall、conflict detection F1 和完整 evidence coverage。
 
 ## 7. P3：答案与引用闭环
@@ -99,34 +100,60 @@ citation precision/recall、claim support rate、unsupported-claim rate 和 abst
 - 发布门禁比较基线与候选系统；质量下降超阈值、P95 超预算或泄漏测试失败时阻断发布。
 - shadow/canary 只实现可复用的离线 replay 与策略接口，不在本地项目伪造真实线上流量。
 
-## 9. 分阶段消融协议
+## 9. 递进评测协议
 
-| 阶段 | 相对上一阶段唯一新增能力 | 主要数据 | 主要指标 |
+| 里程碑 | 累积能力 | 运行的 Benchmark | 不重复运行的 Benchmark |
 | --- | --- | --- | --- |
-| A | SearchPlan rewrite | SciFact dev、QASPER validation、PIM | Recall/MRR/nDCG、歧义错误率 |
-| B | bounded subquery | QASPER validation | evidence-set coverage、P95 |
-| C | structured + parent-child chunk | QASPER validation、本地 PDF | Recall、页码/章节 lineage |
-| D | RerankPolicy | SciFact/QASPER validation | Recall-P95 Pareto、启用率 |
-| E | MMR/coverage | QASPER validation | 完整证据覆盖、重复率 |
-| F | EvidenceAssessment + corrective retrieval | 无答案/跨域/冲突集 | abstention、conflict F1、纠错成功率 |
-| G | AnswerDraft + citation validation | QASPER validation | Answer/Evidence F1、citation、unsupported claim |
-| H | 缓存/ACL/门禁/观测 | 离线 replay 与并发测试 | P50/P95、吞吐、泄漏、恢复 |
+| P1 | SearchPlan、rewrite、subquery、结构化与 parent-child chunk | SciFact Retrieval、QASPER Retrieval、PIM 歧义集 | QASPER Answer、LongMemEval-S |
+| P1+P2 | P1 + RerankPolicy、MMR、EvidenceAssessment、冲突与纠错 | SciFact Retrieval、QASPER Retrieval、无答案/冲突治理集 | LongMemEval-S；QASPER Answer 留到 P3 |
+| P1+P2+P3 | P2 + AnswerDraft、claim-citation validator、局部修复 | QASPER Answer/Evidence、citation 与 unsupported-claim 评测 | SciFact；LongMemEval-S |
+| P1+P2+P3+P4 | P3 + 缓存、ACL、并发、观测与发布门禁 | 离线 replay、并发/P95、ACL 泄漏、恢复与发布门禁 | 质量算法未变化时不重复跑 SciFact/QASPER/LongMemEval-S |
 
-每阶段输出独立 manifest、metrics、predictions、failure cases 和与上一阶段的 delta。最终冻结累积配置后，
-只运行一次 SciFact test、QASPER test 和 LongMemEval-S 完整评测。
+每个里程碑输出独立 manifest、metrics、predictions、failure cases 和与上一里程碑的 delta。只有当某个
+阶段实际修改 Memory 或 Context 算法时才重跑 LongMemEval-S；仅修改 RAG、Reader 或生产治理时沿用
+已有 LongMemEval-S 基线并明确标记“未受影响、未重跑”。
 
-## 10. 错误处理与兼容
+## 10. 具体 Bad Case 验收
+
+除聚合指标外，每个里程碑必须产出可复现的 `CaseDossier`，至少包含：
+
+- `case_id`、来源数据集、问题和 gold evidence/answer。
+- 改进前 Top K、回答、引用、Trace 和失败类型。
+- 根因定位到 ingestion、rewrite、recall、fusion、rerank、coverage、assessment、context、reader、
+  citation 或 runtime 中的具体阶段。
+- 修改的算法、数据结构、prompt 或治理策略，以及该修改为何能针对根因生效。
+- 改进后 Top K、回答、引用、Trace、指标变化和是否真正解决。
+- 未解决部分、适用边界和防止回归的测试名称。
+
+首批固定案例：
+
+| Case | 改进前问题 | 对应里程碑 | 预期解决机制 |
+| --- | --- | --- | --- |
+| PIM/RAM/DRAM 缩写歧义 | “PIM 神经网络抑制”召回存内计算论文 | P1 | SearchPlan 领域解析、must/negative terms、metadata filter |
+| QASPER 词汇不一致 | 问题与证据不用相同词，BM25 漏召回 | P1 | standalone rewrite、bounded subquery、BM25+Dense+RRF |
+| QASPER 多证据遗漏 | Top K 被同章节近重复段落占满 | P1+P2 | parent-child、MMR 与 evidence coverage selector |
+| 文献结论冲突 | 不同实验条件的相反结论被模型擅自合并 | P1+P2 | 条件化 claim、conflict group、来源与时间并列呈现 |
+| 引用不支持结论 | 回答带编号，但对应片段不能推出 claim | P1+P2+P3 | claim-evidence span 校验和局部修复/拒答 |
+| 无答案问题误答 | 仅主题相关就生成肯定答案 | P1+P2+P3 | answerability、abstention 和 unsupported-claim gate |
+| ACL/缓存污染 | 无权限文档进入候选或跨租户缓存 | P1+P2+P3+P4 | 检索前 ACL、tenant cache namespace、泄漏测试 |
+
+最终中文报告按“难点与真实案例 → 改进前现象 → 根因 → 方案 → 改进后证据 → 是否解决”的顺序展示，
+聚合 Benchmark 用于证明整体趋势，Case Dossier 用于证明机制确实解决了具体问题。不得只选择成功案例；
+至少保留一个未完全解决的案例并说明下一步。
+
+## 11. 错误处理与兼容
 
 - 所有 LLM 结构化输出均严格校验 schema；失败类型进入 Trace，并允许一次受控重试。
 - 真实模型、Reranker 或数据集缺失时 fail fast；smoke 使用 hash 必须显式声明。
 - 旧索引继续显式要求迁移；新结构化索引增加 schema revision 和重建命令。
-- 保留 P0 稳定入口；新能力通过配置对象注入，不复制新的版本化模块。
+- 保留 P0 稳定入口；新能力直接演进稳定接口，不复制新的版本化模块，也不为旧算法增加产品回退开关。
 - Memory 只协助恢复用户、会话和文档 identity；科学 claim 仍必须由 Evidence 支持。
 
-## 11. 完成标准
+## 12. 完成标准
 
-1. P1-P4 功能、feature flags、Trace schema 和离线测试全部通过。
-2. 每阶段至少有一个确定性消融测试与一份真实 validation 报告。
-3. 最终三个公开 Benchmark 使用冻结配置运行一次，并与现有 baseline 对齐可比较字段。
+1. P1-P4 功能、Trace schema 和离线测试全部通过。
+2. 四个累积里程碑分别有确定性回归测试；受影响的里程碑具有真实 validation 报告。
+3. 每个里程碑只运行受影响 Benchmark，并与现有 baseline 或上一里程碑对齐可比较字段。
 4. 报告明确提升、退化、置信区间、延迟和 API 成本，不选择性隐藏失败指标。
-5. README、Bad Case 路线图和实施复盘同步更新，生产代码不出现新的内部版本模块。
+5. 至少完成上述七类固定 Case Dossier，并保留至少一个未完全解决的案例。
+6. README、Bad Case 路线图和实施复盘同步更新，生产代码不出现新的内部版本模块。
