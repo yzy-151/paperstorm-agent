@@ -1,0 +1,34 @@
+[
+  {
+    "case_id": "pim-rf-neural-suppression",
+    "query": "PIM 神经网络抑制",
+    "expected_domain": "rf-passive-intermodulation",
+    "expected_must_term": "passive intermodulation",
+    "expected_negative_terms": ["dram", "processing-in-memory"]
+  },
+  {
+    "case_id": "pim-processing-in-memory",
+    "query": "processing-in-memory architecture for transformer inference",
+    "expected_domain": "processing-in-memory"
+  },
+  {
+    "case_id": "pim-explicit-passive-intermodulation",
+    "query": "passive intermodulation suppression in RF front ends",
+    "expected_domain": "rf-passive-intermodulation"
+  },
+  {
+    "case_id": "pim-followup-rewrite",
+    "query": "它有哪些抑制方法",
+    "history": [
+      {"role": "user", "content": "PIM 神经网络抑制"},
+      {"role": "assistant", "content": "我们正在讨论射频无源互调。"}
+    ],
+    "expected_domain": "rf-passive-intermodulation",
+    "standalone_contains": "passive intermodulation"
+  },
+  {
+    "case_id": "pim-ambiguous-acronym",
+    "query": "PIM 有哪些应用",
+    "expected_domain": ""
+  }
+]
