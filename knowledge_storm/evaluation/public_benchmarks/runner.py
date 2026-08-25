@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timezone
 
 from ...retrieval import HybridPaperIndex
+from ...badcase_reporting import validate_milestone
 from ...retrieval_pipeline import RetrievalPipeline, RetrievalRequest
 from .metrics import retrieval_metrics
 from .report import write_benchmark_artifacts
@@ -47,6 +48,7 @@ def run_retrieval_benchmark(
     output_dir=None,
     cache_state="warm_query_after_cold_index",
     scope_field=None,
+    milestone=None,
 ):
     top_k = max(1, int(top_k))
     cases = tuple(dataset.cases)
@@ -142,6 +144,8 @@ def run_retrieval_benchmark(
             "Latency is machine-specific and must not be presented as an online SLA.",
         ],
     }
+    if milestone is not None:
+        manifest["milestone"] = validate_milestone(milestone)
     report = {
         "benchmark": dataset.name,
         "case_count": len(cases),
@@ -149,6 +153,8 @@ def run_retrieval_benchmark(
         "manifest": manifest,
         "predictions": predictions,
     }
+    if milestone is not None:
+        report["milestone"] = manifest["milestone"]
     if output_dir is not None:
         write_benchmark_artifacts(output_dir, manifest, report, predictions, bad_cases)
     return report
