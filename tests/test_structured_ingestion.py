@@ -1,8 +1,10 @@
 import json
+import os
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 class StructuredIngestionTest(unittest.TestCase):
@@ -457,7 +459,7 @@ class ParentChildRetrievalTest(unittest.TestCase):
         result["metadata"]["nested"]["value"] = 99
         self.assertEqual(index.chunks[0]["metadata"]["nested"]["value"], 1)
 
-    def test_concurrent_saves_use_unique_temporary_files(self):
+    def test_concurrent_saves_are_serialized_and_survive_stress(self):
         from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
 
         provider = HashEmbeddingProvider()
@@ -466,21 +468,87 @@ class ParentChildRetrievalTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "index.json"
 
-            def save():
+            def save(count):
                 try:
-                    index.save(path)
+                    for _ in range(count):
+                        index.save(path)
                 except Exception as exc:
                     errors.append(exc)
 
-            threads = [threading.Thread(target=save) for _ in range(4)]
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join()
+            for _round in range(3):
+                threads = [
+                    threading.Thread(target=save, args=(13 if index < 4 else 12,))
+                    for index in range(8)
+                ]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
             loaded = HybridPaperIndex.load(path, provider)
 
         self.assertEqual(errors, [])
         self.assertEqual(loaded.chunks[0]["chunk_id"], "c")
+
+    def test_save_retries_windows_permission_error_and_cleans_sidecar(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        provider = HashEmbeddingProvider()
+        index = HybridPaperIndex([{"chunk_id": "c", "content": "needle"}], provider)
+        real_replace = os.replace
+        calls = {"count": 0}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "index.json"
+
+            def flaky_replace(source, target):
+                calls["count"] += 1
+                self.assertTrue(Path(str(path) + ".lock").exists())
+                if calls["count"] < 3:
+                    raise PermissionError("sharing violation")
+                return real_replace(source, target)
+
+            with mock.patch("knowledge_storm.retrieval.os.replace", side_effect=flaky_replace):
+                index.save(path, replace_attempts=3, replace_backoff_seconds=0)
+
+            loaded = HybridPaperIndex.load(path, provider)
+            self.assertEqual(loaded.chunks[0]["chunk_id"], "c")
+            self.assertFalse(Path(str(path) + ".lock").exists())
+        self.assertEqual(calls["count"], 3)
+
+    def test_save_recovers_stale_sidecar_lock(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        provider = HashEmbeddingProvider()
+        index = HybridPaperIndex([{"chunk_id": "c", "content": "needle"}], provider)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "index.json"
+            sidecar = Path(str(path.resolve()) + ".lock")
+            sidecar.write_text("abandoned-owner", encoding="utf-8")
+            index.save(path, stale_lock_seconds=0)
+            loaded = HybridPaperIndex.load(path, provider)
+
+        self.assertEqual(loaded.chunks[0]["chunk_id"], "c")
+        self.assertFalse(sidecar.exists())
+
+    def test_save_preserves_final_replace_error_and_cleans_files(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        index = HybridPaperIndex(
+            [{"chunk_id": "c", "content": "needle"}], HashEmbeddingProvider()
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "index.json"
+            with mock.patch(
+                "knowledge_storm.retrieval.os.replace",
+                side_effect=PermissionError("final sharing violation"),
+            ):
+                with self.assertRaisesRegex(PermissionError, "final sharing violation"):
+                    index.save(
+                        path,
+                        replace_attempts=2,
+                        replace_backoff_seconds=0,
+                    )
+            self.assertFalse(Path(str(path.resolve()) + ".lock").exists())
+            self.assertEqual(list(Path(temp_dir).glob("index.json.*.tmp")), [])
 
     def test_index_and_load_limits_fail_before_large_allocation(self):
         from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
@@ -524,6 +592,86 @@ class ParentChildRetrievalTest(unittest.TestCase):
             path.write_text("{}" + " " * 20, encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "file size"):
                 HybridPaperIndex.load(path, provider, max_file_bytes=10)
+
+    def test_node_limits_cover_title_metadata_bytes_and_nonfinite_json(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        provider = HashEmbeddingProvider(dim=2)
+        with self.assertRaisesRegex(ValueError, "node character"):
+            HybridPaperIndex(
+                [{"chunk_id": "a", "title": "T" * 200, "content": "x"}],
+                provider,
+                max_node_chars=100,
+            )
+        with self.assertRaisesRegex(ValueError, "node character"):
+            HybridPaperIndex(
+                [{"chunk_id": "a", "content": "x", "metadata": {"nested": "M" * 200}}],
+                provider,
+                max_node_chars=100,
+            )
+        with self.assertRaisesRegex(ValueError, "node byte"):
+            HybridPaperIndex(
+                [{"chunk_id": "a", "content": "中文中文中文"}],
+                provider,
+                max_node_chars=1000,
+                max_node_bytes=20,
+            )
+        with self.assertRaisesRegex(ValueError, "strict JSON"):
+            HybridPaperIndex(
+                [{"chunk_id": "a", "content": "x", "metadata": {"score": float("nan")}}],
+                provider,
+            )
+
+    def test_hf_tokenizer_codec_and_provider_auto_wiring(self):
+        from knowledge_storm.retrieval import (
+            HuggingFaceTokenizerCodec,
+            HybridPaperIndex,
+            SentenceTransformerProvider,
+        )
+
+        class FakeTokenizer:
+            def __init__(self):
+                self.encode_options = None
+                self.decode_options = None
+
+            def encode(self, text, **options):
+                self.encode_options = options
+                return [ord(char) for char in text]
+
+            def decode(self, tokens, **options):
+                self.decode_options = options
+                return "".join(chr(token) for token in tokens)
+
+        tokenizer = FakeTokenizer()
+        codec = HuggingFaceTokenizerCodec(tokenizer)
+        self.assertEqual(codec.decode(codec.encode("中文abc")[:3]), "中文a")
+        self.assertEqual(tokenizer.encode_options, {"add_special_tokens": False})
+        self.assertFalse(tokenizer.decode_options["skip_special_tokens"])
+
+        sentence_provider = SentenceTransformerProvider()
+        sentence_provider.model = type("FakeModel", (), {"tokenizer": tokenizer})()
+        sentence_provider._ensure_model()
+        self.assertIsInstance(sentence_provider.token_codec, HuggingFaceTokenizerCodec)
+
+        class LazyEmbedding:
+            name = "lazy-codec"
+            dim = 2
+            normalize = True
+            token_codec = None
+
+            def embed(self, texts):
+                self.token_codec = codec
+                return [[1.0, 0.0] for _ in texts]
+
+            def embed_query(self, _text):
+                return [1.0, 0.0]
+
+        parent = {"node_id": "p", "node_type": "section", "content": "中文abcdef"}
+        child = {"chunk_id": "c", "node_id": "c", "node_type": "passage", "parent_id": "p", "content": "needle"}
+        index = HybridPaperIndex([parent, child], LazyEmbedding())
+        result = index.search("needle", mode="bm25", top_k=1, parent_budget_tokens=3)[0]
+        self.assertIs(index.token_codec, codec)
+        self.assertEqual(result["parent_context"], "中文a")
 
 
 if __name__ == "__main__":

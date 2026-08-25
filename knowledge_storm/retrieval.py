@@ -5,10 +5,78 @@ import math
 import os
 import re
 import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
+
+
+_SAVE_LOCK_REGISTRY = {}
+_SAVE_LOCK_REGISTRY_GUARD = threading.Lock()
+
+
+def _save_lock_for(path):
+    key = str(Path(path).resolve())
+    with _SAVE_LOCK_REGISTRY_GUARD:
+        lock = _SAVE_LOCK_REGISTRY.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _SAVE_LOCK_REGISTRY[key] = lock
+        return lock
+
+
+def _acquire_sidecar_lock(path, timeout_seconds, stale_seconds):
+    deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+    token = "{0}:{1}:{2}".format(os.getpid(), threading.get_ident(), time.time_ns())
+    encoded = token.encode("utf-8")
+    while True:
+        try:
+            descriptor = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(descriptor, encoded)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            return token
+        except FileExistsError:
+            try:
+                age = time.time() - path.stat().st_mtime
+                existing = path.read_text(encoding="utf-8")
+                if age > float(stale_seconds) and existing == path.read_text(encoding="utf-8"):
+                    path.unlink()
+                    continue
+            except FileNotFoundError:
+                continue
+            except OSError:
+                pass
+            if time.monotonic() >= deadline:
+                raise TimeoutError("timed out waiting for index sidecar lock")
+            time.sleep(0.01)
+
+
+def _release_sidecar_lock(path, token):
+    try:
+        if path.read_text(encoding="utf-8") == token:
+            path.unlink()
+    except OSError:
+        pass
+
+
+def _replace_with_retry(source, target, attempts, backoff_seconds):
+    attempts = max(1, int(attempts))
+    for attempt in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except OSError as exc:
+            sharing_violation = isinstance(exc, PermissionError) or getattr(
+                exc, "winerror", None
+            ) in {5, 32, 33}
+            if not sharing_violation or attempt + 1 >= attempts:
+                raise
+            time.sleep(max(0.0, float(backoff_seconds)) * (attempt + 1))
 
 
 def _hash_embedding(text: str, dim: int):
@@ -95,6 +163,7 @@ class SentenceTransformerProvider:
         self.device = device
         self.model = None
         self.dim = 0
+        self.token_codec = None
 
     def _ensure_model(self):
         if self.model is None:
@@ -118,6 +187,9 @@ class SentenceTransformerProvider:
                 self.model.get_sentence_embedding_dimension,
             )
             self.dim = int(dimension_getter())
+        tokenizer = getattr(self.model, "tokenizer", None)
+        if tokenizer is not None and self.token_codec is None:
+            self.token_codec = HuggingFaceTokenizerCodec(tokenizer)
         return self.model
 
     def embed(self, texts: Iterable[str]):
@@ -146,6 +218,27 @@ class HashEmbeddingProvider:
 
     def embed_query(self, text: str):
         return self.embed([text])[0]
+
+
+class HuggingFaceTokenizerCodec:
+    """Minimal token-budget adapter around a Hugging Face tokenizer."""
+
+    def __init__(self, tokenizer):
+        if not callable(getattr(tokenizer, "encode", None)) or not callable(
+            getattr(tokenizer, "decode", None)
+        ):
+            raise ValueError("Hugging Face tokenizer must provide encode and decode")
+        self.tokenizer = tokenizer
+
+    def encode(self, text):
+        return self.tokenizer.encode(str(text or ""), add_special_tokens=False)
+
+    def decode(self, tokens):
+        return self.tokenizer.decode(
+            list(tokens),
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
 
 
 def build_embedding_provider(
@@ -245,6 +338,7 @@ class HybridPaperIndex:
     node_schema = "structured-parent-child-v1"
     default_max_nodes = 250_000
     default_max_node_chars = 2_000_000
+    default_max_node_bytes = 8_000_000
     default_max_embedding_values = 100_000_000
     default_max_file_bytes = 512 * 1024 * 1024
 
@@ -258,19 +352,25 @@ class HybridPaperIndex:
         token_codec=None,
         max_nodes=default_max_nodes,
         max_node_chars=default_max_node_chars,
+        max_node_bytes=default_max_node_bytes,
         max_embedding_values=default_max_embedding_values,
     ):
         self.max_nodes = int(max_nodes)
         self.max_node_chars = int(max_node_chars)
+        self.max_node_bytes = int(max_node_bytes)
         self.max_embedding_values = int(max_embedding_values)
-        if min(self.max_nodes, self.max_node_chars, self.max_embedding_values) <= 0:
+        if min(
+            self.max_nodes,
+            self.max_node_chars,
+            self.max_node_bytes,
+            self.max_embedding_values,
+        ) <= 0:
             raise ValueError("index resource limits must be positive")
-        if token_codec is not None and not (
-            callable(getattr(token_codec, "encode", None))
-            and callable(getattr(token_codec, "decode", None))
-        ):
-            raise ValueError("token_codec must provide encode and decode")
-        self.token_codec = token_codec
+        self.token_codec = self._validated_token_codec(
+            token_codec
+            if token_codec is not None
+            else getattr(embedding_provider, "token_codec", None)
+        )
         supplied_nodes = self._bounded_node_copies(chunks or [], self.max_nodes)
         parent_nodes = [
             item for item in supplied_nodes if item.get("node_type") in {"document", "section"}
@@ -291,6 +391,7 @@ class HybridPaperIndex:
             self._normalize_chunk(copy.deepcopy(item), index)
             for index, item in enumerate(retrievable_nodes)
         ]
+        self._validate_node_payloads(list(self.parents.values()) + self.chunks)
         self.embedding_provider = embedding_provider
         self._tokens = [
             multilingual_tokenize(self._search_text(item)) for item in self.chunks
@@ -317,6 +418,10 @@ class HybridPaperIndex:
             )
         else:
             self.embeddings = embeddings
+        if self.token_codec is None:
+            self.token_codec = self._validated_token_codec(
+                getattr(embedding_provider, "token_codec", None)
+            )
         embedding_matrix, dimension = self._validated_embedding_matrix(
             self.embeddings, embedding_provider
         )
@@ -529,41 +634,62 @@ class HybridPaperIndex:
             ranked.append(item)
         return ranked
 
-    def save(self, path):
+    def save(
+        self,
+        path,
+        lock_timeout_seconds=10.0,
+        stale_lock_seconds=60.0,
+        replace_attempts=5,
+        replace_backoff_seconds=0.02,
+    ):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._refresh_manifest_integrity()
-        payload = json.dumps(
-            {
-                "manifest": self.manifest,
-                "chunks": self.chunks,
-                "parents": list(self.parents.values()),
-                "embeddings": self.embeddings,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=str(path.parent),
-                prefix=path.name + ".",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
-                temporary = Path(handle.name)
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        finally:
-            if temporary is not None:
-                try:
-                    temporary.unlink(missing_ok=True)
-                except OSError:
-                    pass
+        resolved_path = path.resolve()
+        process_lock = _save_lock_for(resolved_path)
+        sidecar = Path(str(resolved_path) + ".lock")
+        with process_lock:
+            token = _acquire_sidecar_lock(
+                sidecar, lock_timeout_seconds, stale_lock_seconds
+            )
+            temporary = None
+            try:
+                self._refresh_manifest_integrity()
+                payload = json.dumps(
+                    {
+                        "manifest": self.manifest,
+                        "chunks": self.chunks,
+                        "parents": list(self.parents.values()),
+                        "embeddings": self.embeddings,
+                    },
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    indent=2,
+                )
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=str(resolved_path.parent),
+                    prefix=resolved_path.name + ".",
+                    suffix=".tmp",
+                    delete=False,
+                ) as handle:
+                    temporary = Path(handle.name)
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                _replace_with_retry(
+                    temporary,
+                    resolved_path,
+                    replace_attempts,
+                    replace_backoff_seconds,
+                )
+            finally:
+                if temporary is not None:
+                    try:
+                        temporary.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                _release_sidecar_lock(sidecar, token)
         return path
 
     @classmethod
@@ -574,6 +700,7 @@ class HybridPaperIndex:
         token_codec=None,
         max_nodes=default_max_nodes,
         max_node_chars=default_max_node_chars,
+        max_node_bytes=default_max_node_bytes,
         max_embedding_values=default_max_embedding_values,
         max_file_bytes=default_max_file_bytes,
     ):
@@ -656,6 +783,7 @@ class HybridPaperIndex:
             token_codec=token_codec,
             max_nodes=max_nodes,
             max_node_chars=max_node_chars,
+            max_node_bytes=max_node_bytes,
             max_embedding_values=max_embedding_values,
         )
 
@@ -711,11 +839,7 @@ class HybridPaperIndex:
         return output
 
     def _validate_nodes(self, parents, chunks):
-        for item in parents + chunks:
-            content = str(item.get("content") or item.get("text") or "")
-            retrieval_content = str(item.get("retrieval_content") or content)
-            if max(len(content), len(retrieval_content)) > self.max_node_chars:
-                raise ValueError("index node character count exceeds max_node_chars")
+        self._validate_node_payloads(parents + chunks)
         parent_ids = [str(item.get("node_id") or "") for item in parents]
         if any(not value for value in parent_ids):
             raise ValueError("parent node_id must be non-empty")
@@ -739,6 +863,33 @@ class HybridPaperIndex:
             raise ValueError("duplicate child node_id")
         if set(parent_ids) & set(child_node_ids):
             raise ValueError("parent and child node_id collision")
+
+    def _validate_node_payloads(self, nodes):
+        for item in nodes:
+            try:
+                serialized = json.dumps(
+                    item,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("index node must be strict JSON") from exc
+            if len(serialized) > self.max_node_chars:
+                raise ValueError("index node character count exceeds max_node_chars")
+            if len(serialized.encode("utf-8")) > self.max_node_bytes:
+                raise ValueError("index node byte count exceeds max_node_bytes")
+
+    @staticmethod
+    def _validated_token_codec(codec):
+        if codec is None:
+            return None
+        if not (
+            callable(getattr(codec, "encode", None))
+            and callable(getattr(codec, "decode", None))
+        ):
+            raise ValueError("token_codec must provide encode and decode")
+        return codec
 
     def _validated_embedding_matrix(self, embeddings, provider):
         if not isinstance(embeddings, (list, tuple, np.ndarray)):
