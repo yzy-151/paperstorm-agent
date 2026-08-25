@@ -12,7 +12,9 @@ from pathlib import Path
 
 
 MILESTONES = ("P1", "P1+P2", "P1+P2+P3", "P1+P2+P3+P4")
-_SENSITIVE_KEY = re.compile(r"(?:^|_)(?:api_?)?(?:secret|token|key)(?:$|_)", re.I)
+_SENSITIVE_KEY = re.compile(
+    r"(?:^|_)(?:api_?)?(?:secret|token|key|password)(?:$|_)", re.I
+)
 _SENSITIVE_OPTION = re.compile(
     r"(?:--?(?:api[-_]?key|access[-_]?token|secret|token))(?:\s+|=)\S+",
     re.I,
@@ -41,12 +43,15 @@ class CaseDossier:
         return json.loads(json.dumps(asdict(self), ensure_ascii=False))
 
 
-def write_case_dossiers_jsonl(path, dossiers):
+def write_case_dossiers(path, dossiers):
     lines = []
     for dossier in dossiers:
         row = dossier.to_dict() if isinstance(dossier, CaseDossier) else dossier
         lines.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
     _atomic_write_text(path, "\n".join(lines) + ("\n" if lines else ""))
+
+
+write_case_dossiers_jsonl = write_case_dossiers
 
 
 def build_milestone_manifest(
@@ -70,10 +75,8 @@ def build_milestone_manifest(
     manifest = {
         "milestone": milestone,
         "git_sha": str(git_sha),
-        "dataset": {
-            "path": str(dataset_path),
-            "digest": str(dataset_digest or _path_digest(path)),
-        },
+        "dataset_path": str(dataset_path),
+        "dataset_digest": str(dataset_digest or _path_digest(path)),
         "split": split,
         "models": models,
         "top_k": int(top_k),
