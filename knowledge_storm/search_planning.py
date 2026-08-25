@@ -56,11 +56,11 @@ _FOLLOWUP_REFERENCE = re.compile(
     re.I,
 )
 _ZERO_PRONOUN_FOLLOWUP = re.compile(
-    r"^(?:"
-    r"有(?:哪些|什么)(?:抑制方法|方法|危害|原因|影响|用途|优势|缺点)"
-    r"|如何(?:降低|抑制|减少|避免|解决|改善|优化)"
-    r"|怎么(?:降低|抑制|减少|避免|解决|改善|优化)"
-    r")",
+    r"(?:"
+    r"有(?:哪些|什么)(?:抑制方法|危害|原因|用途)"
+    r"|如何(?:降低|抑制|缓解|解决|评估|测量)"
+    r"|怎么(?:降低|抑制|缓解|解决|评估|测量)"
+    r")(?:呢|吗|[？?])?",
     re.I,
 )
 
@@ -268,7 +268,7 @@ def _latest_explicit_domain(history: Sequence[Dict[str, str]]) -> str:
 def _looks_like_followup(query: str) -> bool:
     query = query.strip()
     return bool(
-        _FOLLOWUP_REFERENCE.search(query) or _ZERO_PRONOUN_FOLLOWUP.search(query)
+        _FOLLOWUP_REFERENCE.search(query) or _ZERO_PRONOUN_FOLLOWUP.fullmatch(query)
     )
 
 

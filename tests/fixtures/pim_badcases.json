@@ -49,6 +49,16 @@
     "expected_standalone": "它有哪些用途"
   },
   {
+    "case_id": "pim-zero-pronoun-explicit-new-entity",
+    "query": "如何优化 Python 异步编程",
+    "history": [
+      {"role": "user", "content": "PIM 神经网络抑制"},
+      {"role": "assistant", "content": "这里讨论的是射频无源互调。"}
+    ],
+    "expected_domain": "",
+    "expected_standalone": "如何优化 Python 异步编程"
+  },
+  {
     "case_id": "pim-ambiguous-acronym",
     "query": "PIM 有哪些应用",
     "expected_domain": ""

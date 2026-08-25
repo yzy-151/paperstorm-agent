@@ -86,6 +86,19 @@ class SearchPlanTest(unittest.TestCase):
         self.assertEqual(plan.domain, "")
         self.assertEqual(plan.standalone_query, "它有哪些用途")
 
+    def test_explicit_new_entity_is_not_treated_as_zero_pronoun_followup(self):
+        from knowledge_storm.search_planning import SearchPlanner
+
+        history = [
+            {"role": "user", "content": "PIM 神经网络抑制"},
+            {"role": "assistant", "content": "这里的 PIM 是射频无源互调。"},
+        ]
+
+        plan = SearchPlanner().plan("如何优化 Python 异步编程", history=history)
+
+        self.assertEqual(plan.domain, "")
+        self.assertEqual(plan.standalone_query, "如何优化 Python 异步编程")
+
     def test_llm_invalid_json_then_valid_json_retries_once(self):
         from knowledge_storm.search_planning import SearchPlanner
 
