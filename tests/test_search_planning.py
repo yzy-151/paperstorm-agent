@@ -6,6 +6,20 @@ from pathlib import Path
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "pim_badcases.json"
 
 
+def valid_plan_payload(query="graph rag"):
+    return {
+        "original_query": query,
+        "standalone_query": query,
+        "domain": "information-retrieval",
+        "entities": ["Graph RAG"],
+        "must_terms": ["graph retrieval"],
+        "negative_terms": [],
+        "filters": {"year_from": 2023},
+        "subqueries": [query],
+        "answer_type": "survey",
+    }
+
+
 class SearchPlanTest(unittest.TestCase):
     def test_pim_neural_suppression_is_disambiguated_as_rf(self):
         from knowledge_storm.search_planning import SearchPlanner
@@ -30,6 +44,22 @@ class SearchPlanTest(unittest.TestCase):
 
         self.assertEqual(plan.domain, "processing-in-memory")
         self.assertNotIn("passive intermodulation", plan.must_terms)
+
+    def test_current_explicit_domain_overrides_followup_history(self):
+        from knowledge_storm.search_planning import SearchPlanner
+
+        history = [
+            {
+                "role": "user",
+                "content": "processing-in-memory accelerator for DRAM",
+            },
+            {"role": "assistant", "content": "正在讨论存内计算。"},
+        ]
+
+        plan = SearchPlanner().plan("这种PIM无源互调抑制方法", history=history)
+
+        self.assertEqual(plan.domain, "rf-passive-intermodulation")
+        self.assertEqual(plan.standalone_query, "这种PIM无源互调抑制方法")
 
     def test_followup_rewrite_uses_explicit_history_and_keeps_original(self):
         from knowledge_storm.search_planning import SearchPlanner
@@ -164,14 +194,92 @@ class SearchPlanTest(unittest.TestCase):
 
         self.assertEqual(captured.exception.error_type, "invalid_structured_output")
 
+    def test_llm_adapter_accepts_supported_response_shapes(self):
+        from knowledge_storm.search_planning import SearchPlanner
+
+        payload = json.dumps(valid_plan_payload())
+
+        class Message:
+            def __init__(self, content):
+                self.content = content
+
+        class Choice:
+            def __init__(self, content):
+                self.message = Message(content)
+
+        class Completion:
+            def __init__(self, content):
+                self.choices = [Choice(content)]
+
+        responses = (
+            payload,
+            [payload],
+            {"choices": [{"message": {"content": payload}}]},
+            Completion(payload),
+            Message(payload),
+        )
+        for response in responses:
+            with self.subTest(response_type=type(response).__name__):
+                plan = SearchPlanner(llm=lambda _prompt, value=response: value).plan(
+                    "graph rag"
+                )
+                self.assertEqual(plan.domain, "information-retrieval")
+
+    def test_llm_adapter_rejects_empty_or_ambiguous_output_lists(self):
+        from knowledge_storm.search_planning import PlanningError, SearchPlanner
+
+        payload = json.dumps(valid_plan_payload())
+        for response in ([], [payload, payload]):
+            with self.subTest(response=response):
+                calls = []
+
+                def llm(_prompt, value=response):
+                    calls.append(1)
+                    return value
+
+                with self.assertRaises(PlanningError) as captured:
+                    SearchPlanner(llm=llm).plan("graph rag")
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(
+                    captured.exception.error_type, "invalid_structured_output"
+                )
+
+    def test_provider_errors_are_typed_not_retried_and_preserve_cause(self):
+        from knowledge_storm.search_planning import PlanningError, SearchPlanner
+
+        class RateLimitError(RuntimeError):
+            status_code = 429
+
+        class AuthenticationError(RuntimeError):
+            status_code = 401
+
+        cases = (
+            (TimeoutError("slow"), "provider_timeout"),
+            (RateLimitError("limited"), "provider_rate_limited"),
+            (AuthenticationError("denied"), "provider_auth_error"),
+            (RuntimeError("offline"), "provider_error"),
+        )
+        for provider_error, expected_type in cases:
+            with self.subTest(expected_type=expected_type):
+                calls = []
+
+                def llm(_prompt, error=provider_error):
+                    calls.append(1)
+                    raise error
+
+                with self.assertRaises(PlanningError) as captured:
+                    SearchPlanner(llm=llm).plan("graph rag")
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(captured.exception.error_type, expected_type)
+                self.assertIs(captured.exception.__cause__, provider_error)
+
     def test_filters_are_not_shared_and_must_be_json_safe(self):
         from knowledge_storm.search_planning import SearchPlan
 
         first = SearchPlan(original_query="a", standalone_query="a")
         second = SearchPlan(original_query="b", standalone_query="b")
-        first.filters["year"] = 2024
-
-        self.assertEqual(second.filters, {})
+        self.assertIsNot(first.filters, second.filters)
+        self.assertEqual(dict(second.filters), {})
         self.assertEqual(
             SearchPlan.from_mapping(first.to_dict()).to_dict(), first.to_dict()
         )
@@ -181,6 +289,66 @@ class SearchPlanTest(unittest.TestCase):
                 standalone_query="a",
                 filters={"bad": object()},
             )
+
+    def test_filters_are_deeply_immutable_but_to_dict_is_mutable(self):
+        from knowledge_storm.search_planning import SearchPlan
+
+        source = {"metadata": {"years": [2023, 2024], "open": True}}
+        plan = SearchPlan(
+            original_query="a", standalone_query="a", filters=source
+        )
+        source["metadata"]["years"].append(2025)
+
+        with self.assertRaises(TypeError):
+            plan.filters["new"] = "value"
+        with self.assertRaises(TypeError):
+            plan.filters["metadata"]["new"] = "value"
+        with self.assertRaises(TypeError):
+            plan.filters["metadata"]["years"][0] = 2022
+        self.assertEqual(plan.filters["metadata"]["years"], (2023, 2024))
+
+        detached = plan.to_dict()
+        detached["filters"]["metadata"]["years"].append(2025)
+        detached["filters"]["new"] = "value"
+        self.assertEqual(plan.filters["metadata"]["years"], (2023, 2024))
+
+    def test_history_budget_keeps_recent_messages_and_marks_them_untrusted(self):
+        from knowledge_storm.search_planning import (
+            DEFAULT_HISTORY_MAX_CHARS_PER_MESSAGE,
+            DEFAULT_HISTORY_MAX_MESSAGES,
+            DEFAULT_HISTORY_MAX_TOTAL_CHARS,
+            SearchPlanner,
+        )
+
+        self.assertGreater(DEFAULT_HISTORY_MAX_MESSAGES, 0)
+        self.assertGreater(DEFAULT_HISTORY_MAX_CHARS_PER_MESSAGE, 0)
+        self.assertGreater(DEFAULT_HISTORY_MAX_TOTAL_CHARS, 0)
+        prompts = []
+
+        def llm(prompt):
+            prompts.append(prompt)
+            return json.dumps(valid_plan_payload("current query"))
+
+        SearchPlanner(
+            llm=llm,
+            history_max_messages=2,
+            history_max_chars_per_message=12,
+            history_max_total_chars=18,
+        ).plan(
+            "current query",
+            history=[
+                {"role": "user", "content": "PIM 神经网络抑制 OLD_TOPIC"},
+                {"role": "assistant", "content": "OLD_ASSISTANT"},
+                {"role": "user", "content": "RECENT_USER_123456"},
+                {"role": "assistant", "content": "RECENT_ASSISTANT_123456"},
+            ],
+        )
+
+        prompt = prompts[0]
+        self.assertNotIn("OLD_TOPIC", prompt)
+        self.assertNotIn("OLD_ASSISTANT", prompt)
+        self.assertIn("RECENT", prompt)
+        self.assertIn("untrusted data", prompt.lower())
 
     def test_fixture_cases_capture_required_pim_badcases(self):
         from knowledge_storm.search_planning import SearchPlanner
