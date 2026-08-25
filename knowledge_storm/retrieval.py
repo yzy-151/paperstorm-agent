@@ -231,11 +231,16 @@ class IndexMigrationRequiredError(RuntimeError):
     """Raised when a legacy index must be rebuilt instead of silently reused."""
 
 
+class IndexIntegrityError(ValueError):
+    """Raised when an index payload disagrees with its manifest."""
+
+
 class HybridPaperIndex:
     """Persistent BM25 + dense index with RRF and optional Cross-Encoder."""
 
     schema_version = "paperstorm-hybrid-index"
     schema_revision = 3
+    node_schema = "structured-parent-child-v1"
 
     def __init__(
         self,
@@ -288,18 +293,15 @@ class HybridPaperIndex:
         dimension = int(getattr(embedding_provider, "dim", 0) or 0)
         if not dimension and self.embeddings:
             dimension = len(self.embeddings[0])
-        default_manifest = {
-            "schema_version": self.schema_version,
-            "schema_revision": self.schema_revision,
-            "embedding_model": str(getattr(embedding_provider, "name", "unknown")),
-            "embedding_dimension": dimension,
-            "normalized": bool(getattr(embedding_provider, "normalize", False)),
-            "chunk_count": len(self.chunks),
-            "node_schema": "structured-parent-child-v1",
-            "retrievable_count": len(self.chunks),
-            "parent_count": len(self.parents),
-        }
-        self.manifest = dict(manifest or default_manifest)
+        self.manifest = dict(manifest or {})
+        self.manifest.setdefault(
+            "embedding_model", str(getattr(embedding_provider, "name", "unknown"))
+        )
+        self.manifest.setdefault("embedding_dimension", dimension)
+        self.manifest.setdefault(
+            "normalized", bool(getattr(embedding_provider, "normalize", False))
+        )
+        self._refresh_manifest_integrity()
 
     def search(
         self,
@@ -493,6 +495,7 @@ class HybridPaperIndex:
     def save(self, path):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        self._refresh_manifest_integrity()
         payload = json.dumps(
             {
                 "manifest": self.manifest,
@@ -522,10 +525,49 @@ class HybridPaperIndex:
             raise IndexMigrationRequiredError(
                 "legacy retrieval index detected; rebuild the knowledge base index"
             )
+        if "schema_revision" not in manifest:
+            raise IndexMigrationRequiredError(
+                "retrieval index revision is missing; rebuild the knowledge base index"
+            )
         if int(manifest.get("schema_revision") or 0) != cls.schema_revision:
             raise IndexMigrationRequiredError(
                 "unsupported retrieval index revision; rebuild the knowledge base index"
             )
+        if manifest.get("node_schema") != cls.node_schema:
+            raise IndexMigrationRequiredError(
+                "unsupported retrieval node schema; rebuild the knowledge base index"
+            )
+        chunks = payload.get("chunks") or []
+        parents = payload.get("parents") or []
+        if not isinstance(chunks, list) or not isinstance(parents, list):
+            raise IndexIntegrityError("index integrity error: stores must be lists")
+        if any(item.get("node_type") in {"document", "section"} for item in chunks):
+            raise IndexIntegrityError(
+                "index integrity error: parent node found in retrievable store"
+            )
+        parent_ids = [str(item.get("node_id") or "") for item in parents]
+        if any(not value for value in parent_ids) or len(set(parent_ids)) != len(parent_ids):
+            raise IndexIntegrityError(
+                "index integrity error: parent store contains missing or duplicate node_id"
+            )
+        actual_counts = {
+            "chunk_count": len(chunks),
+            "retrievable_count": len(chunks),
+            "parent_count": len(parent_ids),
+        }
+        for field, actual in actual_counts.items():
+            try:
+                declared = int(manifest.get(field))
+            except (TypeError, ValueError):
+                raise IndexIntegrityError(
+                    "index integrity error: manifest {0} is invalid".format(field)
+                )
+            if declared != actual:
+                raise IndexIntegrityError(
+                    "index integrity error: manifest {0}={1}, payload={2}".format(
+                        field, declared, actual
+                    )
+                )
         actual_name = str(getattr(embedding_provider, "name", "unknown"))
         actual_dim = int(getattr(embedding_provider, "dim", 0) or 0)
         if manifest.get("embedding_model") != actual_name:
@@ -545,11 +587,23 @@ class HybridPaperIndex:
         ):
             raise ValueError("embedding normalization mismatch")
         return cls(
-            payload.get("chunks") or [],
+            chunks,
             embedding_provider=embedding_provider,
             embeddings=payload.get("embeddings") or [],
             manifest=manifest,
-            parents=payload.get("parents") or [],
+            parents=parents,
+        )
+
+    def _refresh_manifest_integrity(self):
+        self.manifest.update(
+            {
+                "schema_version": self.schema_version,
+                "schema_revision": self.schema_revision,
+                "node_schema": self.node_schema,
+                "chunk_count": len(self.chunks),
+                "retrievable_count": len(self.chunks),
+                "parent_count": len(self.parents),
+            }
         )
 
     @staticmethod

@@ -88,6 +88,37 @@ class StructuredIngestionTest(unittest.TestCase):
         self.assertEqual([node["content"] for node in formulas], [formula])
         self.assertEqual(formulas[0]["metadata"]["page_number"], 7)
 
+    def test_extracts_embedded_and_cross_page_display_formulas(self):
+        from knowledge_storm.document_ingestion import ingest_document
+
+        nodes = ingest_document(
+            "paper-formulas",
+            [
+                {
+                    "page_number": 1,
+                    "text": "1 Method\nBefore $$x+y$$ after\nBefore \\[a+b\\] after\nBefore $$x+",
+                },
+                {"page_number": 2, "text": "y$$ after and $z=1$ done"},
+            ],
+            chunk_tokens=2,
+            overlap_tokens=0,
+        )
+        formulas = [node for node in nodes if node["node_type"] == "formula"]
+        passages = [node for node in nodes if node["node_type"] == "passage"]
+
+        self.assertEqual(
+            [node["content"] for node in formulas],
+            ["$$x+y$$", "\\[a+b\\]", "$$x+\ny$$", "$z=1$"],
+        )
+        cross_page = formulas[2]
+        self.assertEqual(cross_page["metadata"]["page_number"], 1)
+        self.assertEqual(cross_page["metadata"]["page_start"], 1)
+        self.assertEqual(cross_page["metadata"]["page_end"], 2)
+        passage_text = "\n".join(node["content"] for node in passages)
+        self.assertNotIn("$$", passage_text)
+        self.assertNotIn("\\[", passage_text)
+        self.assertNotIn("\\]", passage_text)
+
     def test_chunk_pdf_pages_keeps_legacy_shape(self):
         from knowledge_storm.document_ingestion import chunk_pdf_pages
 
@@ -100,6 +131,51 @@ class StructuredIngestionTest(unittest.TestCase):
         self.assertTrue(chunks)
         self.assertNotIn("node_id", chunks[0])
         self.assertNotIn("node_type", chunks[0])
+
+    def test_chunk_pdf_pages_preserves_legacy_heading_snapshot(self):
+        from knowledge_storm.document_ingestion import chunk_pdf_pages
+
+        text = "\n".join(
+            ["front matter {0}".format(index) for index in range(1, 9)]
+            + ["2 Method", "body"]
+        )
+        chunks = chunk_pdf_pages(
+            [{"page_number": 4, "text": text}],
+            document_id="legacy-doc",
+            title="Legacy Title",
+            chunk_tokens=100,
+            overlap_tokens=0,
+            strategy="contextual",
+        )
+
+        self.assertEqual(chunks[0]["metadata"]["heading"], "")
+        self.assertEqual(chunks[0]["parent_id"], "legacy-doc::section::page-4")
+        self.assertTrue(
+            chunks[0]["retrieval_content"].startswith(
+                "Document: Legacy Title\nSection: unknown\nPage: 4\n"
+            )
+        )
+        self.assertEqual(
+            chunks[0]["content"],
+            "front matter 1 front matter 2 front matter 3 front matter 4 "
+            "front matter 5 front matter 6 front matter 7 front matter 8 2 Method body",
+        )
+
+    def test_table_preserves_cell_whitespace_and_line_structure(self):
+        from knowledge_storm.document_ingestion import ingest_document
+
+        nodes = ingest_document(
+            "paper-table",
+            [{"page_number": 1, "text": "1 Data\n  | A cell | B  |  \n | --- | --- | \n | x y |  3 | "}],
+            chunk_tokens=2,
+            overlap_tokens=0,
+        )
+        table = next(node for node in nodes if node["node_type"] == "table")
+        self.assertEqual(
+            table["content"],
+            "| A cell | B  |\n| --- | --- |\n| x y |  3 |",
+        )
+        self.assertEqual(len(table["content"].splitlines()), 3)
 
 
 class ParentChildRetrievalTest(unittest.TestCase):
@@ -186,6 +262,56 @@ class ParentChildRetrievalTest(unittest.TestCase):
             legacy.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaises(IndexMigrationRequiredError):
                 HybridPaperIndex.load(legacy, provider)
+
+            payload["manifest"].pop("schema_revision")
+            missing_revision = Path(temp_dir) / "missing-revision.json"
+            missing_revision.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(IndexMigrationRequiredError):
+                HybridPaperIndex.load(missing_revision, provider)
+
+    def test_manifest_is_recomputed_and_corruption_is_rejected_on_load(self):
+        from knowledge_storm.retrieval import (
+            HashEmbeddingProvider,
+            HybridPaperIndex,
+            IndexIntegrityError,
+            IndexMigrationRequiredError,
+        )
+
+        provider = HashEmbeddingProvider()
+        index = HybridPaperIndex(
+            self._nodes(),
+            provider,
+            manifest={
+                "schema_version": "wrong",
+                "schema_revision": 2,
+                "node_schema": "wrong",
+                "chunk_count": 999,
+                "retrievable_count": 999,
+                "parent_count": 999,
+            },
+        )
+        self.assertEqual(index.manifest["schema_version"], HybridPaperIndex.schema_version)
+        self.assertEqual(index.manifest["schema_revision"], 3)
+        self.assertEqual(index.manifest["node_schema"], HybridPaperIndex.node_schema)
+        self.assertEqual(index.manifest["chunk_count"], len(index.chunks))
+        self.assertEqual(index.manifest["retrievable_count"], len(index.chunks))
+        self.assertEqual(index.manifest["parent_count"], len(index.parents))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "index.json"
+            index.save(path)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+            payload["manifest"]["node_schema"] = "unknown-schema"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(IndexMigrationRequiredError):
+                HybridPaperIndex.load(path, provider)
+
+            payload["manifest"]["node_schema"] = HybridPaperIndex.node_schema
+            payload["manifest"]["parent_count"] += 1
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(IndexIntegrityError):
+                HybridPaperIndex.load(path, provider)
 
     def test_plain_chunks_roundtrip_without_empty_node_type(self):
         from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex

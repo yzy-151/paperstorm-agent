@@ -239,97 +239,154 @@ def _build_child_nodes(
 ):
     nodes = []
     child_ordinal = 0
-    for part in page_parts:
-        page_number = part["page_number"]
-        for node_type, content in _atomic_blocks(part["text"]):
-            contents = [content]
-            if node_type == "passage":
-                contents = _chunk_units(content, chunk_tokens, overlap_tokens)
-            for child_content in contents:
-                if not child_content.strip():
-                    continue
-                child_ordinal += 1
-                node_id = _stable_node_id(
-                    document_id,
-                    parent_id,
-                    node_type,
-                    str(page_number),
-                    str(child_ordinal),
-                    child_content,
-                )
-                metadata = {
-                    "page_number": page_number,
-                    "child_index": child_ordinal,
-                    "token_count": len(_token_units(child_content)),
-                }
-                node = _node(
-                    node_id=node_id,
-                    node_type=node_type,
-                    document_id=document_id,
-                    parent_id=parent_id,
-                    title=parent_title,
-                    content=child_content,
-                    metadata=metadata,
-                )
-                node["chunk_id"] = node_id
-                nodes.append(node)
+    for block in _atomic_blocks(page_parts):
+        node_type = block["node_type"]
+        contents = [block["content"]]
+        if node_type == "passage":
+            contents = _chunk_units(block["content"], chunk_tokens, overlap_tokens)
+        for child_content in contents:
+            if not child_content.strip():
+                continue
+            child_ordinal += 1
+            node_id = _stable_node_id(
+                document_id,
+                parent_id,
+                node_type,
+                str(block["page_start"]),
+                str(block["page_end"]),
+                str(child_ordinal),
+                child_content,
+            )
+            metadata = {
+                "page_number": block["page_start"],
+                "page_start": block["page_start"],
+                "page_end": block["page_end"],
+                "child_index": child_ordinal,
+                "token_count": len(_token_units(child_content)),
+            }
+            node = _node(
+                node_id=node_id,
+                node_type=node_type,
+                document_id=document_id,
+                parent_id=parent_id,
+                title=parent_title,
+                content=child_content,
+                metadata=metadata,
+            )
+            node["chunk_id"] = node_id
+            nodes.append(node)
     return nodes
 
 
-def _atomic_blocks(text):
-    lines = str(text or "").splitlines()
+def _atomic_blocks(page_parts):
+    source, page_map = _section_stream(page_parts)
+    table_ranges = {
+        match.start(): match.end()
+        for match in re.finditer(
+            r"(?m)(?:^[ \t]*\|[^\n]*\|[ \t]*(?:\n|$))+",
+            source,
+        )
+    }
     output = []
-    ordinary = []
+    passage_start = 0
+    position = 0
 
-    def flush_ordinary():
-        if ordinary:
-            value = "\n".join(ordinary).strip()
-            if value:
-                output.extend(_split_inline_formulas(value))
-            ordinary[:] = []
+    def emit(node_type, start, end):
+        if node_type == "passage":
+            segment_start = start
+            while segment_start < end:
+                page_number = page_map[segment_start] if page_map else 0
+                segment_end = segment_start + 1
+                while segment_end < end and page_map[segment_end] == page_number:
+                    segment_end += 1
+                append_block(node_type, segment_start, segment_end)
+                segment_start = segment_end
+            return
+        append_block(node_type, start, end)
 
-    index = 0
-    while index < len(lines):
-        stripped = lines[index].strip()
-        if _is_table_line(stripped):
-            flush_ordinary()
-            table = []
-            while index < len(lines) and _is_table_line(lines[index].strip()):
-                table.append(lines[index].strip())
-                index += 1
-            output.append(("table", "\n".join(table)))
+    def append_block(node_type, start, end):
+        value = source[start:end].strip()
+        if not value:
+            return
+        if node_type == "table":
+            value = "\n".join(line.strip() for line in value.splitlines())
+        page_start, page_end = _page_span(page_map, start, end)
+        output.append(
+            {
+                "node_type": node_type,
+                "content": value,
+                "page_start": page_start,
+                "page_end": page_end,
+            }
+        )
+
+    while position < len(source):
+        atom_end = None
+        node_type = ""
+        if position in table_ranges:
+            atom_end = table_ranges[position]
+            node_type = "table"
+        elif source.startswith("$$", position):
+            close = source.find("$$", position + 2)
+            atom_end = close + 2 if close >= 0 else len(source)
+            node_type = "formula"
+        elif source.startswith("\\[", position):
+            close = source.find("\\]", position + 2)
+            atom_end = close + 2 if close >= 0 else len(source)
+            node_type = "formula"
+        elif source[position] == "$" and not _is_escaped(source, position):
+            if not source.startswith("$$", position):
+                close = _find_inline_formula_close(source, position + 1)
+                if close >= 0:
+                    atom_end = close + 1
+                    node_type = "formula"
+        if atom_end is None:
+            position += 1
             continue
-        delimiter = "$$" if stripped.startswith("$$") else "\\[" if stripped.startswith("\\[") else ""
-        if delimiter:
-            flush_ordinary()
-            closing = "$$" if delimiter == "$$" else "\\]"
-            formula = [lines[index].strip()]
-            closed = closing in formula[0][len(delimiter) :]
-            while not closed and index + 1 < len(lines):
-                index += 1
-                formula.append(lines[index].strip())
-                closed = closing in formula[-1]
-            output.append(("formula", "\n".join(formula).strip()))
-        else:
-            ordinary.append(lines[index])
-        index += 1
-    flush_ordinary()
+        emit("passage", passage_start, position)
+        emit(node_type, position, atom_end)
+        position = atom_end
+        passage_start = position
+    emit("passage", passage_start, len(source))
     return output
 
 
-def _split_inline_formulas(text):
-    output = []
-    cursor = 0
-    for match in re.finditer(r"(?<!\$)\$(?!\$).+?(?<!\$)\$(?!\$)", text, re.S):
-        before = text[cursor : match.start()].strip()
-        if before:
-            output.append(("passage", before))
-        output.append(("formula", match.group(0)))
-        cursor = match.end()
-    after = text[cursor:].strip()
-    if after:
-        output.append(("passage", after))
-    return output
+def _section_stream(page_parts):
+    pieces = []
+    page_map = []
+    for index, part in enumerate(page_parts):
+        page_number = int(part.get("page_number") or 0)
+        if index:
+            pieces.append("\n")
+            page_map.append(page_number)
+        text = str(part.get("text") or "")
+        pieces.append(text)
+        page_map.extend([page_number] * len(text))
+    return "".join(pieces), page_map
+
+
+def _page_span(page_map, start, end):
+    pages = [page for page in page_map[start:end] if page]
+    return (min(pages), max(pages)) if pages else (0, 0)
+
+
+def _find_inline_formula_close(source, start):
+    position = start
+    while position < len(source):
+        if source[position] == "$" and not _is_escaped(source, position):
+            if not source.startswith("$$", position):
+                return position
+        position += 1
+    return -1
+
+
+def _is_escaped(source, position):
+    backslashes = 0
+    cursor = position - 1
+    while cursor >= 0 and source[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 1
 
 
 def _chunk_units(text, chunk_tokens, overlap_tokens):
@@ -379,9 +436,13 @@ def _is_table_line(line):
 
 
 def _find_heading(text: str) -> str:
-    for line in text.splitlines():
+    for line in text.splitlines()[:8]:
         candidate = re.sub(r"\s+", " ", line).strip()
-        if _is_heading(candidate):
+        if not candidate or len(candidate) > 100:
+            continue
+        if re.match(r"^(?:\d+(?:\.\d+)*|[IVX]+)[\s.)、:-]+\S+", candidate, re.I):
+            return candidate
+        if re.match(r"^(?:abstract|introduction|conclusion|摘要|引言|结论)\b", candidate, re.I):
             return candidate
     return ""
 
