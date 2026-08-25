@@ -55,6 +55,14 @@ _FOLLOWUP_REFERENCE = re.compile(
     r"^(?:它|其|这个|该(?:问题|技术|现象)?|上述|这种|these\b|this\b|it\b)",
     re.I,
 )
+_ZERO_PRONOUN_FOLLOWUP = re.compile(
+    r"^(?:"
+    r"有(?:哪些|什么)(?:抑制方法|方法|危害|原因|影响|用途|优势|缺点)"
+    r"|如何(?:降低|抑制|减少|避免|解决|改善|优化)"
+    r"|怎么(?:降低|抑制|减少|避免|解决|改善|优化)"
+    r")",
+    re.I,
+)
 
 
 class PlanningError(RuntimeError):
@@ -252,14 +260,16 @@ def _domain_for_text(text: str) -> str:
 
 def _latest_explicit_domain(history: Sequence[Dict[str, str]]) -> str:
     for item in reversed(history):
-        domain = _domain_for_text(item["content"])
-        if domain:
-            return domain
+        if item["role"].casefold() == "user":
+            return _domain_for_text(item["content"])
     return ""
 
 
 def _looks_like_followup(query: str) -> bool:
-    return bool(_FOLLOWUP_REFERENCE.search(query.strip()))
+    query = query.strip()
+    return bool(
+        _FOLLOWUP_REFERENCE.search(query) or _ZERO_PRONOUN_FOLLOWUP.search(query)
+    )
 
 
 def _requests_list(query: str) -> bool:

@@ -27,6 +27,28 @@
     "standalone_contains": "passive intermodulation"
   },
   {
+    "case_id": "pim-zero-pronoun-followup",
+    "query": "有哪些抑制方法",
+    "history": [
+      {"role": "user", "content": "PIM 神经网络抑制"},
+      {"role": "assistant", "content": "这里讨论的是射频无源互调。"}
+    ],
+    "expected_domain": "rf-passive-intermodulation",
+    "standalone_contains": "passive intermodulation"
+  },
+  {
+    "case_id": "pim-stale-topic-cut-off",
+    "query": "它有哪些用途",
+    "history": [
+      {"role": "user", "content": "PIM 神经网络抑制"},
+      {"role": "assistant", "content": "这里讨论的是射频无源互调。"},
+      {"role": "user", "content": "Python 异步编程"},
+      {"role": "assistant", "content": "可以使用 asyncio。"}
+    ],
+    "expected_domain": "",
+    "expected_standalone": "它有哪些用途"
+  },
+  {
     "case_id": "pim-ambiguous-acronym",
     "query": "PIM 有哪些应用",
     "expected_domain": ""

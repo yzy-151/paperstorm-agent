@@ -55,6 +55,37 @@ class SearchPlanTest(unittest.TestCase):
         self.assertEqual(plan.standalone_query, "它有哪些抑制方法")
         self.assertEqual(plan.domain, "")
 
+    def test_zero_pronoun_followups_use_adjacent_explicit_user_topic(self):
+        from knowledge_storm.search_planning import SearchPlanner
+
+        history = [
+            {"role": "user", "content": "PIM 神经网络抑制"},
+            {"role": "assistant", "content": "这里的 PIM 是射频无源互调。"},
+        ]
+
+        for query in ("有哪些抑制方法", "如何降低", "有哪些危害", "有哪些原因"):
+            with self.subTest(query=query):
+                plan = SearchPlanner().plan(query, history=history)
+                self.assertEqual(plan.domain, "rf-passive-intermodulation")
+                self.assertIn(
+                    "passive intermodulation", plan.standalone_query.lower()
+                )
+
+    def test_new_user_topic_blocks_stale_domain_inheritance(self):
+        from knowledge_storm.search_planning import SearchPlanner
+
+        history = [
+            {"role": "user", "content": "PIM 神经网络抑制"},
+            {"role": "assistant", "content": "这里的 PIM 是射频无源互调。"},
+            {"role": "user", "content": "Python 异步编程"},
+            {"role": "assistant", "content": "可以使用 asyncio。"},
+        ]
+
+        plan = SearchPlanner().plan("它有哪些用途", history=history)
+
+        self.assertEqual(plan.domain, "")
+        self.assertEqual(plan.standalone_query, "它有哪些用途")
+
     def test_llm_invalid_json_then_valid_json_retries_once(self):
         from knowledge_storm.search_planning import SearchPlanner
 
@@ -156,6 +187,10 @@ class SearchPlanTest(unittest.TestCase):
                 if case.get("standalone_contains"):
                     self.assertIn(
                         case["standalone_contains"], plan.standalone_query.lower()
+                    )
+                if case.get("expected_standalone"):
+                    self.assertEqual(
+                        plan.standalone_query, case["expected_standalone"]
                     )
 
 
