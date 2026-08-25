@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -32,6 +33,14 @@ from knowledge_storm.retrieval import SentenceTransformerProvider
 
 AFFECTED_P1 = ("pim", "scifact", "qasper-retrieval")
 BASELINE_REFERENCE = "docs/benchmarks/paperstorm_public_v55_summary.json"
+
+
+class BenchmarkPreflightError(RuntimeError):
+    """A machine-classifiable local prerequisite failure."""
+
+    def __init__(self, reason_code, message):
+        super().__init__(message)
+        self.reason_code = str(reason_code)
 
 
 def build_parser():
@@ -67,10 +76,27 @@ def main(argv=None):
     for benchmark in resolve_benchmarks(args):
         try:
             result = _run_one(args, benchmark, output_root)
-        except (FileNotFoundError, RuntimeError) as exc:
+        except BenchmarkPreflightError as exc:
             result = {
                 "status": "blocked",
                 "benchmark": benchmark,
+                "reason_code": exc.reason_code,
+                "error_type": type(exc).__name__,
+                "reason": str(exc),
+            }
+        except PermissionError as exc:
+            result = {
+                "status": "blocked",
+                "benchmark": benchmark,
+                "reason_code": "dataset_permission_denied",
+                "error_type": type(exc).__name__,
+                "reason": str(exc),
+            }
+        except FileNotFoundError as exc:
+            result = {
+                "status": "blocked",
+                "benchmark": benchmark,
+                "reason_code": "dataset_missing",
                 "error_type": type(exc).__name__,
                 "reason": str(exc),
             }
@@ -78,6 +104,7 @@ def main(argv=None):
             result = {
                 "status": "failed",
                 "benchmark": benchmark,
+                "reason_code": "benchmark_execution_failed",
                 "error_type": type(exc).__name__,
                 "reason": str(exc),
             }
@@ -131,15 +158,22 @@ def _run_one(args, benchmark, output_root):
     manifest["baseline_reference"] = BASELINE_REFERENCE
     manifest["benchmark"] = benchmark
     write_milestone_manifest(run_dir / "milestone_manifest.json", manifest)
+    dossiers = []
     if benchmark == "pim":
+        dossiers = _pim_dossiers(dataset_path, report)
         write_case_dossiers(
-            run_dir / "case_dossiers.jsonl", _pim_dossiers(dataset_path, report)
+            run_dir / "case_dossiers.jsonl", dossiers
         )
+    elif benchmark == "qasper-retrieval":
+        dossiers = _qasper_dossiers(dataset, report)
+        write_case_dossiers(run_dir / "case_dossiers.jsonl", dossiers)
     return {
         "status": "completed",
         "benchmark": benchmark,
         "output_dir": str(run_dir),
         "case_count": report["case_count"],
+        "dossier_count": len(dossiers),
+        "dossier_status": "written" if dossiers else "no_cases_available",
     }
 
 
@@ -195,13 +229,15 @@ def _embedding_provider(args):
     if args.embedding == "hash":
         return HashEmbeddingProvider()
     if not args.model_cache:
-        raise FileNotFoundError(
+        raise BenchmarkPreflightError(
+            "model_missing",
             "real embedding requires --model-cache; implicit download is disabled"
         )
     cache = Path(args.model_cache)
     model_dir = cache / ("models--" + args.model.replace("/", "--"))
     if not cache.is_dir() or not model_dir.exists():
-        raise FileNotFoundError(
+        raise BenchmarkPreflightError(
+            "model_missing",
             "embedding model is not present in local cache: {0}".format(model_dir)
         )
     os.environ["PAPERSTORM_OFFLINE_TESTS"] = "1"
@@ -228,6 +264,7 @@ def _subset(dataset, limit, scope_field):
 
 def _pim_dossiers(fixture_path, report):
     payload = json.loads(Path(fixture_path).read_text(encoding="utf-8"))
+    domains = {item["id"]: item.get("domain") for item in payload["documents"]}
     predictions = {row["case_id"]: row for row in report["predictions"]}
     dossiers = []
     for case in payload["cases"]:
@@ -237,6 +274,21 @@ def _pim_dossiers(fixture_path, report):
         unresolved = bool(case.get("unresolved"))
         ranked_ids = prediction.get("ranked_document_ids", [])
         relevant_ids = case.get("relevant", [])
+        acceptance = dict(case.get("acceptance") or {})
+        top_1 = ranked_ids[:1]
+        forbidden_ids = set(acceptance.get("forbidden_document_ids") or [])
+        forbidden_domains = set(acceptance.get("forbidden_domains") or [])
+        forbidden_hits = [item for item in ranked_ids if item in forbidden_ids]
+        forbidden_domain_hits = [
+            item for item in ranked_ids if domains.get(item) in forbidden_domains
+        ]
+        top1_relevant = bool(top_1 and top_1[0] in relevant_ids)
+        resolved = bool(
+            not unresolved
+            and top1_relevant
+            and not forbidden_hits
+            and not forbidden_domain_hits
+        )
         dossiers.append(
             CaseDossier(
                 case_id=case["id"],
@@ -253,19 +305,105 @@ def _pim_dossiers(fixture_path, report):
                 after={
                     "ranked_document_ids": ranked_ids,
                     "relevant_document_ids": relevant_ids,
-                    "resolved": bool(
-                        not unresolved and set(ranked_ids).intersection(relevant_ids)
-                    ),
+                    "top_1": top_1,
+                    "acceptance": acceptance,
+                    "actual": {
+                        "top1_relevant": top1_relevant,
+                        "forbidden_document_ids": forbidden_hits,
+                        "forbidden_domains": [domains.get(item) for item in forbidden_domain_hits],
+                    },
+                    "forbidden_hits_at_k": forbidden_hits,
+                    "forbidden_domain_hits_at_k": forbidden_domain_hits,
+                    "resolved": resolved,
                     "search_plan": prediction.get("search_plan", {}),
                 },
                 residual_risk=(
                     "Ambiguous PIM without reliable context still requires clarification"
                     if unresolved
-                    else ""
+                    else (
+                        "Forbidden-domain documents remain inside Top-K despite a relevant Top-1."
+                        if not resolved
+                        else ""
+                    )
                 ),
             )
         )
     return dossiers
+
+
+def _qasper_dossiers(dataset, report):
+    """Create auditable current-run evidence without inventing a case baseline."""
+    predictions = {row["case_id"]: row for row in report.get("predictions", [])}
+    document_map = dataset.document_map()
+    candidates = []
+    for case in dataset.cases:
+        prediction = predictions.get(case.case_id)
+        if not prediction:
+            continue
+        relevant_ids = list(case.relevant_document_ids)
+        gold_text = " ".join(
+            document_map[item].text for item in relevant_ids if item in document_map
+        )
+        overlap = _lexical_overlap(case.query, gold_text)
+        ranked_ids = list(prediction.get("ranked_document_ids") or [])
+        top1_relevant = bool(ranked_ids and ranked_ids[0] in relevant_ids)
+        recalled = bool(set(ranked_ids).intersection(relevant_ids))
+        candidates.append((not recalled, overlap, case, prediction, top1_relevant))
+    if not candidates:
+        return []
+    _, overlap, case, prediction, top1_relevant = sorted(
+        candidates, key=lambda item: (not item[0], item[1], str(item[2].case_id))
+    )[0]
+    ranked_ids = list(prediction.get("ranked_document_ids") or [])
+    relevant_ids = list(case.relevant_document_ids)
+    before = {
+        "source": "archived_aggregate",
+        "case_level_before_available": False,
+        "baseline_reference": BASELINE_REFERENCE,
+        "benchmark": "qasper_test",
+        "aggregate": _archived_qasper_aggregate(),
+        "note": "Archived aggregate only; no case-level baseline was recorded.",
+    }
+    return [
+        CaseDossier(
+            case_id=str(case.case_id),
+            milestone="P1",
+            question=case.query,
+            before=before,
+            root_cause=(
+                "Low query-to-gold lexical overlap and/or failure to retrieve gold evidence"
+            ),
+            change="SearchPlan query expansion, multi-query RRF and parent context retrieval",
+            after={
+                "ranked_document_ids": ranked_ids,
+                "relevant_document_ids": relevant_ids,
+                "lexical_overlap": overlap,
+                "top1_relevant": top1_relevant,
+                "resolved": top1_relevant,
+                "search_plan": prediction.get("search_plan", {}),
+                "retrieval_stages": prediction.get("retrieval_stages", []),
+            },
+            residual_risk=(
+                "Current run does not place gold evidence at rank 1; the case remains unresolved."
+                if not top1_relevant
+                else "Case-level improvement cannot be paired because the archived baseline is aggregate-only."
+            ),
+        )
+    ]
+
+
+def _lexical_overlap(left, right):
+    left_tokens = set(re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]", str(left).lower()))
+    right_tokens = set(re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]", str(right).lower()))
+    if not left_tokens:
+        return 0.0
+    return round(len(left_tokens.intersection(right_tokens)) / len(left_tokens), 6)
+
+
+def _archived_qasper_aggregate():
+    path = Path(__file__).resolve().parents[2] / BASELINE_REFERENCE
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return dict(payload["qasper_test"]["methods"]["hybrid"])
 
 
 def _first_existing(candidates, file_required=False):

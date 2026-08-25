@@ -6,9 +6,9 @@
     {"id": "product-pim-1", "title": "Product information management", "text": "A product information management system stores catalog and commerce attributes.", "domain": "product"}
   ],
   "cases": [
-    {"id": "pim-rf-zh", "query": "PIM神经网络抑制", "relevant": ["rf-pim-1", "rf-pim-2"], "before": {"source": "archived_observation", "result": "召回 DRAM/processing-in-memory 文档，领域歧义未消除"}},
-    {"id": "pim-lexical", "query": "无源互调 neural cancellation", "relevant": ["rf-pim-1", "rf-pim-2"], "before": {"source": "archived_observation", "result": "中英文术语不一致导致 RF 论文排序靠后"}},
-    {"id": "pim-ambiguous", "query": "PIM 有哪些应用", "relevant": [], "before": {"source": "archived_observation", "result": "缺少上下文时可能选择任意 PIM 领域"}, "unresolved": true},
-    {"id": "pim-processing", "query": "processing-in-memory DRAM accelerator", "relevant": ["dram-pim-1"], "before": {"source": "archived_observation", "result": "缩写 PIM 缺少显式领域约束"}}
+    {"id": "pim-rf-zh", "query": "PIM神经网络抑制", "relevant": ["rf-pim-1", "rf-pim-2"], "acceptance": {"top1_relevant": true, "forbidden_document_ids": ["dram-pim-1", "product-pim-1"], "forbidden_domains": ["memory", "product"]}, "before": {"source": "archived_observation", "result": "召回 DRAM/processing-in-memory 文档，领域歧义未消除"}},
+    {"id": "pim-lexical", "query": "无源互调 neural cancellation", "relevant": ["rf-pim-1", "rf-pim-2"], "acceptance": {"top1_relevant": true, "forbidden_document_ids": ["dram-pim-1", "product-pim-1"], "forbidden_domains": ["memory", "product"]}, "before": {"source": "archived_observation", "result": "中英文术语不一致导致 RF 论文排序靠后"}},
+    {"id": "pim-ambiguous", "query": "PIM 有哪些应用", "relevant": [], "acceptance": {"top1_relevant": false, "forbidden_document_ids": [], "forbidden_domains": []}, "before": {"source": "archived_observation", "result": "缺少上下文时可能选择任意 PIM 领域"}, "unresolved": true},
+    {"id": "pim-processing", "query": "processing-in-memory DRAM accelerator", "relevant": ["dram-pim-1"], "acceptance": {"top1_relevant": true, "forbidden_document_ids": ["rf-pim-1", "rf-pim-2", "product-pim-1"], "forbidden_domains": ["rf", "product"]}, "before": {"source": "archived_observation", "result": "缩写 PIM 缺少显式领域约束"}}
   ]
 }

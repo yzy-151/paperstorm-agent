@@ -50,8 +50,12 @@ def run_retrieval_benchmark(
     scope_field=None,
     milestone_metadata=None,
 ):
+    prediction_milestone = None
     if milestone_metadata is not None:
         milestone_metadata = sanitize_json_payload(milestone_metadata)
+        prediction_milestone = sanitize_json_payload(
+            str(milestone_metadata.get("milestone") or "unknown")
+        )
     top_k = max(1, int(top_k))
     cases = tuple(dataset.cases)
     chunks = [
@@ -115,6 +119,8 @@ def run_retrieval_benchmark(
                 "retrieval_stages": outcome["stages"],
                 "search_plan": outcome["search_plan"],
             }
+            if prediction_milestone is not None:
+                row["milestone"] = prediction_milestone
             predictions.append(row)
             per_case.append(dict(metrics, latency_ms=latency_ms))
             if metrics.get("recall_at_{0}".format(top_k), 0.0) < 1.0:
