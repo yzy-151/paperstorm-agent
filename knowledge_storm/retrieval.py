@@ -235,13 +235,33 @@ class HybridPaperIndex:
     """Persistent BM25 + dense index with RRF and optional Cross-Encoder."""
 
     schema_version = "paperstorm-hybrid-index"
-    schema_revision = 2
+    schema_revision = 3
 
     def __init__(
-        self, chunks: Iterable[Dict], embedding_provider, embeddings=None, manifest=None
+        self,
+        chunks: Iterable[Dict],
+        embedding_provider,
+        embeddings=None,
+        manifest=None,
+        parents=None,
     ):
+        supplied_nodes = [dict(item) for item in (chunks or [])]
+        parent_nodes = [
+            item for item in supplied_nodes if item.get("node_type") in {"document", "section"}
+        ]
+        retrievable_nodes = [
+            item for item in supplied_nodes if item.get("node_type") not in {"document", "section"}
+        ]
+        if parents is not None:
+            parent_nodes = [dict(item) for item in parents]
+        self.parents = {
+            str(item["node_id"]): self._normalize_parent(item)
+            for item in parent_nodes
+            if item.get("node_id")
+        }
         self.chunks = [
-            self._normalize_chunk(item, index) for index, item in enumerate(chunks)
+            self._normalize_chunk(item, index)
+            for index, item in enumerate(retrievable_nodes)
         ]
         self.embedding_provider = embedding_provider
         self._tokens = [
@@ -268,14 +288,18 @@ class HybridPaperIndex:
         dimension = int(getattr(embedding_provider, "dim", 0) or 0)
         if not dimension and self.embeddings:
             dimension = len(self.embeddings[0])
-        self.manifest = manifest or {
+        default_manifest = {
             "schema_version": self.schema_version,
             "schema_revision": self.schema_revision,
             "embedding_model": str(getattr(embedding_provider, "name", "unknown")),
             "embedding_dimension": dimension,
             "normalized": bool(getattr(embedding_provider, "normalize", False)),
             "chunk_count": len(self.chunks),
+            "node_schema": "structured-parent-child-v1",
+            "retrievable_count": len(self.chunks),
+            "parent_count": len(self.parents),
         }
+        self.manifest = dict(manifest or default_manifest)
 
     def search(
         self,
@@ -285,9 +309,12 @@ class HybridPaperIndex:
         candidate_k: Optional[int] = None,
         reranker=None,
         rank_constant: int = 60,
+        parent_budget_tokens: int = 0,
     ) -> List[Dict]:
         if mode not in {"bm25", "dense", "hybrid", "hybrid_rerank"}:
             raise ValueError("unsupported retrieval mode: {0}".format(mode))
+        if parent_budget_tokens < 0:
+            raise ValueError("parent_budget_tokens must not be negative")
         candidate_k = min(len(self.chunks), candidate_k or max(top_k * 4, 20))
         if mode == "bm25":
             selected = self._bm25_search(query, candidate_k)
@@ -323,6 +350,18 @@ class HybridPaperIndex:
                 ),
                 8,
             )
+            if parent_budget_tokens > 0:
+                parent = self.parents.get(str(enriched.get("parent_id") or ""))
+                parent_context = self._truncate_to_budget(
+                    parent.get("content", "") if parent else "",
+                    parent_budget_tokens,
+                )
+                enriched["parent_context"] = parent_context
+                enriched["expanded_content"] = (
+                    parent_context + "\n\n" + enriched.get("content", "")
+                    if parent_context
+                    else enriched.get("content", "")
+                )
             output.append(enriched)
         return output
 
@@ -458,6 +497,7 @@ class HybridPaperIndex:
             {
                 "manifest": self.manifest,
                 "chunks": self.chunks,
+                "parents": list(self.parents.values()),
                 "embeddings": self.embeddings,
             },
             ensure_ascii=False,
@@ -509,7 +549,9 @@ class HybridPaperIndex:
             embedding_provider=embedding_provider,
             embeddings=payload.get("embeddings") or [],
             manifest=manifest,
+            parents=payload.get("parents") or [],
         )
+
     @staticmethod
     def _normalize_chunk(item, index):
         chunk = dict(item)
@@ -517,6 +559,23 @@ class HybridPaperIndex:
         chunk["content"] = str(chunk.get("content") or chunk.get("text") or "")
         chunk.setdefault("retrieval_content", chunk["content"])
         return chunk
+
+    @staticmethod
+    def _normalize_parent(item):
+        parent = dict(item)
+        parent["node_id"] = str(parent.get("node_id") or "")
+        parent["content"] = str(parent.get("content") or "")
+        parent.setdefault("retrieval_content", parent["content"])
+        return parent
+
+    @staticmethod
+    def _truncate_to_budget(text, token_budget):
+        if token_budget <= 0:
+            return ""
+        from .document_ingestion import _join_units, _token_units
+
+        units = _token_units(str(text or ""))[:token_budget]
+        return _join_units(units).strip()
 
     @staticmethod
     def _search_text(item):
