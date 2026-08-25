@@ -207,11 +207,18 @@ def _kb_answer_prompt(question: str, evidence: List[Dict]) -> str:
         "证据：",
     ]
     for index, doc in enumerate((evidence or [])[:6], start=1):
+        child_content = str(doc.get("content") or "")
+        parent_context = str(doc.get("parent_context") or "")
+        if child_content:
+            parent_context = parent_context.replace(child_content, "")
+        evidence_text = child_content
+        if parent_context:
+            evidence_text += "\n父级补充：" + parent_context[:260]
         lines.append(
             "[{0}] {1}：{2}".format(
                 index,
                 str(doc.get("title") or doc.get("id") or "")[:60],
-                str(doc.get("expanded_content") or doc.get("content") or "")[:260],
+                evidence_text,
             )
         )
     lines.append("回答：")

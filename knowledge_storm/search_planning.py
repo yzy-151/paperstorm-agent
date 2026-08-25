@@ -59,7 +59,7 @@ _RF_SUPPRESSION_MARKERS = (
     "mitigation",
 )
 _FOLLOWUP_REFERENCE = re.compile(
-    r"^(?:它|其|这个|该(?:问题|技术|现象)?|上述|这种|these\b|this\b|it\b)",
+    r"^(?:那|它|其|这个|该(?:问题|技术|现象)?|上述|这种|these\b|this\b|it\b)",
     re.I,
 )
 _ZERO_PRONOUN_FOLLOWUP = re.compile(
@@ -244,7 +244,7 @@ def _deterministic_plan(
     domain = _domain_for_text(original_query)
 
     if not domain and _looks_like_followup(original_query):
-        antecedent_domain = _latest_explicit_domain(history)
+        antecedent_domain = _latest_explicit_domain(history, original_query)
         if antecedent_domain:
             domain = antecedent_domain
             subject = (
@@ -290,6 +290,8 @@ def _deterministic_plan(
 
 def _domain_for_text(text: str) -> str:
     lowered = text.lower()
+    if _negates_processing_meaning(lowered):
+        return _RF_DOMAIN
     if any(marker in lowered for marker in _PROCESSING_MARKERS):
         return _PROCESSING_DOMAIN
     if any(marker in lowered for marker in _RF_MARKERS):
@@ -301,10 +303,37 @@ def _domain_for_text(text: str) -> str:
     return ""
 
 
-def _latest_explicit_domain(history: Sequence[Dict[str, str]]) -> str:
+def _negates_processing_meaning(lowered: str) -> bool:
+    wrong_domain_markers = _PROCESSING_MARKERS + ("dram",)
+    negation_markers = (
+        "不能把",
+        "不应把",
+        "不是",
+        "并非",
+        "not ",
+        "rather than",
+        "instead of",
+    )
+    return (
+        "pim" in lowered
+        and any(marker in lowered for marker in wrong_domain_markers)
+        and any(marker in lowered for marker in negation_markers)
+    )
+
+
+def _latest_explicit_domain(
+    history: Sequence[Dict[str, str]], current_query: str = ""
+) -> str:
     for item in reversed(history):
-        if item["role"].casefold() == "user":
-            return _domain_for_text(item["content"])
+        role = item["role"].casefold()
+        content = item["content"]
+        if role == "user" and content == current_query:
+            continue
+        domain = _domain_for_text(content)
+        if domain:
+            return domain
+        if role == "user":
+            return ""
     return ""
 
 
@@ -532,11 +561,15 @@ def _unique_strings(values: Sequence[str]) -> Tuple[str, ...]:
 def _json_safe_mapping(value: Any, field_name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError("{0} must be a mapping".format(field_name))
-    normalized = _normalize_json_value(dict(value), field_name)
-    return _freeze_json_value(normalized)
+    normalized = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise TypeError("{0} keys must be strings".format(field_name))
+        normalized[key] = _normalize_filter_value(item, field_name)
+    return MappingProxyType(normalized)
 
 
-def _normalize_json_value(value: Any, field_name: str) -> Any:
+def _normalize_filter_value(value: Any, field_name: str) -> Any:
     if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, float):
@@ -544,25 +577,24 @@ def _normalize_json_value(value: Any, field_name: str) -> Any:
             raise ValueError("{0} cannot contain non-finite floats".format(field_name))
         return value
     if isinstance(value, list):
-        return [_normalize_json_value(item, field_name) for item in value]
-    if isinstance(value, Mapping):
-        output = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise TypeError("{0} keys must be strings".format(field_name))
-            output[key] = _normalize_json_value(item, field_name)
-        return output
-    raise TypeError("{0} must contain only JSON-safe values".format(field_name))
-
-
-def _freeze_json_value(value: Any) -> Any:
-    if isinstance(value, dict):
-        return MappingProxyType(
-            {key: _freeze_json_value(item) for key, item in value.items()}
+        return tuple(_normalize_filter_scalar(item, field_name) for item in value)
+    raise TypeError(
+        "{0} values must be JSON scalars or lists of JSON scalars".format(
+            field_name
         )
-    if isinstance(value, list):
-        return tuple(_freeze_json_value(item) for item in value)
-    return value
+    )
+
+
+def _normalize_filter_scalar(value: Any, field_name: str) -> Any:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("{0} cannot contain non-finite floats".format(field_name))
+        return value
+    raise TypeError(
+        "{0} lists must contain only JSON scalars".format(field_name)
+    )
 
 
 def _thaw_json_value(value: Any) -> Any:

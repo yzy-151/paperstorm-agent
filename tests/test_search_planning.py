@@ -74,6 +74,35 @@ class SearchPlanTest(unittest.TestCase):
         self.assertIn("passive intermodulation", plan.standalone_query.lower())
         self.assertEqual(plan.domain, "rf-passive-intermodulation")
 
+    def test_followup_history_may_include_current_turn_and_explicit_assistant_answer(self):
+        from knowledge_storm.search_planning import SearchPlanner
+
+        query = "那它为什么不是 DRAM？"
+        history = [
+            {"role": "user", "content": "PIM 是什么？"},
+            {
+                "role": "assistant",
+                "content": "这里 PIM 指 passive intermodulation，是 RF 无源互调。",
+            },
+            {"role": "user", "content": query},
+        ]
+
+        plan = SearchPlanner().plan(query, history=history)
+
+        self.assertEqual("rf-passive-intermodulation", plan.domain)
+        self.assertEqual(query, plan.original_query)
+        self.assertIn("passive intermodulation", plan.standalone_query.lower())
+
+    def test_negated_processing_in_memory_meaning_is_rf_disambiguation(self):
+        from knowledge_storm.search_planning import SearchPlanner
+
+        plan = SearchPlanner().plan(
+            "这里为什么不能把 PIM 理解成 DRAM processing-in-memory？"
+        )
+
+        self.assertEqual("rf-passive-intermodulation", plan.domain)
+        self.assertEqual(("passive intermodulation",), plan.must_terms)
+
     def test_followup_without_reliable_antecedent_does_not_invent_one(self):
         from knowledge_storm.search_planning import SearchPlanner
 
@@ -290,27 +319,39 @@ class SearchPlanTest(unittest.TestCase):
                 filters={"bad": object()},
             )
 
-    def test_filters_are_deeply_immutable_but_to_dict_is_mutable(self):
+    def test_filters_accept_only_json_scalars_or_scalar_lists(self):
         from knowledge_storm.search_planning import SearchPlan
 
-        source = {"metadata": {"years": [2023, 2024], "open": True}}
         plan = SearchPlan(
-            original_query="a", standalone_query="a", filters=source
+            original_query="a",
+            standalone_query="a",
+            filters={
+                "year": 2024,
+                "open": True,
+                "venue": None,
+                "tags": ["rf", "pim"],
+            },
         )
-        source["metadata"]["years"].append(2025)
 
         with self.assertRaises(TypeError):
             plan.filters["new"] = "value"
-        with self.assertRaises(TypeError):
-            plan.filters["metadata"]["new"] = "value"
-        with self.assertRaises(TypeError):
-            plan.filters["metadata"]["years"][0] = 2022
-        self.assertEqual(plan.filters["metadata"]["years"], (2023, 2024))
+        self.assertEqual(plan.filters["tags"], ("rf", "pim"))
+        self.assertEqual(plan.to_dict()["filters"]["tags"], ["rf", "pim"])
 
-        detached = plan.to_dict()
-        detached["filters"]["metadata"]["years"].append(2025)
-        detached["filters"]["new"] = "value"
-        self.assertEqual(plan.filters["metadata"]["years"], (2023, 2024))
+        invalid_filters = (
+            {"metadata": {"year": 2024}},
+            {"ranges": [{"gte": 2020}]},
+            {"tags": [["rf"]]},
+            {"tags": {"rf", "pim"}},
+        )
+        for filters in invalid_filters:
+            with self.subTest(filters=filters):
+                with self.assertRaises((TypeError, ValueError)):
+                    SearchPlan(
+                        original_query="a",
+                        standalone_query="a",
+                        filters=filters,
+                    )
 
     def test_history_budget_keeps_recent_messages_and_marks_them_untrusted(self):
         from knowledge_storm.search_planning import (

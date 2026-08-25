@@ -361,18 +361,34 @@ class PaperStormTaskService:
             raise FileNotFoundError("Artifact does not exist: {0}".format(artifact_name))
         return path
 
-    def query_knowledge_base(self, task_id: str, question: str, top_k: int = 3):
+    def query_knowledge_base(
+        self,
+        task_id: str,
+        question: str,
+        top_k: int = 3,
+        history=None,
+        **retrieval_options,
+    ):
         from .paperstorm_router_llm import build_chat_llm_callable
 
         state = self._read_state(task_id)
         output_dir = Path(state["output_dir"])
         kb = PaperStormKnowledgeBase.from_run_dir(output_dir)
+        retrieval_options = dict(retrieval_options)
+        retrieval_options["history"] = tuple(history or ())
+        search_plan = retrieval_options.get("search_plan")
+        if search_plan is not None:
+            from .search_planning import SearchPlan
+
+            if isinstance(search_plan, dict):
+                retrieval_options["search_plan"] = SearchPlan.from_mapping(search_plan)
         answer = kb.answer_question(
             question,
             top_k=top_k,
             answer_generator=build_chat_llm_callable(
                 enabled=state.get("run_mode") == "paperstorm"
             ),
+            retrieval_options=retrieval_options,
         )
         write_qa_artifact(output_dir, answer)
         return answer

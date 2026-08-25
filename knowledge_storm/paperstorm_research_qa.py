@@ -22,6 +22,8 @@ class ResearchQAAgent:
         output_language: str = "zh",
         expected_keywords: Optional[List[str]] = None,
         forbidden_keywords: Optional[List[str]] = None,
+        history: Optional[List[Dict]] = None,
+        search_plan=None,
         **options,
     ) -> Dict:
         question = str(question or "").strip()
@@ -87,6 +89,8 @@ class ResearchQAAgent:
             used_task_id,
             question=question,
             top_k=top_k,
+            history=history or [],
+            search_plan=search_plan,
         )
         evidence = answer.get("evidence") or []
         citations = answer.get("citations") or []
@@ -137,6 +141,7 @@ class ResearchQAAgent:
             "decision": decision,
             "evidence_sufficiency": sufficiency,
             "trace": trace,
+            "retrieval_metadata": answer.get("retrieval_metadata") or {},
         }
         history = _append_qa_history(
             self.task_service.get_task(used_task_id),

@@ -19,7 +19,7 @@ ROUTER_SCHEMA = {
             "arguments": "JSON object",
         }
     ],
-    "rewritten_query": "standalone Chinese or English query",
+    "rewritten_query": "original user query preserved for compatibility",
     "working_subject": "current subject or empty string; never inherit stale topic",
     "response_contract": {
         "task": "free-form description of the requested response",
@@ -136,7 +136,8 @@ def build_router_prompt(
         "外部能力时才使用 tool_call。不要生成最终答案。\n"
         "旧任务主题不得自动继承。只有当前消息或最近对话明确承接旧主题时，才设置 "
         "working_subject；创作、闲聊、系统问题默认不检索。\n"
-        "短追问必须根据最近对话改写，不能仅凭 task_id 猜测主题。论文事实需要证据，"
+        "短追问需识别是否承接最近对话，但 rewritten_query 保留用户原话；独立检索改写"
+        "由 retrieval pipeline 的 SearchPlanner 完成。论文事实需要证据，"
         "用户偏好和稳定事实查 memory.search，论文事实查 evidence.search，明确要求完整"
         "调研或现有证据不足时用 research.start。续写必须设置 continue_previous=true，"
         "并要求保持原风格、禁止自我介绍。\n"
@@ -172,9 +173,7 @@ def normalize_decision(
     elif not tool_calls:
         action = "clarify"
     confidence = _to_float(decision.get("confidence"), 0.7)
-    rewritten_query = str(decision.get("rewritten_query") or "").strip()
-    if not rewritten_query:
-        rewritten_query = rewrite_query(message, session, context_window)
+    rewritten_query = rewrite_query(message, session, context_window)
     response_contract = _response_contract(
         decision.get("response_contract"), message
     )
@@ -302,15 +301,9 @@ def _llm_decision_safe(decision: Dict, guard_decision: Optional[Dict]) -> bool:
 
 
 def rewrite_query(message: str, session: Dict, context_window: List[Dict]) -> str:
-    text = str(message or "").strip()
-    if not text:
-        return text
-    try:
-        from .search_planning import SearchPlanner
+    """Preserve the user query; retrieval planning belongs to the pipeline."""
 
-        return SearchPlanner().plan(text, history=context_window or []).standalone_query
-    except (TypeError, ValueError, RuntimeError):
-        return text
+    return str(message or "").strip()
 
 
 def looks_like_followup(text: str) -> bool:

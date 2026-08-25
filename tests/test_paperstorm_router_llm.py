@@ -5,15 +5,24 @@ from unittest import mock
 
 
 class PaperStormRouterLLMTest(unittest.TestCase):
-    def test_rewrite_query_delegates_to_search_planner_without_stale_topic(self):
+    def test_rewrite_query_preserves_original_without_calling_search_planner(self):
         from knowledge_storm.paperstorm_intent_router import rewrite_query
+        from knowledge_storm.search_planning import SearchPlanner
 
         history = [
             {"role": "user", "content": "无源互调怎么抑制"},
             {"role": "assistant", "content": "可以做数字抵消"},
             {"role": "user", "content": "Python 的装饰器是什么"},
         ]
-        self.assertEqual("它有哪些用途", rewrite_query("它有哪些用途", {"topic": "PIM"}, history))
+        with mock.patch.object(
+            SearchPlanner,
+            "plan",
+            side_effect=AssertionError("router must not plan retrieval"),
+        ):
+            self.assertEqual(
+                "它有哪些用途",
+                rewrite_query("它有哪些用途", {"topic": "PIM"}, history),
+            )
 
     def test_dynamic_output_budget_scales_with_response_contract(self):
         from knowledge_storm.paperstorm_router_llm import select_output_budget

@@ -512,15 +512,28 @@ class HybridPaperIndex:
         expanded = copy.deepcopy(list(results or []))
         if budget == 0:
             return expanded
+        remaining_budget = budget
+        expanded_parent_ids = set()
         for item in expanded:
-            parent = self.parents.get(str(item.get("parent_id") or ""))
-            parent_context = self._truncate_to_budget(
-                parent.get("content", "") if parent else "", budget
-            )
+            parent_id = str(item.get("parent_id") or "")
+            parent = self.parents.get(parent_id)
             child_content = str(item.get("content") or "")
+            parent_content = str(parent.get("content", "") if parent else "")
+            if child_content:
+                parent_content = parent_content.replace(child_content, "")
+            if not parent_id or parent_id in expanded_parent_ids:
+                parent_content = ""
+            elif parent:
+                expanded_parent_ids.add(parent_id)
+            parent_context = self._truncate_to_budget(
+                parent_content, remaining_budget
+            )
+            remaining_budget = max(
+                0, remaining_budget - self._token_count(parent_context)
+            )
             item["parent_context"] = parent_context
             item["expanded_content"] = (
-                parent_context + "\n\n" + child_content
+                child_content + "\n\n" + parent_context
                 if parent_context
                 else child_content
             )
@@ -844,6 +857,17 @@ class HybridPaperIndex:
 
         units = _token_units(text)[:token_budget]
         return _join_units(units).strip()[: token_budget * 4]
+
+    def _token_count(self, text):
+        text = str(text or "")
+        if not text:
+            return 0
+        self._refresh_token_codec()
+        if self.token_codec is not None:
+            return len(self.token_codec.encode(text))
+        from .document_ingestion import _token_units
+
+        return len(_token_units(text))
 
     def _refresh_token_codec(self):
         if self.token_codec is not None:

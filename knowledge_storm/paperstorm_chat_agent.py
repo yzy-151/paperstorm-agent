@@ -243,6 +243,7 @@ class PaperStormChatAgent:
                 "citations": answer.get("citations") or [],
                 "evidence": answer.get("evidence") or [],
                 "retrieval_stack": answer.get("retrieval_stack", ""),
+                "retrieval_metadata": answer.get("retrieval_metadata") or {},
                 "telemetry": turn_telemetry,
             },
         )
@@ -870,6 +871,7 @@ def _graph_answer_payload(graph_run: Dict):
         "artifact_uri": graph_run.get("artifact_uri", ""),
         "retrieval_stack": graph_run.get("retrieval_stack", ""),
         "retrieval_mode": graph_run.get("retrieval_mode", ""),
+        "retrieval_metadata": graph_run.get("retrieval_metadata") or {},
     }
 
 

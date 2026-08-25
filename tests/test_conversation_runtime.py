@@ -269,6 +269,99 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             self.assertFalse(result["retrieval_triggered"])
             self.assertIn("passive intermodulation", result["answer"])
 
+    def test_runtime_plans_retrieval_once_with_original_query_and_full_history(self):
+        from knowledge_storm.paperstorm_service import PaperStormTaskService
+        from knowledge_storm.search_planning import SearchPlan, SearchPlanner
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = PaperStormTaskService(Path(temp_dir) / "service")
+            task = service.submit_research_task(
+                topic="pim 神经网络抑制",
+                run_mode="fake",
+                expected_keywords=["passive intermodulation"],
+            )
+            service.run_task(task["task_id"])
+            history = [
+                {"role": "user", "content": "无源互调会造成什么影响？"},
+                {"role": "assistant", "content": "它会造成射频链路失真。"},
+                {"role": "user", "content": "请保留这一整段历史给检索规划器。"},
+            ]
+            planner_calls = []
+
+            def plan_once(_planner, query, *, history=None):
+                planner_calls.append((query, tuple(history or ())))
+                return SearchPlan(
+                    original_query=query,
+                    standalone_query="passive intermodulation PIM",
+                    must_terms=("passive intermodulation",),
+                )
+
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                task_service=service,
+                evidence_judge=lambda _prompt: "可以回答",
+            )
+            with mock.patch.object(SearchPlanner, "plan", autospec=True, side_effect=plan_once):
+                result = runtime.invoke(
+                    thread_id="thread-single-plan",
+                    request_id="request-single-plan",
+                    user_id="alice",
+                    message="PIM 到底是什么？",
+                    topic="pim 神经网络抑制",
+                    task_id=task["task_id"],
+                    run_mode="fake",
+                    context_window=history,
+                )
+
+        self.assertEqual(1, len(planner_calls))
+        self.assertEqual("PIM 到底是什么？", planner_calls[0][0])
+        self.assertEqual(tuple(history), planner_calls[0][1])
+        self.assertEqual("PIM 到底是什么？", result["router_decision"]["rewritten_query"])
+        self.assertEqual(
+            "PIM 到底是什么？",
+            result["retrieval_metadata"]["search_plan"]["original_query"],
+        )
+
+    def test_runtime_trace_exposes_typed_planning_error(self):
+        from knowledge_storm.paperstorm_service import PaperStormTaskService
+        from knowledge_storm.search_planning import PlanningError, SearchPlanner
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = PaperStormTaskService(Path(temp_dir) / "service")
+            task = service.submit_research_task(topic="PIM", run_mode="fake")
+            service.run_task(task["task_id"])
+            runtime, _ = self.make_runtime(temp_dir, task_service=service)
+
+            with mock.patch.object(
+                SearchPlanner,
+                "plan",
+                side_effect=PlanningError(
+                    "planner provider timed out", error_type="provider_timeout"
+                ),
+            ):
+                with self.assertRaises(PlanningError):
+                    runtime.invoke(
+                        thread_id="thread-planning-error",
+                        request_id="request-planning-error",
+                        user_id="alice",
+                        message="PIM 是什么？",
+                        task_id=task["task_id"],
+                        run_mode="fake",
+                    )
+
+            events = runtime._request_trace_events(
+                "thread-planning-error", "request-planning-error"
+            )
+
+        event = next(
+            item
+            for item in events
+            if item["node"] == "knowledge_retrieval" and item["status"] == "error"
+        )
+        self.assertEqual("PlanningError", event["details"]["exception_type"])
+        self.assertEqual("provider_timeout", event["details"]["error_type"])
+        self.assertIn("planner provider timed out", event["details"]["message"])
+
     def test_casual_chat_prompt_includes_conversation_history(self):
         recorded = {}
 

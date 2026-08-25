@@ -45,7 +45,7 @@ class RetrievalPipeline:
         self.search_planner = search_planner or SearchPlanner()
 
     def search(self, request: RetrievalRequest):
-        query = str(request.query or "").strip()
+        query = " ".join(str(request.query or "").split())
         if not query:
             raise ValueError("query is required")
         started = time.perf_counter()
@@ -55,6 +55,8 @@ class RetrievalPipeline:
         )
         if not isinstance(plan, SearchPlan):
             raise TypeError("search_planner must return SearchPlan")
+        if plan.original_query != query:
+            raise ValueError("search_plan.original_query must match request.query")
         parent_budget = int(request.parent_budget_tokens)
         if parent_budget < 0:
             raise ValueError("parent_budget_tokens must not be negative")
@@ -77,6 +79,9 @@ class RetrievalPipeline:
 
         rerank_enabled = bool(request.enable_reranker or request.mode == "hybrid_rerank")
         mode = "hybrid_rerank" if rerank_enabled else request.mode
+        if rerank_enabled and self.reranker is None:
+            raise ValueError("hybrid_rerank mode requires reranker")
+        cheap_mode = "hybrid" if rerank_enabled else request.mode
         retrieve_started = time.perf_counter()
         candidate_k = max(int(request.candidate_k), int(request.top_k), 1)
         rankings = []
@@ -85,10 +90,10 @@ class RetrievalPipeline:
                 list(
                     self.index.search(
                         planned_query,
-                        mode=mode,
+                        mode=cheap_mode,
                         top_k=candidate_k,
                         candidate_k=candidate_k,
-                        reranker=self.reranker if rerank_enabled else None,
+                        reranker=None,
                         parent_budget_tokens=0,
                     )
                 )
@@ -102,7 +107,7 @@ class RetrievalPipeline:
                 len(queries),
                 retrieved_count,
                 "{0} planned queries; mode={1}; candidate_k={2}".format(
-                    len(queries), mode, candidate_k
+                    len(queries), cheap_mode, candidate_k
                 ),
             )
         )
@@ -122,23 +127,29 @@ class RetrievalPipeline:
             )
         )
 
-        parent_started = time.perf_counter()
-        parent_input = len(results)
-        if parent_budget > 0:
-            results = list(expand_parent(results, parent_budget))
-        expanded_count = sum(bool(item.get("parent_context")) for item in results)
-        stages.append(
-            _stage(
-                "parent_expand",
-                "completed" if parent_budget > 0 else "skipped",
-                _elapsed_ms(parent_started),
-                parent_input,
-                len(results),
-                "budget_tokens={0}; expanded={1}".format(
-                    parent_budget, expanded_count
-                ),
+        if rerank_enabled:
+            rerank_started = time.perf_counter()
+            rerank_input = len(results)
+            if hasattr(self.reranker, "rerank"):
+                results = list(
+                    self.reranker.rerank(
+                        plan.standalone_query, results, top_k=candidate_k
+                    )
+                )
+            else:
+                results = list(self.reranker(plan.standalone_query, results))[
+                    :candidate_k
+                ]
+            stages.append(
+                _stage(
+                    "rerank",
+                    "completed",
+                    _elapsed_ms(rerank_started),
+                    rerank_input,
+                    len(results),
+                    "one cross-encoder pass over fused candidates",
+                )
             )
-        )
 
         gate_started = time.perf_counter()
         gate_input = len(results)
@@ -165,24 +176,52 @@ class RetrievalPipeline:
                     marker in _search_text(item).lower() for marker in forbidden
                 )
             ]
+        must_terms = _normalized_terms(plan.must_terms)
+        if must_terms:
+            results = [
+                item
+                for item in results
+                if all(marker in _search_text(item).lower() for marker in must_terms)
+            ]
         results = results[: max(1, int(request.top_k))]
+        results = _rewrite_final_ranking(
+            results, score_key="rerank_score" if rerank_enabled else "rrf_score"
+        )
         filters_active = bool(
             self.relevance_gate
             or expected
             or forbidden
+            or must_terms
             or plan.filters
             or request.metadata_filters
         )
+        gate_stage = _stage(
+            "gate",
+            "completed" if filters_active else "skipped",
+            _elapsed_ms(gate_started),
+            gate_input,
+            len(results),
+            "metadata, must, expected, negative and forbidden evidence gates",
+        )
+
+        parent_started = time.perf_counter()
+        parent_input = len(results)
+        if parent_budget > 0 and results:
+            results = list(expand_parent(results, parent_budget))
+        expanded_count = sum(bool(item.get("parent_context")) for item in results)
         stages.append(
             _stage(
-                "gate",
-                "completed" if filters_active else "skipped",
-                _elapsed_ms(gate_started),
-                gate_input,
+                "parent_expand",
+                "completed" if parent_budget > 0 else "skipped",
+                _elapsed_ms(parent_started),
+                parent_input,
                 len(results),
-                "metadata, expected, negative and forbidden evidence gates",
+                "budget_tokens={0}; expanded={1}".format(
+                    parent_budget, expanded_count
+                ),
             )
         )
+        stages.append(gate_stage)
         provider = getattr(self.index, "embedding_provider", None)
         return {
             "schema": "paperstorm-retrieval-result",
@@ -228,7 +267,7 @@ def _metadata_matches(metadata, filters):
         actual = metadata.get(key)
         if isinstance(actual, (list, tuple, set)):
             if isinstance(expected, (list, tuple, set)):
-                if not set(expected).intersection(actual):
+                if not any(value in actual for value in expected):
                     return False
             elif expected not in actual:
                 return False
@@ -262,5 +301,38 @@ def _elapsed_ms(started):
 
 
 def _search_text(item):
-    content = item.get("expanded_content") or item.get("content", "")
-    return "{0}\n{1}".format(item.get("title", ""), content)
+    values = [item.get("title", ""), item.get("content", "")]
+    values.extend(_searchable_metadata_values(item.get("metadata") or {}))
+    return "\n".join(str(value) for value in values)
+
+
+def _searchable_metadata_values(value):
+    if isinstance(value, Mapping):
+        output = []
+        for key, item in value.items():
+            output.append(str(key))
+            output.extend(_searchable_metadata_values(item))
+        return output
+    if isinstance(value, (list, tuple, set, frozenset)):
+        output = []
+        for item in value:
+            output.extend(_searchable_metadata_values(item))
+        return output
+    return ["" if value is None else str(value)]
+
+
+def _rewrite_final_ranking(results, score_key):
+    output = []
+    for rank, item in enumerate(results, start=1):
+        enriched = dict(item)
+        score = float(
+            enriched.get(
+                score_key,
+                enriched.get("rrf_score", enriched.get("score", 0.0)),
+            )
+        )
+        enriched["final_rank"] = rank
+        enriched["final_score"] = round(score, 8)
+        enriched["score"] = round(score, 8)
+        output.append(enriched)
+    return output

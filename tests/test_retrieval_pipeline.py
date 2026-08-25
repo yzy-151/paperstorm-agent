@@ -42,7 +42,7 @@ class RecordingIndex:
 
 
 class RetrievalPipelineTest(unittest.TestCase):
-    def test_parent_expansion_runs_once_after_fusion(self):
+    def test_parent_expansion_runs_once_after_gate_for_final_candidates(self):
         from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
         from knowledge_storm.search_planning import SearchPlan
 
@@ -60,26 +60,26 @@ class RetrievalPipelineTest(unittest.TestCase):
 
             def expand_parent_context(self, results, parent_budget_tokens):
                 self.events.append(("expand", len(results), parent_budget_tokens))
-                return [dict(item, parent_context="parent", expanded_content="parent\n\n" + item["content"]) for item in results]
+                return [dict(item, parent_context="parent", expanded_content=item["content"] + "\n\nparent") for item in results]
 
         plan = SearchPlan("PIM", "PIM", subqueries=("RF PIM", "PIM suppression"))
         index = ExpandingIndex()
         def gate(results, _query):
             index.events.append(("gate", len(results)))
-            return results
+            return [item for item in results if item["chunk_id"] == "shared"]
 
         outcome = RetrievalPipeline(index, relevance_gate=gate).search(
-            RetrievalRequest(query="PIM", search_plan=plan, top_k=3, parent_budget_tokens=32)
+            RetrievalRequest(query="PIM", search_plan=plan, top_k=1, parent_budget_tokens=32)
         )
 
         self.assertEqual([0, 0, 0], [event[2] for event in index.events if event[0] == "search"])
         expand_events = [event for event in index.events if event[0] == "expand"]
-        self.assertEqual([("expand", 4, 32)], expand_events)
-        self.assertEqual(["search", "search", "search", "expand", "gate"], [event[0] for event in index.events])
+        self.assertEqual([("expand", 1, 32)], expand_events)
+        self.assertEqual(["search", "search", "search", "gate", "expand"], [event[0] for event in index.events])
         self.assertEqual("completed", outcome["stages"][3]["status"])
-        self.assertEqual(4, outcome["stages"][3]["input_count"])
-        self.assertEqual(4, outcome["stages"][3]["output_count"])
-        self.assertIn("expanded=4", outcome["stages"][3]["reason"])
+        self.assertEqual(1, outcome["stages"][3]["input_count"])
+        self.assertEqual(1, outcome["stages"][3]["output_count"])
+        self.assertIn("expanded=1", outcome["stages"][3]["reason"])
 
     def test_parent_budget_requires_expansion_capability(self):
         from knowledge_storm.retrieval_pipeline import (
@@ -93,23 +93,23 @@ class RetrievalPipelineTest(unittest.TestCase):
                 RetrievalRequest(query="PIM", parent_budget_tokens=8)
             )
 
-    def test_gate_can_use_evidence_added_by_parent_expansion(self):
+    def test_parent_expansion_cannot_rescue_candidate_rejected_by_cheap_gate(self):
         from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
 
         class ParentOnlyIndex(RecordingIndex):
+            def __init__(self):
+                super().__init__()
+                self.expansion_inputs = []
+
             def search(self, query, **kwargs):
                 return [{"chunk_id": "child", "content": "local detail"}]
 
             def expand_parent_context(self, results, parent_budget_tokens):
-                return [
-                    dict(
-                        results[0],
-                        parent_context="passive intermodulation system context",
-                        expanded_content="passive intermodulation system context\n\nlocal detail",
-                    )
-                ]
+                self.expansion_inputs.append(list(results))
+                return list(results)
 
-        outcome = RetrievalPipeline(ParentOnlyIndex()).search(
+        index = ParentOnlyIndex()
+        outcome = RetrievalPipeline(index).search(
             RetrievalRequest(
                 query="PIM",
                 top_k=1,
@@ -118,7 +118,8 @@ class RetrievalPipelineTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(["child"], [item["chunk_id"] for item in outcome["results"]])
+        self.assertEqual([], outcome["results"])
+        self.assertEqual([], index.expansion_inputs)
 
     def test_returns_stable_stage_schema_when_reranker_is_disabled(self):
         from knowledge_storm.retrieval_pipeline import (
@@ -166,6 +167,32 @@ class RetrievalPipelineTest(unittest.TestCase):
         result = RetrievalPipeline(RecordingIndex(), search_planner=planner).search(request)
         self.assertEqual("passive intermodulation", result["search_plan"]["standalone_query"])
 
+    def test_prebuilt_search_plan_must_preserve_request_original_query(self):
+        from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
+        from knowledge_storm.search_planning import SearchPlan
+
+        plan = SearchPlan(
+            original_query="rewritten query",
+            standalone_query="rewritten query",
+        )
+
+        with self.assertRaisesRegex(ValueError, "original_query"):
+            RetrievalPipeline(RecordingIndex()).search(
+                RetrievalRequest(query="user's exact words", search_plan=plan)
+            )
+
+    def test_request_query_uses_search_plan_whitespace_normalization(self):
+        from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
+
+        result = RetrievalPipeline(RecordingIndex()).search(
+            RetrievalRequest(query="  PIM   suppression  ")
+        )
+
+        self.assertEqual("PIM suppression", result["query"])
+        self.assertEqual(
+            "PIM suppression", result["search_plan"]["original_query"]
+        )
+
     def test_multi_query_results_are_fused_and_deduplicated(self):
         from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
         from knowledge_storm.search_planning import SearchPlan
@@ -211,6 +238,102 @@ class RetrievalPipelineTest(unittest.TestCase):
         )
         self.assertEqual(["gold"], [item["chunk_id"] for item in result["results"]])
 
+    def test_all_must_terms_filter_wrong_domain_candidates_using_searchable_text(self):
+        from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
+        from knowledge_storm.search_planning import SearchPlan
+
+        class MustTermIndex(RecordingIndex):
+            def search(self, query, **kwargs):
+                return [
+                    {
+                        "chunk_id": "wrong-pim",
+                        "title": "Processing-in-memory accelerator",
+                        "content": "PIM implemented with DRAM arrays.",
+                        "metadata": {"domain": "computer architecture"},
+                    },
+                    {
+                        "chunk_id": "gold",
+                        "title": "RF distortion",
+                        "content": "Suppression method for nonlinear junctions.",
+                        "metadata": {
+                            "domain": "passive intermodulation",
+                            "band": "radio frequency",
+                        },
+                    },
+                    {
+                        "chunk_id": "partial",
+                        "title": "Passive intermodulation overview",
+                        "content": "Cable distortion.",
+                        "metadata": {},
+                    },
+                ]
+
+        plan = SearchPlan(
+            "PIM",
+            "passive intermodulation RF",
+            must_terms=("passive intermodulation", "radio frequency"),
+        )
+        result = RetrievalPipeline(MustTermIndex()).search(
+            RetrievalRequest(query="PIM", search_plan=plan, top_k=3)
+        )
+
+        self.assertEqual(["gold"], [item["chunk_id"] for item in result["results"]])
+
+    def test_three_planned_queries_rerank_fused_candidates_once_and_rewrite_scores(self):
+        from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
+        from knowledge_storm.search_planning import SearchPlan
+
+        class CheapIndex(RecordingIndex):
+            def search(self, query, **kwargs):
+                self.calls.append(dict(query=query, **kwargs))
+                return [
+                    {"chunk_id": "shared", "content": "shared", "metadata": {}},
+                    {"chunk_id": query, "content": query, "metadata": {}},
+                ]
+
+        class OneShotReranker:
+            model_name = "test-cross-encoder"
+
+            def __init__(self):
+                self.calls = []
+
+            def rerank(self, query, candidates, top_k=None):
+                self.calls.append((query, [item["chunk_id"] for item in candidates], top_k))
+                output = [dict(item) for item in candidates]
+                for item in output:
+                    item["rerank_score"] = 0.9 if item["chunk_id"] == "q-2" else 0.2
+                return sorted(output, key=lambda item: -item["rerank_score"])
+
+        plan = SearchPlan("raw", "q-0", subqueries=("q-1", "q-2"))
+        index = CheapIndex()
+        reranker = OneShotReranker()
+        result = RetrievalPipeline(index, reranker=reranker).search(
+            RetrievalRequest(
+                query="raw",
+                search_plan=plan,
+                mode="hybrid_rerank",
+                top_k=2,
+                candidate_k=10,
+            )
+        )
+
+        self.assertEqual(3, len(index.calls))
+        self.assertTrue(all(call["mode"] == "hybrid" for call in index.calls))
+        self.assertTrue(all(call["reranker"] is None for call in index.calls))
+        self.assertEqual(1, len(reranker.calls))
+        self.assertEqual("q-0", reranker.calls[0][0])
+        self.assertEqual("q-2", result["results"][0]["chunk_id"])
+        self.assertEqual([1, 2], [item["final_rank"] for item in result["results"]])
+        self.assertEqual([0.9, 0.2], [item["final_score"] for item in result["results"]])
+        self.assertEqual([0.9, 0.2], [item["score"] for item in result["results"]])
+        self.assertEqual(
+            ["plan", "retrieve", "fuse", "rerank", "parent_expand", "gate"],
+            [stage["name"] for stage in result["stages"]],
+        )
+        rerank_stage = result["stages"][3]
+        self.assertEqual(len(reranker.calls[0][1]), rerank_stage["input_count"])
+        self.assertEqual(len(reranker.calls[0][1]), rerank_stage["output_count"])
+
     def test_hybrid_index_parent_expansion_is_deep_copied_and_keeps_rank(self):
         from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
 
@@ -232,6 +355,7 @@ class RetrievalPipelineTest(unittest.TestCase):
         self.assertEqual(2, expanded[0]["final_rank"])
         self.assertIn("parent-only-fact", expanded[0]["parent_context"])
         self.assertLessEqual(len(expanded[0]["parent_context"]), 32)
+        self.assertTrue(expanded[0]["expanded_content"].startswith("child evidence"))
         expanded[0]["metadata"]["nested"]["value"] = 9
         self.assertEqual(1, child["metadata"]["nested"]["value"])
 
@@ -259,6 +383,32 @@ class RetrievalPipelineTest(unittest.TestCase):
         orphan = index.expand_parent_context([child], 8)
         self.assertEqual("", orphan[0]["parent_context"])
         self.assertEqual("child evidence", orphan[0]["expanded_content"])
+
+    def test_parent_expansion_deduplicates_siblings_and_uses_one_global_budget(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        children = [
+            {"chunk_id": "child-1", "parent_id": "parent-1", "content": "gold child fact"},
+            {"chunk_id": "child-2", "parent_id": "parent-1", "content": "sibling detail"},
+        ]
+        parent = {
+            "node_id": "parent-1",
+            "content": "gold child fact alpha beta gamma delta epsilon zeta",
+        }
+        index = HybridPaperIndex(
+            children, embedding_provider=HashEmbeddingProvider(), parents=[parent]
+        )
+
+        expanded = index.expand_parent_context(children, 4)
+
+        self.assertTrue(expanded[0]["expanded_content"].startswith("gold child fact"))
+        self.assertNotIn("gold child fact", expanded[0]["parent_context"])
+        self.assertEqual("", expanded[1]["parent_context"])
+        self.assertEqual("sibling detail", expanded[1]["expanded_content"])
+        total_parent_words = sum(
+            len(item["parent_context"].split()) for item in expanded
+        )
+        self.assertLessEqual(total_parent_words, 4)
 
     def test_rejects_empty_query(self):
         from knowledge_storm.retrieval_pipeline import (
@@ -340,6 +490,24 @@ class RetrievalPipelineTest(unittest.TestCase):
         )
         self.assertIn("parent-only-fact", composed["answer"])
         self.assertEqual("child-gold", composed["citations"][0]["chunk_id"])
+
+    def test_qa_prompt_keeps_child_gold_fact_before_long_parent_context(self):
+        from knowledge_storm.paperstorm_qa import _kb_answer_prompt
+
+        prompt = _kb_answer_prompt(
+            "关键事实是什么？",
+            [
+                {
+                    "chunk_id": "gold",
+                    "title": "Evidence",
+                    "content": "CHILD_GOLD_FACT",
+                    "parent_context": "parent filler " * 300,
+                    "expanded_content": ("parent filler " * 300) + "CHILD_GOLD_FACT",
+                }
+            ],
+        )
+
+        self.assertIn("CHILD_GOLD_FACT", prompt)
 
 
 if __name__ == "__main__":

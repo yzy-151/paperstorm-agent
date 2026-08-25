@@ -80,6 +80,7 @@ class ConversationState(TypedDict, total=False):
     node_events: List[Dict]
     retrieval_stack: str
     retrieval_mode: str
+    retrieval_metadata: Dict
     escalate_to_retrieval: bool
     llm_call: Dict
     llm_error: Dict
@@ -102,6 +103,8 @@ class StormDeepResearchTool:
             "output_language": {"type": "string", "default": "zh"},
             "expected_keywords": {"type": "array", "items": {"type": "string"}},
             "forbidden_keywords": {"type": "array", "items": {"type": "string"}},
+            "history": {"type": "array", "items": {"type": "object"}},
+            "search_plan": {"type": "object"},
         },
         "required": ["question"],
     }
@@ -144,6 +147,8 @@ class StormDeepResearchTool:
             "output_language",
             "expected_keywords",
             "forbidden_keywords",
+            "history",
+            "search_plan",
         }
         payload = {key: value for key, value in arguments.items() if key in allowed and value not in (None, "")}
         result = self.task_service.ask_research_agent(**payload)
@@ -181,6 +186,7 @@ class StormDeepResearchTool:
             "decision": result.get("decision") or {},
             "retrieval_stack": "storm_deep_research_tool",
             "retrieval_mode": "",
+            "retrieval_metadata": result.get("retrieval_metadata") or {},
             "llm_call": {},
             "llm_error": {},
         }
@@ -248,6 +254,7 @@ class PaperStormConversationRuntime:
             "node_events": [],
             "retrieval_stack": "",
             "retrieval_mode": "",
+            "retrieval_metadata": {},
         }
         config = {"configurable": {"thread_id": request.thread_id}}
         try:
@@ -670,9 +677,9 @@ class PaperStormConversationRuntime:
             else:
                 result = self.task_service.query_knowledge_base(
                     task_id,
-                    question=(state.get("router_decision") or {}).get("rewritten_query")
-                    or state["message"],
+                    question=state["message"],
                     top_k=3,
+                    history=state.get("context_window") or [],
                 )
             return self._success_update(
                 state,
@@ -703,7 +710,8 @@ class PaperStormConversationRuntime:
     def _evidence_grade(self, state: ConversationState):
         started = time.perf_counter()
         result = state.get("knowledge_result") or {}
-        question = (state.get("router_decision") or {}).get("rewritten_query") or state["message"]
+        search_plan = (result.get("retrieval_metadata") or {}).get("search_plan") or {}
+        question = search_plan.get("standalone_query") or state["message"]
         grade = evaluate_evidence_sufficiency(
             question=question,
             evidence=result.get("evidence") or [],
@@ -756,6 +764,13 @@ class PaperStormConversationRuntime:
                     "output_language": state.get("output_language") or "zh",
                     "expected_keywords": state.get("expected_keywords") or [],
                     "forbidden_keywords": state.get("forbidden_keywords") or [],
+                    "history": state.get("context_window") or [],
+                    "search_plan": (
+                        ((state.get("knowledge_result") or {}).get("retrieval_metadata") or {}).get(
+                            "search_plan"
+                        )
+                        or None
+                    ),
                 }
             )
             return self._success_update(
@@ -794,6 +809,7 @@ class PaperStormConversationRuntime:
                 or {},
                 "retrieval_stack": source.get("retrieval_stack", ""),
                 "retrieval_mode": source.get("retrieval_mode", ""),
+                "retrieval_metadata": source.get("retrieval_metadata") or {},
             },
         )
 
@@ -889,12 +905,20 @@ class PaperStormConversationRuntime:
         )
 
     def _error_event(self, state, node, started, error):
+        details = {
+            "error": repr(error),
+            "exception_type": type(error).__name__,
+            "message": str(error),
+        }
+        error_type = getattr(error, "error_type", None)
+        if error_type:
+            details["error_type"] = str(error_type)
         event = _node_event(
             state,
             node,
             "error",
             started,
-            details={"error": repr(error)},
+            details=details,
         )
         self._append_trace(state["thread_id"], event)
 
@@ -932,6 +956,7 @@ class PaperStormConversationRuntime:
             "idempotent_replay": False,
             "retrieval_stack": state.get("retrieval_stack", ""),
             "retrieval_mode": state.get("retrieval_mode", ""),
+            "retrieval_metadata": state.get("retrieval_metadata") or {},
             "llm_call": state.get("llm_call") or {},
             "llm_error": state.get("llm_error") or {},
         }

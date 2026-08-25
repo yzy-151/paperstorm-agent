@@ -120,6 +120,8 @@ class PaperStormChatAgentTest(unittest.TestCase):
         self.assertIn("semantic", reply["memory_context"])
 
     def test_chat_followup_reuses_previous_task_and_keeps_sliding_window(self):
+        from knowledge_storm.search_planning import SearchPlanner
+
         service = self.make_service()
         session = service.create_chat_session(
             topic="pim 神经网络抑制",
@@ -130,10 +132,32 @@ class PaperStormChatAgentTest(unittest.TestCase):
         )
 
         first = service.send_chat_message(session["chat_id"], "PIM 是什么？")
-        second = service.send_chat_message(session["chat_id"], "那它为什么不是 DRAM？")
+        planner_calls = []
+        original_plan = SearchPlanner.plan
+
+        def recording_plan(planner, query, *, history=None):
+            planner_calls.append((query, tuple(history or ())))
+            return original_plan(planner, query, history=history)
+
+        with mock.patch.object(
+            SearchPlanner, "plan", autospec=True, side_effect=recording_plan
+        ):
+            second = service.send_chat_message(
+                session["chat_id"], "那它为什么不是 DRAM？"
+            )
 
         self.assertTrue(first["retrieval_triggered"])
-        self.assertFalse(second["retrieval_triggered"])
+        self.assertEqual(1, len(planner_calls))
+        self.assertFalse(
+            second["retrieval_triggered"],
+            {
+                "route": second["graph_run"].get("route"),
+                "grade": second["graph_run"].get("evidence_grade"),
+                "retrieval_metadata": second["research_answer"].get(
+                    "retrieval_metadata"
+                ),
+            },
+        )
         self.assertEqual(second["used_task_id"], first["used_task_id"])
         self.assertLessEqual(len(second["context_window"]), 3)
         self.assertIn("PIM 是什么", second["compressed_context"]["summary"])
