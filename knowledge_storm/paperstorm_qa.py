@@ -1,5 +1,7 @@
 import json
+import math
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -79,11 +81,14 @@ class PaperStormKnowledgeBase:
         memory_store: Optional[PaperStormMemoryStore] = None,
         top_k: int = 3,
         answer_generator: Optional[Callable[[str], str]] = None,
+        retrieval_options: Optional[Dict] = None,
     ):
         question = str(question or "").strip()
         if not question:
             raise ValueError("question is required")
-        evidence = self.search(question, top_k=top_k)
+        evidence = self.search(
+            question, top_k=top_k, **dict(retrieval_options or {})
+        )
         memory_context = (
             memory_store.get_context_bundle(query=question, max_items=3)
             if memory_store
@@ -108,6 +113,7 @@ class PaperStormKnowledgeBase:
             "evidence": evidence,
             "retrieval_stack": self.retrieval_meta.get("stack", ""),
             "retrieval_mode": self.retrieval_meta.get("mode", ""),
+            "retrieval_metadata": _json_safe_copy(self.retrieval_meta),
         }
 
     def search(self, query: str, top_k: int = 3, **retrieval_options):
@@ -117,13 +123,9 @@ class PaperStormKnowledgeBase:
             outcome = self.retrieval_pipeline.search(
                 RetrievalRequest(query=query, top_k=top_k, **retrieval_options)
             )
-            self.retrieval_meta = {
-                "stack": "retrieval_pipeline",
-                "mode": outcome.get("mode", ""),
-                "embedding": (outcome.get("models") or {}).get("embedding", ""),
-                "stages": outcome.get("stages") or [],
-                "search_plan": outcome.get("search_plan") or {},
-            }
+            self.retrieval_meta = _retrieval_metadata(
+                outcome, stack="retrieval_pipeline"
+            )
             return [_rag_chunk_to_doc(item) for item in outcome["results"]]
         if self.run_dir:
             from .retrieval_runtime import search_runtime_index
@@ -131,13 +133,9 @@ class PaperStormKnowledgeBase:
             outcome = search_runtime_index(
                 self.run_dir, query, top_k=top_k, **retrieval_options
             )
-            self.retrieval_meta = {
-                "stack": outcome.get("stack", ""),
-                "mode": outcome.get("mode", ""),
-                "embedding": outcome.get("embedding", ""),
-                "stages": outcome.get("stages") or [],
-                "search_plan": outcome.get("search_plan") or {},
-            }
+            self.retrieval_meta = _retrieval_metadata(
+                outcome, stack=outcome.get("stack", "")
+            )
             return [_rag_chunk_to_doc(item) for item in outcome.get("results") or []]
         raise RuntimeError(
             "PaperStormKnowledgeBase requires a run_dir or RetrievalPipeline"
@@ -156,7 +154,9 @@ def _compose_answer(question: str, evidence: List[Dict], memory_context: Dict):
         return "没有找到足够证据回答该问题。"
     sentences = []
     for index, doc in enumerate(evidence, start=1):
-        content = _first_sentence(doc.get("content", ""))
+        content = _first_sentence(
+            doc.get("expanded_content") or doc.get("content", "")
+        )
         if content:
             sentences.append("{0}[{1}]".format(content, index))
     memory_hint = _memory_hint(memory_context)
@@ -211,7 +211,7 @@ def _kb_answer_prompt(question: str, evidence: List[Dict]) -> str:
             "[{0}] {1}：{2}".format(
                 index,
                 str(doc.get("title") or doc.get("id") or "")[:60],
-                str(doc.get("content") or "")[:260],
+                str(doc.get("expanded_content") or doc.get("content") or "")[:260],
             )
         )
     lines.append("回答：")
@@ -231,6 +231,7 @@ def _rag_chunk_to_doc(chunk: Dict):
     return {
         "id": chunk.get("chunk_id") or "",
         "chunk_id": chunk.get("chunk_id") or "",
+        "parent_id": chunk.get("parent_id") or "",
         "title": chunk.get("title") or "",
         "content": chunk.get("content") or "",
         "expanded_content": chunk.get("expanded_content") or chunk.get("content") or "",
@@ -252,6 +253,39 @@ def _rag_chunk_to_doc(chunk: Dict):
         "retrieval_mode": chunk.get("retrieval_mode", ""),
         "final_rank": chunk.get("final_rank", 0),
     }
+
+
+def _json_safe_copy(value):
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
+    if isinstance(value, Mapping):
+        return {
+            str(key): _json_safe_copy(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe_copy(item) for item in value]
+    return str(value)
+
+
+def _retrieval_metadata(outcome, stack):
+    metadata = {
+        key: value for key, value in dict(outcome or {}).items() if key != "results"
+    }
+    metadata["stack"] = stack
+    models = dict(metadata.get("models") or {})
+    if not models and metadata.get("embedding"):
+        models["embedding"] = metadata["embedding"]
+    metadata["models"] = models
+    metadata.setdefault("mode", "")
+    metadata.setdefault("search_plan", {})
+    metadata.setdefault("stages", [])
+    metadata["embedding"] = models.get(
+        "embedding", metadata.get("embedding", "")
+    )
+    return _json_safe_copy(metadata)
 
 
 def _read_first_existing(paths):

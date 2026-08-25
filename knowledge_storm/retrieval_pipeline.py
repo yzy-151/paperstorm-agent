@@ -8,6 +8,10 @@ from .retrieval import reciprocal_rank_fusion
 from .search_planning import SearchPlan, SearchPlanner
 
 
+class RetrievalCapabilityError(RuntimeError):
+    """Raised when an index cannot satisfy a requested retrieval stage."""
+
+
 @dataclass(frozen=True)
 class RetrievalRequest:
     query: str
@@ -51,6 +55,14 @@ class RetrievalPipeline:
         )
         if not isinstance(plan, SearchPlan):
             raise TypeError("search_planner must return SearchPlan")
+        parent_budget = int(request.parent_budget_tokens)
+        if parent_budget < 0:
+            raise ValueError("parent_budget_tokens must not be negative")
+        expand_parent = getattr(self.index, "expand_parent_context", None)
+        if parent_budget > 0 and not callable(expand_parent):
+            raise RetrievalCapabilityError(
+                "index does not support parent context expansion"
+            )
         queries = _planned_queries(plan)
         stages = [
             _stage(
@@ -77,9 +89,7 @@ class RetrievalPipeline:
                         top_k=candidate_k,
                         candidate_k=candidate_k,
                         reranker=self.reranker if rerank_enabled else None,
-                        parent_budget_tokens=max(
-                            0, int(request.parent_budget_tokens)
-                        ),
+                        parent_budget_tokens=0,
                     )
                 )
             )
@@ -98,7 +108,7 @@ class RetrievalPipeline:
         )
 
         fuse_started = time.perf_counter()
-        results = reciprocal_rank_fusion(rankings)
+        results = reciprocal_rank_fusion(rankings)[:candidate_k]
         stages.append(
             _stage(
                 "fuse",
@@ -113,16 +123,19 @@ class RetrievalPipeline:
         )
 
         parent_started = time.perf_counter()
+        parent_input = len(results)
+        if parent_budget > 0:
+            results = list(expand_parent(results, parent_budget))
         expanded_count = sum(bool(item.get("parent_context")) for item in results)
         stages.append(
             _stage(
                 "parent_expand",
-                "completed" if request.parent_budget_tokens > 0 else "skipped",
+                "completed" if parent_budget > 0 else "skipped",
                 _elapsed_ms(parent_started),
-                len(results),
+                parent_input,
                 len(results),
                 "budget_tokens={0}; expanded={1}".format(
-                    max(0, int(request.parent_budget_tokens)), expanded_count
+                    parent_budget, expanded_count
                 ),
             )
         )
@@ -249,4 +262,5 @@ def _elapsed_ms(started):
 
 
 def _search_text(item):
-    return "{0}\n{1}".format(item.get("title", ""), item.get("content", ""))
+    content = item.get("expanded_content") or item.get("content", "")
+    return "{0}\n{1}".format(item.get("title", ""), content)

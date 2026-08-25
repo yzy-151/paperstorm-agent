@@ -499,20 +499,32 @@ class HybridPaperIndex:
                 ),
                 8,
             )
-            if parent_budget_tokens > 0:
-                parent = self.parents.get(str(enriched.get("parent_id") or ""))
-                parent_context = self._truncate_to_budget(
-                    parent.get("content", "") if parent else "",
-                    parent_budget_tokens,
-                )
-                enriched["parent_context"] = parent_context
-                enriched["expanded_content"] = (
-                    parent_context + "\n\n" + enriched.get("content", "")
-                    if parent_context
-                    else enriched.get("content", "")
-                )
             output.append(copy.deepcopy(enriched))
-        return output
+        return self.expand_parent_context(output, parent_budget_tokens)
+
+    def expand_parent_context(
+        self, results: Iterable[Dict], parent_budget_tokens: int
+    ) -> List[Dict]:
+        """Attach bounded parent text without mutating ranked child results."""
+        budget = int(parent_budget_tokens)
+        if budget < 0:
+            raise ValueError("parent_budget_tokens must not be negative")
+        expanded = copy.deepcopy(list(results or []))
+        if budget == 0:
+            return expanded
+        for item in expanded:
+            parent = self.parents.get(str(item.get("parent_id") or ""))
+            parent_context = self._truncate_to_budget(
+                parent.get("content", "") if parent else "", budget
+            )
+            child_content = str(item.get("content") or "")
+            item["parent_context"] = parent_context
+            item["expanded_content"] = (
+                parent_context + "\n\n" + child_content
+                if parent_context
+                else child_content
+            )
+        return expanded
 
     @classmethod
     def from_documents(
