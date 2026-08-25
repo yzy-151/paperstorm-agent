@@ -236,6 +236,31 @@ class MilestoneManifestTest(unittest.TestCase):
         for leaked in ("hunter2", "sk-secret", "camel-secret", "token-secret"):
             self.assertNotIn(leaked, serialized)
 
+    def test_acronym_sensitive_key_is_redacted(self):
+        from knowledge_storm.badcase_reporting import sanitize_json_payload
+
+        payload = sanitize_json_payload({"APIKey": "secret"})
+
+        self.assertEqual(payload, {})
+
+    def test_quoted_command_and_environment_values_are_redacted_whole(self):
+        from knowledge_storm.badcase_reporting import sanitize_json_payload
+
+        payload = sanitize_json_payload(
+            {
+                "commands": [
+                    '--password "hunter two"',
+                    "--password 'hunter two'",
+                    "--password=hunter2",
+                ],
+                "environment": "DEEPSEEK_API_KEY='sk hunter two'",
+            }
+        )
+
+        serialized = json.dumps(payload, sort_keys=True)
+        for leaked in ("hunter two", "hunter2", "sk hunter two"):
+            self.assertNotIn(leaked, serialized)
+
     def test_writer_rejects_non_dossiers(self):
         from knowledge_storm.badcase_reporting import write_case_dossiers
 

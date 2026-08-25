@@ -15,11 +15,11 @@ from pathlib import Path
 MILESTONES = ("P1", "P1+P2", "P1+P2+P3", "P1+P2+P3+P4")
 _SENSITIVE_WORDS = frozenset(("secret", "password", "token", "key"))
 _SENSITIVE_OPTION = re.compile(
-    r"(?P<prefix>--(?:api[-_]?key|access[-_]?token|secret|password|token|key)(?:=|\s+))(?P<value>\S+)",
+    r"(?P<prefix>--(?:api[-_]?key|access[-_]?token|secret|password|token|key)(?:=|\s+))(?P<value>\"[^\"]*\"|'[^']*'|\S+)",
     re.I,
 )
 _ASSIGNMENT = re.compile(
-    r"(?P<key>[A-Za-z][A-Za-z0-9_-]*)\s*=\s*(?P<value>\S+)",
+    r"(?P<key>[A-Za-z][A-Za-z0-9_-]*)\s*=\s*(?P<value>\"[^\"]*\"|'[^']*'|\S+)",
     re.I,
 )
 
@@ -160,6 +160,7 @@ def sanitize_json_payload(value):
 
 
 def _normalize_key(key):
+    key = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", str(key))
     key = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(key))
     return tuple(part for part in re.split(r"[^A-Za-z0-9]+", key.lower()) if part)
 
