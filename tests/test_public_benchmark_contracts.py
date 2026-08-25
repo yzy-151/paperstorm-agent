@@ -34,9 +34,10 @@ class PublicBenchmarkContractTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            ["retrieve", "fuse", "rerank", "gate"],
+            ["plan", "retrieve", "fuse", "parent_expand", "gate"],
             [stage["name"] for stage in report["predictions"][0]["retrieval_stages"]],
         )
+        self.assertIn("search_plan", report["predictions"][0])
 
 
 if __name__ == "__main__":

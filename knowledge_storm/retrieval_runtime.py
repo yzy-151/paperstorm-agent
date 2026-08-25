@@ -199,6 +199,12 @@ def search_runtime_index(
     embedding: Optional[str] = None,
     mode: Optional[str] = None,
     reranker=None,
+    history=(),
+    search_plan=None,
+    parent_budget_tokens: int = 0,
+    metadata_filters=None,
+    expected_keywords=(),
+    forbidden_keywords=(),
 ) -> Dict:
     """Search a research run dir with the configured runtime stack."""
     mode = runtime_mode(mode)
@@ -231,6 +237,12 @@ def search_runtime_index(
             candidate_k=max(top_k * 4, 20),
             mode=mode,
             enable_reranker=mode == "hybrid_rerank",
+            history=tuple(history or ()),
+            search_plan=search_plan,
+            parent_budget_tokens=max(0, int(parent_budget_tokens)),
+            metadata_filters=dict(metadata_filters or {}),
+            expected_keywords=tuple(expected_keywords or ()),
+            forbidden_keywords=tuple(forbidden_keywords or ()),
         )
     )
     outcome.update(

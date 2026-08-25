@@ -133,7 +133,8 @@ class PaperStormIntentRouterTest(unittest.TestCase):
 
         self.assertEqual(decision["intent"], "research_qa")
         self.assertTrue(decision["need_retrieval"])
-        self.assertIn("PIM 是什么", decision["rewritten_query"])
+        self.assertEqual("那它为什么不是 DRAM？", decision["rewritten_query"])
+        self.assertNotIn("pim 神经网络抑制", decision["rewritten_query"].lower())
 
     def test_router_keeps_standalone_research_request_without_topic_pollution(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter

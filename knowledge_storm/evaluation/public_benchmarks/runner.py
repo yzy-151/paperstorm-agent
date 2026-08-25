@@ -113,6 +113,7 @@ def run_retrieval_benchmark(
                 "latency_ms": round(latency_ms, 4),
                 "metrics": metrics,
                 "retrieval_stages": outcome["stages"],
+                "search_plan": outcome["search_plan"],
             }
             predictions.append(row)
             per_case.append(dict(metrics, latency_ms=latency_ms))

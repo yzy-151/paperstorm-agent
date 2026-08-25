@@ -110,29 +110,33 @@ class PaperStormKnowledgeBase:
             "retrieval_mode": self.retrieval_meta.get("mode", ""),
         }
 
-    def search(self, query: str, top_k: int = 3):
+    def search(self, query: str, top_k: int = 3, **retrieval_options):
         if self.retrieval_pipeline is not None:
             from .retrieval_pipeline import RetrievalRequest
 
             outcome = self.retrieval_pipeline.search(
-                RetrievalRequest(query=query, top_k=top_k)
+                RetrievalRequest(query=query, top_k=top_k, **retrieval_options)
             )
             self.retrieval_meta = {
                 "stack": "retrieval_pipeline",
                 "mode": outcome.get("mode", ""),
                 "embedding": (outcome.get("models") or {}).get("embedding", ""),
                 "stages": outcome.get("stages") or [],
+                "search_plan": outcome.get("search_plan") or {},
             }
             return [_rag_chunk_to_doc(item) for item in outcome["results"]]
         if self.run_dir:
             from .retrieval_runtime import search_runtime_index
 
-            outcome = search_runtime_index(self.run_dir, query, top_k=top_k)
+            outcome = search_runtime_index(
+                self.run_dir, query, top_k=top_k, **retrieval_options
+            )
             self.retrieval_meta = {
                 "stack": outcome.get("stack", ""),
                 "mode": outcome.get("mode", ""),
                 "embedding": outcome.get("embedding", ""),
                 "stages": outcome.get("stages") or [],
+                "search_plan": outcome.get("search_plan") or {},
             }
             return [_rag_chunk_to_doc(item) for item in outcome.get("results") or []]
         raise RuntimeError(
@@ -229,6 +233,8 @@ def _rag_chunk_to_doc(chunk: Dict):
         "chunk_id": chunk.get("chunk_id") or "",
         "title": chunk.get("title") or "",
         "content": chunk.get("content") or "",
+        "expanded_content": chunk.get("expanded_content") or chunk.get("content") or "",
+        "parent_context": chunk.get("parent_context") or "",
         "url": chunk.get("url") or "",
         "source": chunk.get("source_type") or "",
         "source_type": chunk.get("source_type") or "",

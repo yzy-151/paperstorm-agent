@@ -65,8 +65,11 @@ class PaperStormRetrievalRuntimeTest(unittest.TestCase):
             self.assertEqual(kb.retrieval_meta["stack"], "retrieval_pipeline")
             self.assertEqual(kb.retrieval_meta["mode"], "hybrid")
             self.assertEqual(
-                ["retrieve", "fuse", "rerank", "gate"],
+                ["plan", "retrieve", "fuse", "parent_expand", "gate"],
                 [stage["name"] for stage in kb.retrieval_meta["stages"]],
+            )
+            self.assertEqual(
+                "PIM 是什么？", kb.retrieval_meta["search_plan"]["original_query"]
             )
             self.assertIn("score", evidence[0])
             self.assertIn("rrf_score", evidence[0])

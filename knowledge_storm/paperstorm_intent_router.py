@@ -303,17 +303,14 @@ def _llm_decision_safe(decision: Dict, guard_decision: Optional[Dict]) -> bool:
 
 def rewrite_query(message: str, session: Dict, context_window: List[Dict]) -> str:
     text = str(message or "").strip()
-    if not looks_like_followup(text):
+    if not text:
         return text
-    previous_user = ""
-    for item in reversed(context_window or []):
-        if item.get("role") == "user":
-            content = str(item.get("content") or "").strip()
-            if content and content != text:
-                previous_user = content
-                break
-    parts = [previous_user, text]
-    return "\n".join(part for part in parts if part)
+    try:
+        from .search_planning import SearchPlanner
+
+        return SearchPlanner().plan(text, history=context_window or []).standalone_query
+    except (TypeError, ValueError, RuntimeError):
+        return text
 
 
 def looks_like_followup(text: str) -> bool:

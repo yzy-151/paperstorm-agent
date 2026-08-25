@@ -1,0 +1,14 @@
+{
+  "documents": [
+    {"id": "rf-pim-1", "title": "Neural cancellation of passive intermodulation", "text": "RF passive intermodulation suppression uses neural network digital cancellation for nonlinear passive junction distortion.", "domain": "rf"},
+    {"id": "rf-pim-2", "title": "无源互调抑制", "text": "无源互调 PIM 是射频无源器件非线性产生的互调失真，可通过神经网络建模和数字抵消进行抑制。", "domain": "rf"},
+    {"id": "dram-pim-1", "title": "Processing-in-memory for DRAM", "text": "Processing-in-memory places compute near DRAM arrays for memory acceleration.", "domain": "memory"},
+    {"id": "product-pim-1", "title": "Product information management", "text": "A product information management system stores catalog and commerce attributes.", "domain": "product"}
+  ],
+  "cases": [
+    {"id": "pim-rf-zh", "query": "PIM神经网络抑制", "relevant": ["rf-pim-1", "rf-pim-2"], "before": {"source": "archived_observation", "result": "召回 DRAM/processing-in-memory 文档，领域歧义未消除"}},
+    {"id": "pim-lexical", "query": "无源互调 neural cancellation", "relevant": ["rf-pim-1", "rf-pim-2"], "before": {"source": "archived_observation", "result": "中英文术语不一致导致 RF 论文排序靠后"}},
+    {"id": "pim-ambiguous", "query": "PIM 有哪些应用", "relevant": [], "before": {"source": "archived_observation", "result": "缺少上下文时可能选择任意 PIM 领域"}, "unresolved": true},
+    {"id": "pim-processing", "query": "processing-in-memory DRAM accelerator", "relevant": ["dram-pim-1"], "before": {"source": "archived_observation", "result": "缩写 PIM 缺少显式领域约束"}}
+  ]
+}
