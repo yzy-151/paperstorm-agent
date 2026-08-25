@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .paperstorm_context_v56 import ContextEngine, ContextEngineConfig, ContextEventStore
+from .context_engine import ContextEngine, ContextEngineConfig, ContextEventStore
 from .paperstorm_intent_router import PaperStormIntentRouter
 from .paperstorm_memory import PaperStormMemoryStore
-from .paperstorm_memory_v56 import LongTermMemoryService
+from .memory_store import LongTermMemoryService
 from .paperstorm_session_recall import SessionRecallStore
 
 
@@ -78,7 +78,7 @@ class PaperStormChatAgent:
             "long_term_memory": {},
             "session_recall": {},
             "memory_write": {"status": "not_evaluated"},
-            "conversation_runtime": "paperstorm-production-v5.0",
+            "conversation_runtime": "paperstorm-production-runtime",
             "graph_run": {},
             "created_at": _now(),
             "updated_at": _now(),
@@ -315,7 +315,7 @@ class PaperStormChatAgent:
         session["session_recall"] = session_recall
         session["memory_write"] = memory_write
         session["conversation_runtime"] = graph_run.get(
-            "runtime", "paperstorm-production-v5.0"
+                "runtime", "paperstorm-production-runtime"
         )
         session["graph_run"] = graph_run
         session["updated_at"] = _now()
@@ -456,7 +456,7 @@ class PaperStormChatAgent:
 
     def _long_term_memory(self, retrieval_mode="lexical"):
         return LongTermMemoryService(
-            Path(self.task_service.root_dir) / "memory_service_v56",
+            Path(self.task_service.root_dir) / "memory_service",
             retrieval_mode=_memory_retrieval_mode(retrieval_mode),
         )
 
@@ -835,7 +835,7 @@ def _active_context_meter(raw_meter: Dict, active_meter: Dict):
 
 
 def _graph_answer_payload(graph_run: Dict):
-    """Adapt the V4.4 graph result to the stable chat response contract."""
+    """Adapt the conversation graph result to the stable chat response contract."""
     router_decision = graph_run.get("router_decision") or {}
     evidence_grade = graph_run.get("evidence_grade") or {}
     route = graph_run.get("route") or ""
@@ -892,7 +892,7 @@ def _casual_chat_answer(
         )
     elif "上下文" in text or "压缩" in text or "记忆" in text:
         answer = (
-            "V4.2 使用 Token 驱动的可恢复 Context Engine。原始消息按 append-only JSONL 保存，"
+        "系统使用 Token 驱动的可恢复 Context Engine。原始消息按 append-only 事件保存，"
             "达到阈值后先把旧工具大输出替换为 artifact 引用，再生成包含目标、约束、决定、实体、"
             "来源、错误和待办的结构化交接摘要；系统消息、首轮目标和最近完整消息始终保留。"
             "Dashboard 可以查看 Context Meter、压缩事件，并按 compaction_id 恢复原始消息视图。"

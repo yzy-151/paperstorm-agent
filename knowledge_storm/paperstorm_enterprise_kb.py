@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,11 +12,12 @@ from .paperstorm_qa import (
     _kb_answer_prompt,
     _rag_chunk_to_doc,
 )
-from .paperstorm_rag import (
-    ContextCompressionRetriever,
-    PaperStormRAGIndex,
+from .retrieval import (
+    HybridPaperIndex,
+    IndexMigrationRequiredError,
     build_embedding_provider,
 )
+from .retrieval_pipeline import RetrievalPipeline, RetrievalRequest
 
 
 class EnterpriseKnowledgeBaseService:
@@ -32,10 +34,12 @@ class EnterpriseKnowledgeBaseService:
         self.kb_dir = self.root_dir / "knowledge_bases"
         self.kb_dir.mkdir(parents=True, exist_ok=True)
         if control_plane is None:
-            from .paperstorm_production_v45 import ProductionControlPlaneV45
+            from .control_plane import ProductionControlPlane
 
-            control_plane = ProductionControlPlaneV45(
-                self.root_dir / "production_control_v45.sqlite"
+            current = self.root_dir / "production_control.sqlite"
+            legacy = self.root_dir / "production_control_v45.sqlite"
+            control_plane = ProductionControlPlane(
+                legacy if legacy.exists() else current
             )
         self.control = control_plane
 
@@ -47,7 +51,7 @@ class EnterpriseKnowledgeBaseService:
         forbidden_keywords: Optional[List[str]] = None,
         chunk_size: int = 500,
         chunk_overlap: int = 100,
-        embedding_provider: str = "hash",
+        embedding_provider: str = "sentence-transformer",
         tenant_id: str = "local",
         owner_user_id: str = "local-user",
         allowed_user_ids: Optional[List[str]] = None,
@@ -77,7 +81,7 @@ class EnterpriseKnowledgeBaseService:
             raise ValueError("No readable documents were provided.")
 
         provider = build_embedding_provider(embedding_provider)
-        index = PaperStormRAGIndex.from_documents(
+        index = HybridPaperIndex.from_documents(
             documents,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
@@ -86,7 +90,8 @@ class EnterpriseKnowledgeBaseService:
         kb_id = uuid.uuid4().hex
         kb_path = self.kb_dir / kb_id
         kb_path.mkdir(parents=True, exist_ok=True)
-        index_path = index.save(kb_path / "rag_index.json")
+        index_file = "rag_index.1.json"
+        index_path = index.save(kb_path / index_file)
         manifest = {
             "kb_id": kb_id,
             "name": name or "Enterprise Knowledge Base",
@@ -98,7 +103,11 @@ class EnterpriseKnowledgeBaseService:
             "forbidden_keywords": forbidden_keywords or [],
             "chunk_size": chunk_size,
             "chunk_overlap": chunk_overlap,
-            "embedding_provider": index.config.get("embedding_provider", ""),
+            "index_schema": HybridPaperIndex.schema_version,
+            "schema_revision": HybridPaperIndex.schema_revision,
+            "embedding_provider": index.manifest.get("embedding_model", ""),
+            "retrieval_mode": "hybrid",
+            "index_file": index_file,
             "index_path": str(index_path),
             "tenant_id": tenant_id,
             "owner_user_id": owner_user_id,
@@ -183,16 +192,20 @@ class EnterpriseKnowledgeBaseService:
         cached = self.control.get_cache(cache_namespace, cache_key)
         if cached["hit"]:
             return dict(cached["value"], cache_hit=True)
-        index = PaperStormRAGIndex.load(self.kb_dir / kb_id / "rag_index.json")
-        retriever = ContextCompressionRetriever(index, max_context_chars=2200)
+        index = self._load_index(kb_id, manifest)
+        pipeline = RetrievalPipeline(index)
         retrieval_query = _expand_query(question)
-        retrieved = retriever.retrieve(
-            retrieval_query,
-            top_k=top_k,
-            expected_keywords=manifest.get("expected_keywords") or [],
-            forbidden_keywords=manifest.get("forbidden_keywords") or [],
+        retrieved = pipeline.search(
+            RetrievalRequest(
+                query=retrieval_query,
+                top_k=top_k,
+                candidate_k=max(top_k * 4, 20),
+                mode=manifest.get("retrieval_mode") or "hybrid",
+                expected_keywords=tuple(manifest.get("expected_keywords") or []),
+                forbidden_keywords=tuple(manifest.get("forbidden_keywords") or []),
+            )
         )
-        evidence = [_rag_chunk_to_doc(chunk) for chunk in retrieved.get("chunks") or []]
+        evidence = [_rag_chunk_to_doc(chunk) for chunk in retrieved.get("results") or []]
         answer = _compose_answer(question, evidence, memory_context={})
         if answer_generator is not None:
             try:
@@ -255,7 +268,6 @@ class EnterpriseKnowledgeBaseService:
             tenant_id, user_id, "knowledge_base", kb_id, "write"
         )
         manifest = self._read_manifest(kb_id)
-        index = PaperStormRAGIndex.load(self.kb_dir / kb_id / "rag_index.json")
         records = {item["path"]: dict(item) for item in manifest.get("documents") or []}
         changed = []
         for source_path in source_paths or []:
@@ -265,34 +277,8 @@ class EnterpriseKnowledgeBaseService:
             if previous and previous.get("sha256") == digest:
                 continue
             document_id = previous.get("document_id") if previous else "doc-{0}".format(len(records) + 1)
-            text = _read_document_text(path)
-            if not text.strip():
+            if not _read_document_text(path).strip():
                 continue
-            index.chunks = [
-                chunk for chunk in index.chunks
-                if chunk.get("document_id") != document_id
-            ]
-            incremental = PaperStormRAGIndex.from_documents(
-                [
-                    {
-                        "document_id": document_id,
-                        "title": path.name,
-                        "text": text,
-                        "url": str(path),
-                        "source_type": path.suffix.lower().lstrip(".") or "document",
-                        "metadata": {
-                            "path": str(path),
-                            "tenant_id": tenant_id,
-                            "owner_user_id": manifest.get("owner_user_id", user_id),
-                            "allowed_user_ids": manifest.get("allowed_user_ids") or [],
-                        },
-                    }
-                ],
-                chunk_size=int(manifest.get("chunk_size") or 500),
-                chunk_overlap=int(manifest.get("chunk_overlap") or 100),
-                embedding_provider=index.embedding_provider,
-            )
-            index.chunks.extend(incremental.chunks)
             records[str(path)] = {
                 "document_id": document_id,
                 "path": str(path),
@@ -300,12 +286,29 @@ class EnterpriseKnowledgeBaseService:
             }
             changed.append(str(path))
         if changed:
-            index.save(self.kb_dir / kb_id / "rag_index.json")
+            provider = _provider_from_manifest(manifest)
+            documents = _documents_from_records(
+                records.values(),
+                tenant_id=tenant_id,
+                owner_user_id=manifest.get("owner_user_id", user_id),
+                allowed_user_ids=manifest.get("allowed_user_ids") or [],
+            )
+            index = HybridPaperIndex.from_documents(
+                documents,
+                chunk_size=int(manifest.get("chunk_size") or 500),
+                chunk_overlap=int(manifest.get("chunk_overlap") or 100),
+                embedding_provider=provider,
+            )
+            next_version = int(manifest.get("index_version") or 1) + 1
+            index_file = "rag_index.{0}.json".format(next_version)
+            index_path = index.save(self.kb_dir / kb_id / index_file)
             manifest["documents"] = list(records.values())
             manifest["source_paths"] = [item["path"] for item in records.values()]
             manifest["document_count"] = len(records)
             manifest["chunk_count"] = len(index.chunks)
-            manifest["index_version"] = int(manifest.get("index_version") or 1) + 1
+            manifest["index_version"] = next_version
+            manifest["index_file"] = index_file
+            manifest["index_path"] = str(index_path)
             manifest["updated_at"] = _now()
             self._write_manifest(kb_id, manifest)
             self.control.register_resource(
@@ -338,6 +341,28 @@ class EnterpriseKnowledgeBaseService:
                 version=int(manifest.get("index_version") or 1),
             )
 
+    def _load_index(self, kb_id: str, manifest: Dict):
+        index_file = str(manifest.get("index_file") or "").strip()
+        if index_file:
+            if Path(index_file).name != index_file:
+                raise ValueError("invalid knowledge base index_file")
+            index_path = self.kb_dir / kb_id / index_file
+        else:
+            configured = Path(str(manifest.get("index_path") or ""))
+            index_path = configured if configured.exists() else self.kb_dir / kb_id / "rag_index.json"
+        try:
+            return HybridPaperIndex.load(
+                index_path,
+                embedding_provider=_provider_from_manifest(manifest),
+            )
+        except IndexMigrationRequiredError as error:
+            raise IndexMigrationRequiredError(
+                "Knowledge base {0} uses a legacy index. Enqueue an index job "
+                "to rebuild schema revision {1}.".format(
+                    kb_id, HybridPaperIndex.schema_revision
+                )
+            ) from error
+
     def _read_manifest(self, kb_id: str):
         path = self.kb_dir / kb_id / "manifest.json"
         if not path.exists():
@@ -345,10 +370,16 @@ class EnterpriseKnowledgeBaseService:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def _write_manifest(self, kb_id: str, manifest: Dict):
-        (self.kb_dir / kb_id / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        path = self.kb_dir / kb_id / "manifest.json"
+        temporary = path.with_name(path.name + ".tmp")
+        try:
+            with temporary.open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps(manifest, ensure_ascii=False, indent=2))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def _read_document_text(path: Path):
@@ -356,6 +387,45 @@ def _read_document_text(path: Path):
     if suffix == ".pdf":
         return _read_pdf_text(path)
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _provider_from_manifest(manifest: Dict):
+    name = str(manifest.get("embedding_provider") or "sentence-transformer")
+    if name == "hash" or name.startswith("hash_"):
+        return build_embedding_provider("hash")
+    prefix = "sentence-transformers:"
+    model_name = name[len(prefix) :] if name.startswith(prefix) else None
+    return build_embedding_provider("sentence-transformer", model_name=model_name)
+
+
+def _documents_from_records(
+    records,
+    tenant_id: str,
+    owner_user_id: str,
+    allowed_user_ids,
+):
+    documents = []
+    for record in records:
+        path = Path(record["path"])
+        text = _read_document_text(path)
+        if not text.strip():
+            continue
+        documents.append(
+            {
+                "document_id": record["document_id"],
+                "title": path.name,
+                "text": text,
+                "url": str(path),
+                "source_type": path.suffix.lower().lstrip(".") or "document",
+                "metadata": {
+                    "path": str(path),
+                    "tenant_id": tenant_id,
+                    "owner_user_id": owner_user_id,
+                    "allowed_user_ids": list(allowed_user_ids or []),
+                },
+            }
+        )
+    return documents
 
 
 def _read_pdf_text(path: Path):

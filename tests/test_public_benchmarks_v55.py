@@ -196,7 +196,7 @@ class QasperAdapterTest(unittest.TestCase):
 
 class PublicBenchmarkRunnerTest(unittest.TestCase):
     def test_bm25_mode_does_not_compute_unused_query_embedding(self):
-        from knowledge_storm.paperstorm_retrieval_v41 import HybridPaperIndex
+        from knowledge_storm.retrieval import HybridPaperIndex
 
         class CountingEmbedding:
             name = "counting"
@@ -224,7 +224,7 @@ class PublicBenchmarkRunnerTest(unittest.TestCase):
         self.assertEqual(provider.query_calls, 0)
 
     def test_dense_search_uses_vectorized_cosine_without_python_pair_loop(self):
-        from knowledge_storm.paperstorm_retrieval_v41 import HybridPaperIndex
+        from knowledge_storm.retrieval import HybridPaperIndex
 
         class Embedding:
             name = "fixture"
@@ -245,7 +245,7 @@ class PublicBenchmarkRunnerTest(unittest.TestCase):
             embedding_provider=Embedding(),
         )
         with mock.patch(
-            "knowledge_storm.paperstorm_retrieval_v41._cosine",
+            "knowledge_storm.retrieval._cosine",
             side_effect=AssertionError("pairwise cosine must not be used"),
         ):
             results = index.search("alpha", mode="dense", top_k=2)

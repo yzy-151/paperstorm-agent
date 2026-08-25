@@ -1,4 +1,4 @@
-"""Run PaperStorm v5.5 public retrieval benchmarks from official local data."""
+"""Run PaperStorm public retrieval benchmarks from official local data."""
 
 import argparse
 import json
@@ -17,14 +17,14 @@ from knowledge_storm.evaluation.public_benchmarks.runner import (
     HashEmbeddingProvider,
     run_retrieval_benchmark,
 )
-from knowledge_storm.paperstorm_retrieval_v41 import (
+from knowledge_storm.retrieval import (
     CrossEncoderReranker,
     SentenceTransformerProvider,
 )
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(description="PaperStorm v5.5 public benchmark")
+    parser = argparse.ArgumentParser(description="PaperStorm public benchmark")
     parser.add_argument("--benchmark", choices=("scifact", "qasper"), required=True)
     parser.add_argument("--dataset-dir")
     parser.add_argument(

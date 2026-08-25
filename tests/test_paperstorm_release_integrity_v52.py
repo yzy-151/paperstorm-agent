@@ -60,22 +60,6 @@ class PaperStormReleaseIntegrityV52Test(unittest.TestCase):
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
         self.assertRegex(requirements, r"(?m)^litellm>=1\.80,<1\.81$")
 
-    def test_v54_evaluation_artifacts_are_documented_and_sanitized(self):
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        guide = (ROOT / "docs" / "PAPERSTORM_V54_EVALUATION.md").read_text(
-            encoding="utf-8"
-        )
-        summary = (
-            ROOT / "docs" / "benchmarks" / "paperstorm_real_eval_v54_summary.json"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("v5.4", readme)
-        self.assertIn("PAPERSTORM_V54_EVALUATION.md", readme)
-        self.assertIn("人工审核", guide)
-        self.assertIn('"evidence_status"', summary)
-        for content in (guide, summary):
-            self.assertNotRegex(content, r"[A-Za-z]:\\")
-
     def test_v55_public_benchmark_artifacts_are_documented_and_sanitized(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         guide = (ROOT / "docs" / "PAPERSTORM_V55_PUBLIC_BENCHMARKS.md").read_text(

@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ...paperstorm_memory_v56 import LongTermMemoryServiceV56
+from ...memory_store import LongTermMemoryService
 
 
 def run_memory_retrieval(dataset, output_dir, top_k=5, embedding_provider=None, limit=None):
@@ -14,8 +14,8 @@ def run_memory_retrieval(dataset, output_dir, top_k=5, embedding_provider=None, 
     by_question = {}
     for document in dataset.documents:
         by_question.setdefault(str(document.metadata.get("question_id")), []).append(document)
-    service = LongTermMemoryServiceV56(Path(output_dir) / "memory", embedding_provider=embedding_provider)
-    mode_rows = {"recent_window": [], "v56_memory": []}
+    service = LongTermMemoryService(Path(output_dir) / "memory", embedding_provider=embedding_provider)
+    mode_rows = {"recent_window": [], "paperstorm_memory": []}
     predictions = []
     for case in cases:
         documents = by_question.get(case.case_id, [])
@@ -45,8 +45,8 @@ def run_memory_retrieval(dataset, output_dir, top_k=5, embedding_provider=None, 
         result = service.search(namespace, case.query, top_k=top_k)
         latency_ms = (time.perf_counter() - started) * 1000
         retrieved_ids = [str(item.get("metadata", {}).get("document_id") or "") for item in result["results"]]
-        mode_rows["v56_memory"].append(_row(case, retrieved_ids, relevant, latency_ms))
-        predictions.append({"case_id": case.case_id, "question_type": case.metadata.get("question_type"), "evidence_ids": relevant, "recent_window": recent_ids, "v56_memory": retrieved_ids})
+        mode_rows["paperstorm_memory"].append(_row(case, retrieved_ids, relevant, latency_ms))
+        predictions.append({"case_id": case.case_id, "question_type": case.metadata.get("question_type"), "evidence_ids": relevant, "recent_window": recent_ids, "paperstorm_memory": retrieved_ids})
     return {
         "benchmark": "longmemeval",
         "dataset_version": dataset.version,

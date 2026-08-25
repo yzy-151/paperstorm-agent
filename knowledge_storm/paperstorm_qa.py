@@ -8,9 +8,15 @@ from .paperstorm_sources import load_article_passages
 
 
 class PaperStormKnowledgeBase:
-    def __init__(self, documents: List[Dict], run_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        documents: List[Dict],
+        run_dir: Optional[Path] = None,
+        retrieval_pipeline=None,
+    ):
         self.documents = documents
         self.run_dir = Path(run_dir) if run_dir else None
+        self.retrieval_pipeline = retrieval_pipeline
         self.retrieval_meta: Dict = {}
 
     @classmethod
@@ -105,34 +111,33 @@ class PaperStormKnowledgeBase:
         }
 
     def search(self, query: str, top_k: int = 3):
-        if self.run_dir:
-            try:
-                from .paperstorm_retrieval_runtime import search_runtime_index
+        if self.retrieval_pipeline is not None:
+            from .retrieval_pipeline import RetrievalRequest
 
-                outcome = search_runtime_index(self.run_dir, query, top_k=top_k)
-                self.retrieval_meta = {
-                    "stack": outcome.get("stack", ""),
-                    "mode": outcome.get("mode", ""),
-                    "embedding": outcome.get("embedding", ""),
-                }
-                if outcome.get("results"):
-                    return [_rag_chunk_to_doc(item) for item in outcome["results"]]
-            except Exception:
-                pass
-        self.retrieval_meta = {"stack": "legacy_fallback", "mode": "set_overlap"}
-        terms = _tokenize(query)
-        scored = []
-        for index, doc in enumerate(self.documents):
-            text = "{0}\n{1}".format(doc.get("title", ""), doc.get("content", ""))
-            score = len(terms & _tokenize(text))
-            if score == 0 and _contains_cjk(query):
-                score = _cjk_overlap(query, text)
-            scored.append((score, index, doc))
-        scored.sort(key=lambda item: (item[0], -item[1]), reverse=True)
-        selected = [_with_score(doc, score) for score, _, doc in scored if score > 0]
-        if not selected:
-            selected = [_with_score(doc, 0) for doc in self.documents[:top_k]]
-        return selected[:top_k]
+            outcome = self.retrieval_pipeline.search(
+                RetrievalRequest(query=query, top_k=top_k)
+            )
+            self.retrieval_meta = {
+                "stack": "retrieval_pipeline",
+                "mode": outcome.get("mode", ""),
+                "embedding": (outcome.get("models") or {}).get("embedding", ""),
+                "stages": outcome.get("stages") or [],
+            }
+            return [_rag_chunk_to_doc(item) for item in outcome["results"]]
+        if self.run_dir:
+            from .retrieval_runtime import search_runtime_index
+
+            outcome = search_runtime_index(self.run_dir, query, top_k=top_k)
+            self.retrieval_meta = {
+                "stack": outcome.get("stack", ""),
+                "mode": outcome.get("mode", ""),
+                "embedding": outcome.get("embedding", ""),
+                "stages": outcome.get("stages") or [],
+            }
+            return [_rag_chunk_to_doc(item) for item in outcome.get("results") or []]
+        raise RuntimeError(
+            "PaperStormKnowledgeBase requires a run_dir or RetrievalPipeline"
+        )
 
 
 def write_qa_artifact(run_dir, answer) -> Path:

@@ -16,6 +16,17 @@ from typing import Callable, Dict, Iterable, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+LEGACY_BENCHMARK_IDS = {
+    "scifact-retrieval-v55": "scifact-retrieval",
+    "qasper-retrieval-v55": "qasper-retrieval",
+    "qasper-answer-v55": "qasper-answer",
+    "longmemeval-retrieval-v56": "longmemeval-retrieval",
+    "qasper-context-v56": "qasper-context",
+    "longbench-context-v56": "longbench-context",
+    "context-pareto-v60": "context-pareto",
+    "longmemeval-e2e-v60": "longmemeval-e2e",
+}
+
 
 @dataclass(frozen=True)
 class BenchmarkDefinition:
@@ -35,9 +46,9 @@ class BenchmarkDefinition:
 
 DEFINITIONS = (
     BenchmarkDefinition(
-        "scifact-retrieval-v55",
+        "scifact-retrieval",
         "SciFact 科学论文检索",
-        "v5.5",
+        "current",
         "RAG Retrieval",
         "public_official",
         "在 SciFact 官方 test 上比较 BM25、Hybrid 与 Cross-Encoder 重排。",
@@ -47,9 +58,9 @@ DEFINITIONS = (
         "Smoke 约 1 分钟；完整真实向量约 20-40 分钟",
     ),
     BenchmarkDefinition(
-        "qasper-retrieval-v55",
+        "qasper-retrieval",
         "QASPER 论文内证据检索",
-        "v5.5",
+        "current",
         "RAG Retrieval",
         "public_official",
         "在 QASPER 官方 test 的论文内检索人工证据段落。",
@@ -59,9 +70,9 @@ DEFINITIONS = (
         "Smoke 约 1 分钟；完整真实向量约 1-2 小时",
     ),
     BenchmarkDefinition(
-        "qasper-answer-v55",
+        "qasper-answer",
         "QASPER 端到端回答",
-        "v5.5",
+        "current",
         "RAG Generation",
         "public_official_llm",
         "冻结检索排名后调用 Reader LLM，按官方口径计算 Answer/Evidence F1。",
@@ -72,9 +83,9 @@ DEFINITIONS = (
         requires_llm=True,
     ),
     BenchmarkDefinition(
-        "longmemeval-retrieval-v56",
+        "longmemeval-retrieval",
         "LongMemEval-S 长期记忆检索",
-        "v5.6",
+        "current",
         "Memory",
         "public_official_retrieval",
         "在官方 500 题上评估跨会话 evidence-session Recall@5 与延迟。",
@@ -84,9 +95,9 @@ DEFINITIONS = (
         "Smoke 约 1 分钟；完整真实向量约 15-30 分钟",
     ),
     BenchmarkDefinition(
-        "qasper-context-v56",
+        "qasper-context",
         "QASPER Context 预算治理",
-        "v5.6",
+        "current",
         "Context",
         "public_official_diagnostic",
         "在冻结检索结果上测量 token 压缩、金证据保留和结构校验。",
@@ -96,12 +107,12 @@ DEFINITIONS = (
         "约 1-3 分钟，不调用 LLM",
     ),
     BenchmarkDefinition(
-        "longbench-context-v56",
+        "longbench-context",
         "LongBench Context 配对评测",
-        "v5.6",
+        "current",
         "Context",
         "adapter_only",
-        "适配器已完成，但缺少同模型 full/fixed/v5.6 配对预测，不能发布正式分数。",
+        "适配器已完成，但缺少同模型 full/fixed/PaperStorm 配对预测，不能发布正式分数。",
         "run_longbench_context_benchmark.py",
         ("longbench_json", "longbench_predictions"),
         ("paired task score", "token reduction", "quality delta"),
@@ -109,9 +120,9 @@ DEFINITIONS = (
         blocked_reason="缺少冻结的同模型配对预测文件",
     ),
     BenchmarkDefinition(
-        "context-pareto-v60",
+        "context-pareto",
         "LongBench 128K/256K/512K Pareto",
-        "v6.0",
+        "current",
         "Context",
         "public_official_llm_ablation",
         "同模型、同数据、同提示词下比较质量、输入 Token、TTFT、延迟与成本，并计算 Pareto 前沿。",
@@ -122,13 +133,13 @@ DEFINITIONS = (
         requires_llm=True,
     ),
     BenchmarkDefinition(
-        "longmemeval-e2e-v60",
+        "longmemeval-e2e",
         "LongMemEval-S 端到端 Reader/Judge",
-        "v6.0",
+        "current",
         "Memory",
         "public_official_llm",
-        "全量对比 Recent、FTS Session 与 v5.6 Memory，统一 Reader 和 LLM Judge。",
-        "run_longmemeval_e2e_v60.py",
+        "全量对比 Recent、FTS Session 与 PaperStorm Memory，统一 Reader 和 LLM Judge。",
+        "run_longmemeval_e2e.py",
         ("longmemeval_json",),
         ("Judge accuracy", "Recall@5", "P50 latency", "Token usage", "Cost"),
         "Smoke 约 5-15 分钟；完整 500 题会产生 Reader 与 Judge API 成本",
@@ -188,6 +199,7 @@ class BenchmarkRegistry:
         }
 
     def definition(self, benchmark_id: str):
+        benchmark_id = LEGACY_BENCHMARK_IDS.get(benchmark_id, benchmark_id)
         try:
             return self._definitions[benchmark_id]
         except KeyError as exc:
@@ -201,6 +213,7 @@ class BenchmarkRegistry:
         allow_paid_llm: bool = False,
     ):
         definition = self.definition(benchmark_id)
+        benchmark_id = definition.id
         if profile not in {"smoke", "quality"}:
             raise ValueError("profile must be smoke or quality")
         if definition.blocked_reason:
@@ -213,52 +226,52 @@ class BenchmarkRegistry:
                 raise ValueError("付费 LLM Benchmark 必须显式确认")
             if not os.getenv("DEEPSEEK_API_KEY"):
                 raise ValueError("运行付费生成评测需要 DEEPSEEK_API_KEY")
-            if benchmark_id == "longmemeval-e2e-v60" and not os.getenv("OPENAI_API_KEY"):
+            if benchmark_id == "longmemeval-e2e" and not os.getenv("OPENAI_API_KEY"):
                 raise ValueError("官方 LongMemEval Judge 需要 OPENAI_API_KEY")
 
         runner = PROJECT_ROOT / "examples" / "storm_examples" / definition.runner
         command = [sys.executable, str(runner)]
         output_dir = Path(output_dir)
-        if benchmark_id == "scifact-retrieval-v55":
+        if benchmark_id == "scifact-retrieval":
             command += [
                 "--benchmark", "scifact", "--dataset-dir", str(self.inputs["scifact_dir"]),
                 "--cache-dir", str(self.root), "--output-dir", str(output_dir),
                 "--top-k", "10",
             ]
             command += ["--embedding", "hash", "--modes", "bm25", "hybrid", "--smoke-limit", "20"] if profile == "smoke" else ["--embedding", "real", "--modes", "bm25", "dense", "hybrid", "hybrid_rerank", "--reranker"]
-        elif benchmark_id == "qasper-retrieval-v55":
+        elif benchmark_id == "qasper-retrieval":
             command += [
                 "--benchmark", "qasper", "--dataset-dir", str(self.inputs["qasper_json"]),
                 "--cache-dir", str(self.root), "--output-dir", str(output_dir),
                 "--top-k", "5",
             ]
             command += ["--embedding", "hash", "--modes", "bm25", "hybrid", "--smoke-limit", "20"] if profile == "smoke" else ["--embedding", "real", "--modes", "bm25", "dense", "hybrid", "hybrid_rerank", "--reranker"]
-        elif benchmark_id == "qasper-answer-v55":
+        elif benchmark_id == "qasper-answer":
             command += [
                 "--split", "test", "--retrieval-predictions", str(self.inputs["qasper_rankings"]),
                 "--cache-dir", str(self.inputs["qasper_cache"]), "--output-dir", str(output_dir),
             ]
             if profile == "smoke":
                 command += ["--smoke-limit", "10"]
-        elif benchmark_id == "longmemeval-retrieval-v56":
+        elif benchmark_id == "longmemeval-retrieval":
             command += [
                 "--dataset", str(self.inputs["longmemeval_json"]), "--output-dir", str(output_dir),
                 "--model-cache", str(self.root / "models"), "--top-k", "5",
             ]
             command += ["--embedding", "hash", "--limit", "10"] if profile == "smoke" else ["--embedding", "sentence-transformer"]
-        elif benchmark_id == "qasper-context-v56":
+        elif benchmark_id == "qasper-context":
             command += [
                 "--dataset", str(self.inputs["qasper_json"]), "--rankings", str(self.inputs["qasper_rankings"]),
                 "--output-dir", str(output_dir), "--mode", "hybrid_rerank",
             ]
-        elif benchmark_id == "context-pareto-v60":
+        elif benchmark_id == "context-pareto":
             command += [
                 "--dataset", str(self.inputs["longbench_json"]),
                 "--output-dir", str(output_dir),
             ]
             if profile == "smoke":
                 command += ["--limit", "3"]
-        elif benchmark_id == "longmemeval-e2e-v60":
+        elif benchmark_id == "longmemeval-e2e":
             command += [
                 "--dataset", str(self.inputs["longmemeval_json"]),
                 "--output-dir", str(output_dir),
@@ -294,6 +307,7 @@ class BenchmarkRunManager:
         return self.registry.catalog()
 
     def start(self, benchmark_id: str, profile="smoke", allow_paid_llm=False):
+        benchmark_id = self.registry.definition(benchmark_id).id
         run_id = uuid.uuid4().hex
         run_dir = self.root / run_id
         output_dir = run_dir / "artifacts"
@@ -452,7 +466,7 @@ def _discover_inputs(root):
     root = Path(root)
     qasper_json = root / "qasper-official-v0.3" / "qasper-test-v0.3.json"
     project_rankings = PROJECT_ROOT / "results" / "public_benchmarks" / "v55_qasper_test_real" / "predictions.jsonl"
-    context_rankings = root / "v56" / "runs" / "qasper-context-v56" / "predictions.jsonl"
+    context_rankings = root / "v56" / "runs" / "qasper-context" / "predictions.jsonl"
     values = {
         "scifact_dir": root / "datasets" / "scifact",
         "qasper_json": qasper_json,
@@ -460,7 +474,7 @@ def _discover_inputs(root):
         "qasper_rankings": project_rankings if project_rankings.exists() else context_rankings,
         "longmemeval_json": root / "v56" / "longmemeval_s_cleaned.json",
         "longbench_json": root / "v56" / "longbench_v2_data.json",
-        "longbench_predictions": root / "v56" / "runs" / "longbench-context-v56" / "predictions.json",
+        "longbench_predictions": root / "v56" / "runs" / "longbench-context" / "predictions.json",
     }
     return {key: path.resolve() for key, path in values.items() if _input_exists(key, path)}
 
@@ -476,13 +490,13 @@ def _input_exists(key, path):
 
 def _latest_result_path(benchmark_id, root):
     candidates = {
-        "scifact-retrieval-v55": [PROJECT_ROOT / "results/public_benchmarks/v55_scifact_real/metrics.json"],
-        "qasper-retrieval-v55": [PROJECT_ROOT / "results/public_benchmarks/v55_qasper_test_real/metrics.json"],
-        "qasper-answer-v55": [PROJECT_ROOT / "results/public_benchmarks/v55_qasper_answer_test_real/metrics.json"],
-        "longmemeval-retrieval-v56": [root / "v56/runs/longmemeval-s-minilm/metrics.json"],
-        "qasper-context-v56": [root / "v56/runs/qasper-context-v56/metrics.json"],
-        "context-pareto-v60": [root / "v60/runs/context-pareto-v60/metrics.json"],
-        "longmemeval-e2e-v60": [root / "v60/runs/longmemeval-e2e-v60/metrics.json"],
+        "scifact-retrieval": [PROJECT_ROOT / "results/public_benchmarks/v55_scifact_real/metrics.json"],
+        "qasper-retrieval": [PROJECT_ROOT / "results/public_benchmarks/v55_qasper_test_real/metrics.json"],
+        "qasper-answer": [PROJECT_ROOT / "results/public_benchmarks/v55_qasper_answer_test_real/metrics.json"],
+        "longmemeval-retrieval": [root / "v56/runs/longmemeval-s-minilm/metrics.json"],
+        "qasper-context": [root / "v56/runs/qasper-context/metrics.json"],
+        "context-pareto": [root / "v60/runs/context-pareto/metrics.json"],
+        "longmemeval-e2e": [root / "v60/runs/longmemeval-e2e/metrics.json"],
     }.get(benchmark_id, [])
     return next((path.resolve() for path in candidates if path.exists()), None)
 

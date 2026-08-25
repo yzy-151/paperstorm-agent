@@ -82,7 +82,7 @@ def complete_qasper_rankings(
     on_ranking=None,
 ):
     """Fill missing rankings with paper-scoped retrieval."""
-    from ...paperstorm_retrieval_v41 import HybridPaperIndex
+    from ...retrieval import HybridPaperIndex
 
     rankings = {
         str(case_id): [str(value) for value in values]
@@ -163,7 +163,7 @@ def run_qasper_generation(
                 for document in dataset.documents
                 if str(document.metadata.get("paper_id") or "") == paper_id
             ]
-        elif context_mode == "v56":
+        elif context_mode in {"managed", "v56"}:
             paper_id = str(case.metadata.get("paper_id") or "")
             ranked_set = set(ranked_documents)
             paper_documents = [

@@ -8,7 +8,8 @@ import subprocess
 import time
 from datetime import datetime, timezone
 
-from ...paperstorm_retrieval_v41 import HybridPaperIndex
+from ...retrieval import HybridPaperIndex
+from ...retrieval_pipeline import RetrievalPipeline, RetrievalRequest
 from .metrics import retrieval_metrics
 from .report import write_benchmark_artifacts
 
@@ -81,13 +82,19 @@ def run_retrieval_benchmark(
                     )
                 case_index = scoped_indices[scope_value]
             started = time.perf_counter()
-            ranked = case_index.search(
-                case.query,
-                mode=mode,
-                top_k=top_k,
-                candidate_k=max(top_k * 4, 20),
-                reranker=reranker,
+            outcome = RetrievalPipeline(
+                case_index,
+                reranker=reranker if mode == "hybrid_rerank" else None,
+            ).search(
+                RetrievalRequest(
+                    query=case.query,
+                    mode=mode,
+                    top_k=top_k,
+                    candidate_k=max(top_k * 4, 20),
+                    enable_reranker=mode == "hybrid_rerank",
+                )
             )
+            ranked = outcome["results"]
             latency_ms = (time.perf_counter() - started) * 1000.0
             ranked_ids = [item["document_id"] for item in ranked]
             metrics = retrieval_metrics(ranked_ids, case.relevance, cutoffs=(top_k,))
@@ -101,6 +108,7 @@ def run_retrieval_benchmark(
                 "relevant_document_ids": list(case.relevant_document_ids),
                 "latency_ms": round(latency_ms, 4),
                 "metrics": metrics,
+                "retrieval_stages": outcome["stages"],
             }
             predictions.append(row)
             per_case.append(dict(metrics, latency_ms=latency_ms))
@@ -139,6 +147,7 @@ def run_retrieval_benchmark(
         "case_count": len(cases),
         "modes": mode_reports,
         "manifest": manifest,
+        "predictions": predictions,
     }
     if output_dir is not None:
         write_benchmark_artifacts(output_dir, manifest, report, predictions, bad_cases)

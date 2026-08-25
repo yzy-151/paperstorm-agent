@@ -361,12 +361,17 @@ Evidence。若把旧调研摘要当作权威证据，会出现陈旧信息和错
 
 ## 14. 分阶段改进计划
 
-### P0：统一主链与代码清理
+### P0：统一主链与代码清理（已完成）
 
-- 研究问答、企业知识库和 benchmark 统一使用 `RetrievalPipeline`。
-- 去除内部版本模块名，删除 legacy hash/关键词生产链和 toy benchmark。
-- Trace 固定输出 query、候选、融合、重排、过滤、Context 和引用阶段。
-- 验收：相同 corpus/query 在不同入口得到相同 Top-K 和 stage schema。
+- [x] 研究问答、企业知识库和 benchmark 统一使用 `RetrievalPipeline`。
+- [x] 去除生产代码中的内部版本模块名，删除 legacy 关键词链和 toy benchmark。
+- [x] Hash embedding 仅保留为显式离线测试 provider；生产默认真实 SentenceTransformer。
+- [x] Trace 固定输出 retrieve、fuse、rerank、gate 阶段与模型、延迟和候选信息。
+- [x] 以跨入口契约测试验证相同 stage schema，并用模块边界测试阻止 legacy 模块回流。
+
+实现细节、验证证据和剩余风险见
+[RAG_P0_IMPLEMENTATION_REPORT.md](RAG_P0_IMPLEMENTATION_REPORT.md)。P0 完成表示工程主链完成统一，
+不表示 P1-P4 的公开数据集质量目标已经达成。
 
 ### P1：提高第一阶段召回
 

@@ -229,26 +229,6 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         user_id: str = "local-user"
         idempotency_key: str
 
-    class ProductionBenchmarkRequest(BaseModel):
-        request_count: int = Field(default=100, ge=10, le=10000)
-
-    class EvaluationDatasetV54Request(BaseModel):
-        dataset_path: str
-
-    class EvaluationReviewV54Request(BaseModel):
-        query_validity: str
-        edited_query: str = ""
-        relevant_document_ids: list[str] = []
-        evidence_sufficiency: str
-        reviewer_notes: str = ""
-
-    class EvaluationRetrievalV54Request(BaseModel):
-        embedding: str = "hash"
-        top_k: int = Field(default=5, ge=1, le=20)
-        candidate_k: int = Field(default=20, ge=5, le=200)
-        configurations: list[str] = ["bm25", "dense", "hybrid"]
-        enable_reranker: bool = False
-
     class BenchmarkRunRequest(BaseModel):
         benchmark_id: str
         profile: str = "smoke"
@@ -437,34 +417,6 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     def run_production_worker_tick():
         return service.run_production_worker_tick()
 
-    @app.post("/evaluations/v54/dataset")
-    def import_evaluation_v54_dataset(request: EvaluationDatasetV54Request):
-        return service.import_evaluation_v54_dataset(request.dataset_path)
-
-    @app.get("/evaluations/v54/status")
-    def get_evaluation_v54_status():
-        return service.get_evaluation_v54_status()
-
-    @app.get("/evaluations/v54/annotations")
-    def list_evaluation_v54_annotations(offset: int = 0, limit: int = 50):
-        return service.list_evaluation_v54_annotations(offset=offset, limit=limit)
-
-    @app.put("/evaluations/v54/annotations/{case_id}")
-    def save_evaluation_v54_review(case_id: str, request: EvaluationReviewV54Request):
-        return service.save_evaluation_v54_review(case_id, _request_payload(request))
-
-    @app.post("/evaluations/v54/retrieval")
-    def run_evaluation_v54_retrieval(request: EvaluationRetrievalV54Request):
-        return service.run_evaluation_v54_retrieval(**_request_payload(request))
-
-    @app.post("/evaluations/v54/context")
-    def run_evaluation_v54_context():
-        return service.run_evaluation_v54_context()
-
-    @app.get("/evaluations/v54/latest")
-    def get_evaluation_v54_latest():
-        return service.get_evaluation_v54_latest()
-
     @app.post("/research-agent/ask")
     def ask_research_agent(request: ResearchAgentAskRequest):
         return service.ask_research_agent(**_request_payload(request))
@@ -565,14 +517,6 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     def update_memory_settings(request: MemorySettingRequest):
         return service.set_memory_enabled(request.namespace, request.enabled)
 
-    @app.post("/evaluations/runtime-v44")
-    def run_langgraph_benchmark_v44():
-        return service.run_langgraph_benchmark_v44()
-
-    @app.get("/evaluations/runtime-v44/latest")
-    def get_langgraph_benchmark_v44():
-        return service.get_langgraph_benchmark_v44()
-
     @app.get("/production/status")
     def get_production_status():
         return service.get_production_status()
@@ -582,14 +526,6 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         trace_id: str, tenant_id: str, user_id: str
     ):
         return service.get_production_trace(trace_id, tenant_id, user_id)
-
-    @app.post("/evaluations/production-v45")
-    def run_production_benchmark_v45(request: ProductionBenchmarkRequest):
-        return service.run_production_benchmark_v45(request.request_count)
-
-    @app.get("/evaluations/production-v45/latest")
-    def get_production_benchmark_v45():
-        return service.get_production_benchmark_v45()
 
     return app
 

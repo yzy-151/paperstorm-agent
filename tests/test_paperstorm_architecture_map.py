@@ -17,8 +17,6 @@ class ArchitectureMapTests(unittest.TestCase):
             "Research Pipeline",
             "Chat Agent Runtime",
             "RAG Retrieval",
-            "Memory v5.6",
-            "Context v5.6",
             "STORM CORE",
             "Benchmark Registry",
             "SciFact",
@@ -38,11 +36,11 @@ class ArchitectureMapTests(unittest.TestCase):
             "docs/architecture/paperstorm-system-architecture.html", readme
         )
 
-    def test_leadership_and_detailed_drawio_sources_are_editable(self):
+    def test_executive_and_detailed_drawio_sources_are_editable(self):
         architecture_dir = ROOT / "docs" / "architecture"
         expected = {
-            "paperstorm-executive-overview-v57.drawio": (10, 8),
-            "paperstorm-agent-system-flow-v57.drawio": (24, 20),
+            "paperstorm-executive-overview.drawio": (10, 8),
+            "paperstorm-agent-system-flow.drawio": (24, 20),
         }
 
         for filename, (minimum_nodes, minimum_edges) in expected.items():
@@ -60,10 +58,10 @@ class ArchitectureMapTests(unittest.TestCase):
     def test_svg_exports_cover_executive_and_agent_flows(self):
         architecture_dir = ROOT / "docs" / "architecture"
         executive = (
-            architecture_dir / "paperstorm-executive-overview-v57.svg"
+            architecture_dir / "paperstorm-executive-overview.svg"
         ).read_text(encoding="utf-8")
         detailed = (
-            architecture_dir / "paperstorm-agent-system-flow-v57.svg"
+            architecture_dir / "paperstorm-agent-system-flow.svg"
         ).read_text(encoding="utf-8")
 
         for label in ("业务需求", "智能问答", "深度调研", "业务价值"):
@@ -83,10 +81,10 @@ class ArchitectureMapTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         for filename in (
-            "paperstorm-executive-overview-v57.svg",
-            "paperstorm-agent-system-flow-v57.svg",
-            "paperstorm-executive-overview-v57.drawio",
-            "paperstorm-agent-system-flow-v57.drawio",
+            "paperstorm-executive-overview.svg",
+            "paperstorm-agent-system-flow.svg",
+            "paperstorm-executive-overview.drawio",
+            "paperstorm-agent-system-flow.drawio",
         ):
             with self.subTest(filename=filename):
                 self.assertIn(f"docs/architecture/{filename}", readme)

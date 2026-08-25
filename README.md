@@ -1,567 +1,282 @@
-# PaperStorm Agent（v6.6）
+# PaperStorm Agent
 
-> 面向论文调研、证据问答与企业知识治理的可观测 Agent 平台。项目基于 Stanford
-> STORM 的多视角调研方法扩展，覆盖检索、规划、协作写作、记忆、上下文压缩、
-> 运行时治理、公开评测与正式文档交付。
+PaperStorm Agent 是基于 Stanford STORM 扩展的论文调研与知识问答平台。系统面向科学论文、
+本地 PDF、Zotero 文献库和企业内部文档，提供多 Agent 深度调研、证据约束问答、混合检索、
+跨会话记忆、上下文治理、运行时恢复、公开 Benchmark 与 Langfuse 可观测性。
 
-![PaperStorm 调研工作台](docs/screenshots/dashboard-research-v64.png)
+![PaperStorm 论文调研工作台](docs/screenshots/dashboard-research-v64.png)
 
 ![PaperStorm 调研工作流演示](docs/screenshots/paperstorm-research-flow-v65.gif)
 
-上图为本地可复现演示：从调研任务提交到节点级执行状态、产物流转和完成态。演示使用
-`fake` 运行模式，仅展示服务端事件驱动的工作流与前端状态；真实检索和 LLM 模式的配置、
-成本与证据边界见下文“快速开始”和“Benchmark”。
-
-**Deep Research** · **Evidence-grounded QA** · **Hybrid RAG** ·
-**Temporal Memory** · **Context Engineering** · **Agent Runtime** ·
-**Public Benchmarks** · **Langfuse Observability**
-
-## 项目概述
-
-PaperStorm 提供两类核心业务能力：一是面向 arXiv、本地 PDF、Zotero 与企业文档的
-多 Agent 深度调研和长文生成；二是面向持续会话的证据问答，在证据不足时可调用调研
-工具补充知识。系统以 FastAPI 暴露服务接口，以 LangGraph 管理运行状态，并通过 SSE、
-本地 Trace 与 Langfuse 记录执行轨迹、模型用量和评测结果。
-
 ## 核心能力
 
-- **多 Agent 调研**：Persona Generator、Conv Simulator、Query Planner、Retriever、
-  Evidence Processor、Outline Generator、Section Writer 与 Evaluator 协作完成调研。
-- **RAG 与证据治理**：BM25、真实 Dense Embedding、RRF、可选 Cross-Encoder Rerank、
-  Chunk 级来源映射、引用门控与领域消歧。
-- **Action Planner**：LLM 使用 `respond / tool_call / clarify` 动作契约调用
-  `memory.search / evidence.search / research.start`，规则仅承担故障降级与安全边界。
-- **Memory Engine**：SQLite WAL 持久化 episode、fact、entity、source provenance 与
-  audit event；支持 FTS/BM25、真实语义召回、时间有效事实、RRF 与 MMR。
-- **Context Engine**：Pinned、Active、Summary、Memory、Evidence、Artifact 六类工作集，
-  支持 128K/256K/512K 软预算、结构化递归摘要、上下文压缩与精确恢复。
-- **Agent Runtime**：LangGraph 状态图、SQLite checkpoint、节点级重试、幂等控制、
-  类型化错误、持久任务与熔断降级。
-- **可观测性**：Research、Chat、Benchmark 使用统一 Trace/Span/Score 模型，支持本地
-  JSONL 与 Langfuse 双写、递归脱敏、用量统计和失败降级。
-- **评测体系**：SciFact、QASPER、LongMemEval-S、Context Pareto 与 Answer F1，覆盖
-  检索质量、答案质量、记忆召回、上下文保真、延迟和成本。
-- **正式交付**：Markdown、原始论文引用、运行 Trace、评估 Scorecard 与支持 MathML
-  数学排版的 PDF 报告。
-
-## v6.6 发布说明
-
-| 领域 | 改进内容 | 验收结果 |
+| 能力域 | 当前实现 | 工程边界 |
 | --- | --- | --- |
-| 产物流转可视化 | 输出线随源节点运行进入活动态，并在目标节点处理期间持续流动；目标阶段结束后才转为完成 | `queries.json` 与 `storm_gen_outline.txt` 完整经历 active → complete，不再因连续 SSE 事件而一闪即逝 |
-| 工作流可视化 | 11 节点行优先编排；粗线表示执行顺序，三次贝塞尔虚线表示文件依赖；输入、中间输出和终端产物使用不同端口 | 23 条路径不穿过无关卡片，13 条文件线轨迹互异且端点误差为 0 px |
-| 状态一致性 | 产物状态采用单调迁移，迟到事件不能重新激活已完成连线；成功与失败终态统一收敛传输状态 | 终态文件线不再保持动画高亮，失败传输显示静态失败态 |
-| 问答遥测 | 每条回复展示输入、输出、总 Token、墙钟耗时及真实/估算标识；旧会话自动补齐 token 估算 | 新消息显示实际耗时；历史消息明确标注“耗时未记录” |
-| Agent 行为 | 动作级 LLM Planner、动态输出预算、长度截断续接、类型化模型错误与真实语义 Memory 开关 | 普通生成不受固定内容类型限制，工具调用边界可追踪 |
-| PDF 交付 | 原始标题和作者进入参考文献；`$...$`、`$$...$$`、`\(...\)`、`\[...\]` 转换为 MathML，并记录公式转换指标 | 公式降级或转换不完整时返回类型化错误；真实浏览器 PDF 集成测试验证公式文本 |
-| Benchmark | 集成 SciFact、QASPER、LongMemEval-S、Context Pareto 与端到端 Reader/Judge | 开发者控制台可加载数据集、运行实验并查看结果与限制 |
-| 项目演示 | 增加调研工作流与智能问答两段轻量 GIF，分别呈现节点执行、产物流转、会话输入和回答遥测 | GitHub README 可直接预览，两段动图总计约 1.1 MB |
+| 深度调研 | Persona Generator、Conv Simulator、Query Planner、Retriever、Outline、Section Writer、Polisher、Evaluator | 保留 Stanford STORM 的多视角调研与两阶段写作流程 |
+| 知识问答 | 普通对话、会话召回、证据检索、证据充分性判断、按需升级深度调研 | 外部论文证据不写入用户长期记忆 |
+| RAG | BM25、SentenceTransformer Dense、RRF、可选 Cross-Encoder Rerank、来源过滤、引用映射 | 产品入口和公开 Benchmark 统一使用 `RetrievalPipeline` |
+| Memory | SQLite WAL、事实与 episode、provenance、时间有效性、BM25/真实向量、RRF、MMR | 只保存稳定用户事实、偏好、决策和可复用流程 |
+| Context | Pinned、Active、Summary、Memory、Evidence、Artifact 分层预算 | 支持结构化递归摘要、压缩 lineage 和恢复 |
+| Runtime | LangGraph、SQLite checkpoint、节点重试、幂等、ACL、缓存、熔断与 trace | 对话状态、调研任务和控制面持久化 |
+| Evaluation | SciFact、QASPER、LongMemEval-S、Context Pareto、Answer/Evidence F1 | smoke 仅用于确定性验证，quality profile 才可形成质量结论 |
+| Observability | 本地 JSONL、SSE、Langfuse Trace/Span/Score | 敏感字段脱敏，远程观测失败不阻断业务链路 |
 
-在“交付产物”卡片中启用 PDF 后，任务会生成 `paperstorm_report.pdf` 与对应的
-打印 HTML。Windows 优先使用 Google Chrome，并在未安装时回退到 Microsoft Edge；
-也可通过 `PAPERSTORM_PDF_BROWSER` 指定 Chromium 浏览器。
+## 系统架构
 
-## 最终能力地图与系统架构图
+### 业务流程
 
-### 业务总览：核心流程与项目价值
+![PaperStorm 业务架构](docs/architecture/paperstorm-executive-overview.svg)
 
-![PaperStorm 业务总览](docs/architecture/paperstorm-executive-overview-v57.svg)
+[Draw.io 可编辑源文件](docs/architecture/paperstorm-executive-overview.drawio)
 
-这张图用于汇报和项目介绍：从业务需求进入统一 Agent 平台，经意图编排分流到
-智能问答或深度调研，再由 RAG、Memory、Context 与 Multi-Agent 能力支撑，最终形成
-可信回答、结构化文章和可量化的工程闭环。
+![PaperStorm 完整系统架构](docs/architecture/paperstorm-system-architecture.png)
 
-[编辑 Draw.io 源文件](docs/architecture/paperstorm-executive-overview-v57.drawio) ·
-[下载 PNG](docs/architecture/paperstorm-executive-overview-v57.png)
+[完整系统架构 HTML 源文件](docs/architecture/paperstorm-system-architecture.html)
 
-### Agent 详细流程：协作链路与算法底座
+### Agent 与数据流
 
-![PaperStorm Agent 详细流程](docs/architecture/paperstorm-agent-system-flow-v57.svg)
+![PaperStorm Agent 系统流程](docs/architecture/paperstorm-agent-system-flow.svg)
 
-这张图用于技术讲解和系统评审：左侧是数据源、模型与工具，中间展开 Chat Agent 与
-Research Agent 两条执行链，并保留原 STORM 的 Persona Generator、WikiWriter、
-TopicExpert、ConvSimulator、Knowledge Curation、两阶段 Outline、章节写作与润色；
-右侧说明 RAG、Memory、Context、Runtime 和工程治理算法，底部连接公开评测反馈闭环。
+[Draw.io 可编辑源文件](docs/architecture/paperstorm-agent-system-flow.drawio)
 
-[编辑 Draw.io 源文件](docs/architecture/paperstorm-agent-system-flow-v57.drawio) ·
-[下载 PNG](docs/architecture/paperstorm-agent-system-flow-v57.png)
+### 官方 STORM 基础架构
 
-<details>
-<summary>展开技术全景附录</summary>
-
-![PaperStorm 技术全景附录](docs/architecture/paperstorm-system-architecture.png)
-
-[在浏览器中打开技术全景源文件](docs/architecture/paperstorm-system-architecture.html)
-
-</details>
-
-## 官方 STORM 基础架构（本项目基础）
+PaperStorm 保留 Stanford STORM 的知识策展、视角生成、专家访谈、两阶段大纲生成、并行章节写作
+与文章润色流程，并在其外围增加统一 RAG、Memory、Context、Agent Runtime、服务控制面和评测系统。
+官方模块中文说明见 [STORM_OFFICIAL_CN.md](docs/STORM_OFFICIAL_CN.md)。
 
 ```text
-STORM Workflow -> PaperStorm Runtime -> Service/Dashboard
+Stanford STORM Workflow
+        |
+        v
+PaperStorm Retrieval / Memory / Context
+        |
+        v
+Conversation Runtime / Production Control Plane
+        |
+        v
+FastAPI + SSE + Web Dashboard + Langfuse
 ```
 
-PaperStorm 保留 Stanford STORM 的多角色调研、提纲、写作与润色工作流，在其外层叠加
-可恢复 Runtime（LangGraph + SQLite checkpoint）、生产控制面（ACL/幂等/审计/span）
-与网页端（产品双模式 + 公开评测工作台）。
+## RAG 主链
+
+```text
+Source ingestion
+  -> structure-aware chunking
+  -> BM25 recall + Dense recall
+  -> Reciprocal Rank Fusion
+  -> optional Cross-Encoder rerank
+  -> relevance and forbidden-term gate
+  -> evidence package with provenance
+  -> Reader / article writer
+  -> citation validation
+```
+
+核心模块：
+
+- `knowledge_storm/document_ingestion.py`：PDF 解析、页码/标题保留与结构化切分。
+- `knowledge_storm/retrieval.py`：BM25、Dense、RRF、Cross-Encoder 和持久化 Hybrid Index。
+- `knowledge_storm/retrieval_pipeline.py`：产品与 Benchmark 共用的检索契约，固定
+  `retrieve/fuse/rerank/gate` stage schema。
+- `knowledge_storm/retrieval_runtime.py`：调研产物索引缓存和运行时适配。
+- `knowledge_storm/paperstorm_qa.py`：带引用的调研结果问答。
+- `knowledge_storm/paperstorm_enterprise_kb.py`：本地文档知识库、ACL、增量重建和缓存失效。
+
+真实服务默认使用 SentenceTransformer。`HashEmbeddingProvider` 仅用于单元测试和 smoke profile，
+不能作为公开质量结果。旧 JSON hash 索引不会被静默读取；系统会明确要求重建，避免检索行为悄然降级。
+
+RAG 的已知 bad case、工业方案对照和后续路线见
+[RAG_BAD_CASES_AND_ROADMAP.md](docs/RAG_BAD_CASES_AND_ROADMAP.md)。
+
+## Memory、Context 与 Evidence 边界
+
+- **Session Recall**：从当前用户的历史会话中检索消息和旧话题，用于“之前聊过什么”。
+- **Long-term Memory**：保存用户稳定偏好、明确事实、长期决策和可复用流程，支持跨会话召回。
+- **Evidence**：保存论文或内部文档中的外部事实、chunk、作者、标题、URL、页码和引用关系。
+- **Context**：为当前 LLM 调用组装系统约束、近期消息、结构化摘要、召回记忆、证据与工具产物。
+
+用户询问“之前聊过的 PIM 论文”时，Session Recall 负责找回旧会话中的论文指针，Evidence
+负责重新取得论文原文，Long-term Memory 只补充用户偏好，不把论文结论伪装成用户事实。
+
+稳定模块：
+
+- `knowledge_storm/memory_policy.py`
+- `knowledge_storm/memory_store.py`
+- `knowledge_storm/context_engine.py`
+- `knowledge_storm/paperstorm_session_recall.py`
+- `knowledge_storm/conversation_runtime.py`
+- `knowledge_storm/control_plane.py`
+
+## Benchmark
+
+| 检索 | 记忆 | 上下文 | 回答 |
+| --- | --- | --- | --- |
+| ![Retrieval Benchmark](docs/assets/benchmark-icon-retrieval.svg) | ![Memory Benchmark](docs/assets/benchmark-icon-memory.svg) | ![Context Benchmark](docs/assets/benchmark-icon-context.svg) | ![Answer Benchmark](docs/assets/benchmark-icon-answer.svg) |
+
+### 公开评测矩阵
+
+| Benchmark | 评估对象 | 主要指标 |
+| --- | --- | --- |
+| SciFact | 跨论文科学事实检索 | Recall@10、MRR@10、nDCG@10、P95 |
+| QASPER Retrieval | 论文内人工证据定位 | Evidence Recall@5、MRR@5、nDCG@5、P95 |
+| QASPER Answer | 端到端 Reader | Answer F1、Exact Match、Evidence F1 |
+| LongMemEval-S | 跨会话长期记忆 | Evidence-session Recall@5、类别 Recall、P50/P95 |
+| QASPER Context | 上下文预算治理 | token ratio、gold evidence retention、validation rate |
+| Context Pareto | 长上下文配置 | 质量、输入 Token、TTFT、成本和 Pareto frontier |
+
+### 已记录结果
+
+以下结果来自仓库中的公开数据集报告，延迟为本机 CPU 参考值，不代表线上 SLA。
+
+| 数据集与配置 | 主要结果 | 观察 |
+| --- | --- | --- |
+| SciFact Hybrid | Recall@10 `0.8114` | BM25 与 Dense 互补 |
+| SciFact Hybrid + Rerank | Recall@10 `0.8379`，P95 `2733.5 ms` | 质量提升但 CPU 重排开销显著 |
+| QASPER Hybrid | Recall@5 `0.5057` | 适合作为默认低延迟配置 |
+| QASPER Hybrid + Rerank | Recall@5 `0.6186`，P95 `1316.7 ms` | 适合质量优先或离线任务 |
+| QASPER Reader test | Answer F1 `0.5441`，Evidence F1 `0.5814` | Abstractive F1 仍是主要改进项 |
+| LongMemEval-S Memory | Recall@5 `0.8003`，P95 `359.3 ms` | 指标仅代表 evidence-session retrieval |
+
+详细协议、样本量、split、模型和证据等级见
+[PAPERSTORM_V55_PUBLIC_BENCHMARKS.md](docs/PAPERSTORM_V55_PUBLIC_BENCHMARKS.md) 与
+[PAPERSTORM_V56_MEMORY_CONTEXT.md](docs/PAPERSTORM_V56_MEMORY_CONTEXT.md)。
 
 ## 快速开始
 
 ### 环境要求
 
-- Python 3.10 或 3.11（当前发布验证范围；不支持 Python 3.12+）
-- 可选：真实检索与 LLM 路由需要网络与 API key（DeepSeek/MiniMax）
-- 可选：公开 Benchmark 数据与模型缓存，统一放在仓库外目录
-  （默认自动检查 `~/Desktop/codex/paperstorm-benchmarks`）
+- Python 3.10 或 3.11。
+- 调研真实模式需要 DeepSeek 或 MiniMax API Key。
+- quality Benchmark 需要公开数据集和本地模型缓存。
 
 ### 安装
 
-```bash
-git clone <your-repo-url> paperstorm
-cd paperstorm
-pip install -e .
+```powershell
+git clone https://github.com/yzy-151/paperstorm-agent.git
+cd paperstorm-agent
+D:\SOFTWARE\spyder\envs\storm\python.exe -m pip install -e .
 ```
-
-`pip install -e .` 会读取 `requirements.txt`，无需再重复执行
-`pip install -r requirements.txt`。
 
 ### 启动服务
 
 ```powershell
-# 在项目根目录运行；默认真实模式需要 API Key
-python examples/storm_examples/start_paperstorm_service.py `
-  --service-root ./results/paperstorm_demo_service `
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\start_paperstorm_service.py `
+  --service-root .\results\paperstorm_demo_service `
   --host 127.0.0.1 `
   --port 8002
 ```
 
-打开 <http://127.0.0.1:8002>。默认进入"论文调研"并使用真实检索与 LLM；填写主题后
-点击"开始调研"即可执行任务创建、论文检索、大纲、文章与评分链路。"高级运行设置"
-可切换为本地可复现演示；左侧"开发者控制台"进入公开评测工作台。
+浏览器访问 <http://127.0.0.1:8002>。
 
-启动脚本自带 preflight：缺 uvicorn 时给出 `pip install uvicorn`，端口 8002 被
-占用时自动建议并顺延到 8003，未配置 DeepSeek/MiniMax Key 时提示真实模式所需的
-环境变量。本地可复现演示不调用真实检索与 LLM，只用于离线验证。
-
-底层调试时也可直接启动 FastAPI 应用：
+也可以直接通过 Uvicorn 启动 ASGI 应用：
 
 ```powershell
-python -m uvicorn examples.storm_examples.paperstorm_service_api:app `
+D:\SOFTWARE\spyder\envs\storm\python.exe -m uvicorn examples.storm_examples.paperstorm_service_api:app `
   --host 127.0.0.1 `
   --port 8002
 ```
 
-### 常用环境变量
+Web Dashboard 包含三个工作区：
 
-| 变量 | 说明 |
-| --- | --- |
-| `PAPERSTORM_RETRIEVAL_STACK` | `auto` / `v41` / `legacy`，运行时检索栈（默认 auto→v41） |
-| `PAPERSTORM_RETRIEVAL_EMBEDDING` | `auto`（默认 real）/ `hash`，真实向量 vs 快速本地向量 |
-| `PAPERSTORM_RETRIEVAL_MODE` | `hybrid`（默认）/ `bm25` / `dense` / `hybrid_rerank` |
-| `PAPERSTORM_RETRIEVAL_INDEX_CACHE_SIZE` | 运行时检索索引 LRU 容量（默认 16） |
-| `PAPERSTORM_ROUTER_CACHE_SIZE` | 意图路由 LLM 响应 LRU 容量（默认 512） |
-| `PAPERSTORM_CHAT_LLM` | 聊天回复 LLM：`1` 显式开启 / `0` 关闭；paperstorm 模式自动开启 |
-| `PAPERSTORM_JUDGE_LLM` | 证据裁判 LLM：`1` 显式开启 / `0` 关闭；paperstorm 模式自动开启 |
-| `PAPERSTORM_ZOTERO_ROOT` | Zotero 数据目录，用于真实论文评测 |
-| `PAPERSTORM_MODEL_CACHE` | sentence-transformers 模型缓存目录 |
-| `PAPERSTORM_BENCHMARK_ROOT` | SciFact/QASPER/LongMemEval 等公开评测数据根目录；未设置时自动检查 `~/Desktop/codex/paperstorm-benchmarks` 与 `data/benchmarks` |
-| `PAPERSTORM_TEST_OFFLINE` | 测试默认 `1`：禁止外网、真实 LLM 和模型下载；仅显式设置 `0` 才允许联网测试 |
-| `PAPERSTORM_PDF_ALLOW_NO_SANDBOX` | 默认关闭；仅在受控 Windows 主机的 Chrome GPU 沙箱打印失败时设为 `1` 启用兼容重试 |
-| `PAPERSTORM_OBSERVABILITY` | 设置为 `langfuse` 启用远程 Trace；未设置时仅写本地 JSONL |
-| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Langfuse 项目凭据；仅在启用远程 Trace 时需要 |
-| `LANGFUSE_BASE_URL` | Langfuse Cloud 区域或自部署地址 |
-| `LANGFUSE_TRACING_ENVIRONMENT` | `development` / `staging` / `production`，用于隔离环境 |
+1. **论文调研模式**：提交 arXiv 或本地 PDF 调研任务，查看 Agent Graph、实时节点状态、文章与 PDF。
+2. **智能问答模式**：进行多轮聊天；证据不足时可升级检索或深度调研；展示时间与 Token 遥测。
+3. **开发者控制台**：发现本地数据集、运行公开 Benchmark、查看命令、日志、状态与结果指标。
 
-### Langfuse 可观测与评测
+![PaperStorm 研究问答](docs/screenshots/dashboard-chat-v64.png)
 
-Langfuse 是可选依赖，不影响默认安装：
+![PaperStorm 问答演示](docs/screenshots/paperstorm-chat-flow-v65.gif)
+
+![PaperStorm Benchmark 控制台](docs/screenshots/dashboard-developer-v64.png)
+
+### 如何复现公开 Benchmark
+
+以下命令分别用于确定性 smoke 和真实论文质量评测。真实论文质量结论必须使用冻结数据 split、
+真实 embedding 和完整样本，不能由 smoke 结果替代。
 
 ```powershell
-pip install -e ".[observability]"
+# 离线 smoke，仅验证数据适配器、指标和产物链路
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_public_benchmark.py `
+  --benchmark scifact `
+  --dataset-dir <scifact-dir> `
+  --output-dir <output-dir> `
+  --embedding hash `
+  --modes bm25 hybrid `
+  --smoke-limit 20
+
+# quality profile，使用真实 embedding 与 Cross-Encoder
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_public_benchmark.py `
+  --benchmark qasper `
+  --dataset-dir <qasper-test-json> `
+  --output-dir <output-dir> `
+  --embedding real `
+  --modes bm25 dense hybrid hybrid_rerank `
+  --reranker `
+  --top-k 5
+```
+
+## Langfuse 可观测性
+
+Langfuse 为可选依赖：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe -m pip install -e ".[observability]"
 $env:PAPERSTORM_OBSERVABILITY="langfuse"
 $env:LANGFUSE_PUBLIC_KEY="pk-lf-..."
 $env:LANGFUSE_SECRET_KEY="sk-lf-..."
 $env:LANGFUSE_BASE_URL="https://cloud.langfuse.com"
-$env:LANGFUSE_TRACING_ENVIRONMENT="development"
 ```
 
-启动 PaperStorm 后，调研、聊天和网页 Benchmark 会自动产生 Trace。开发者控制台的
-`LANGFUSE` 状态卡显示 `已配置 / 本地模式 / 降级`；“已配置”表示 SDK 与凭据就绪，
-不虚构异步采集端已经完成网络握手。状态接口为
-`GET /observability/status`。本地事件始终写入
-`<service-root>/observability/events.jsonl`，即使 SDK 未安装、网络中断或 Langfuse
-不可用，Agent 主链路也不会失败。
+映射关系：
 
-Trace 映射如下：
-
-| PaperStorm 执行 | Langfuse Trace / Observation | 自动 Score |
+| PaperStorm 操作 | Langfuse 对象 | Score |
 | --- | --- | --- |
-| 一次论文调研 | `paperstorm.research` → `research_pipeline` | `run_score` / `run_success` |
-| 一轮聊天 | `paperstorm.chat` → LangGraph executed nodes | `trajectory_success` / `retrieval_triggered` |
-| 一次公开评测 | `paperstorm.benchmark` | metrics.json 中全部数值指标与 `run_success` |
-
-所有输入、输出和 metadata 在上报前递归脱敏：API Key、Authorization、Cookie、密码与
-Token 替换为掩码，用户标识转换为稳定 SHA-256 伪匿名 ID，长字符串截断。生产环境仍应
-优先使用自部署 Langfuse，并根据企业数据制度决定是否上报原始问题和论文片段。
-
-实现边界、故障降级与评测方法见
-[Langfuse 可观测性设计与学习记录](docs/langfuse-observability-v58.md)。
-
-## 前端功能图文说明
-
-### 1. 论文调研模式（默认工作台）
-
-![PaperStorm 论文调研工作台](docs/screenshots/dashboard-research-v64.png)
-
-- 调研文章支持一键**下载 Markdown**；勾选交付卡片中的 PDF 选项后，还可生成并
-  打开经过页数与正文校验的 `paperstorm_report.pdf`。
-- 输入主题后一次点击完成任务创建、运行、状态追踪和结果刷新；节点图展开任务编排、
-  Persona、Multi-Agent 讨论、查询规划、论文检索、证据治理、大纲、写作、润色、
-  评估与交付。运行节点和连线具有实时光效，点击节点可检查职责、输入、输出和状态。
-- 默认 paperstorm 模式调用真实 arXiv/PDF 检索与 LLM；fake 仅用于离线可复现测试。
-- 支持数据源（arXiv / 本地 PDF）、输出语言（中文 / 原文）、期望与排除关键词。
-
-### 2. 智能问答模式
-
-![PaperStorm 智能问答模式](docs/screenshots/dashboard-chat-v64.png)
-
-![PaperStorm 智能问答会话演示](docs/screenshots/paperstorm-chat-flow-v65.gif)
-
-上图展示新建会话、输入问题和返回带 Token/耗时遥测的回答。演示使用 `fake` 运行模式，
-用于稳定复现产品交互；真实问答默认通过 paperstorm 模式调用检索器与 LLM。
-
-- 输入即问答：普通聊天/系统问题直接回复，技术问题优先复用已有调研任务，
-  证据不足自动启动深度调研；说"请记住：…"保存跨会话记忆。
-- **会话列表**：左侧历史会话可一键切换加载，显示消息数与最近内容摘要。
-- **引用展开**：每条带证据的回答可展开引用明细（标题 / 来源链接 / 页码 / 片段），
-  无来源的引用明确标记"失效"。
-- **重新生成 / 停止**：可对最后一条回答重新生成（旧回答保留为 v1，新回答标 v2，
-  不覆盖历史）；生成中可点"停止"中止后续阶段写入。
-- 会话栏默认使用 paperstorm 真实检索+LLM，也可显式切换 fake 本地演示与检索器
-  （arxiv / local-pdf）。
-- 每条回复标注运行时与检索栈（如 `langgraph-v4.4`、`v41`），可追溯执行链路。
-
-### 3. 开发者控制台与公开评测工作台
-
-![PaperStorm 公开评测工作台](docs/screenshots/dashboard-developer-v64.png)
-
-- 左侧导航的"开发者控制台"将公开评测与运行诊断从用户产品界面分离。
-- Benchmark Registry 发布经过口径审查的证据：SciFact、QASPER Retrieval、
-  QASPER Answer F1、LongMemEval-S 与 QASPER Context；旧 synthetic 分数不再提供
-  网页入口。
-- 自动发现 `PAPERSTORM_BENCHMARK_ROOT` 或
-  `%USERPROFILE%\Desktop\codex\paperstorm-benchmarks`，逐项显示 READY / BLOCKED、
-  真实本地路径、证据等级和已有正式结果。
-- Smoke / Quality 两档通过受控子进程运行；网页可查看可复现命令、PID、状态、日志、
-  指标、结果路径并停止任务；付费 QASPER Answer 需要显式确认且必须提供 API Key。
-
-> 说明：旧版"本地文档知识库"独立页面已并入开发侧工具链，不再作为用户页独立入口，
-> 避免三处问答互相重复；聊天问答是唯一的交互式问答入口。
-
-## 核心实现
-
-### 检索链路
-
-运行时默认使用 V4.1 栈：`BM25（rank-bm25，中英混合 unigram/bigram）+ Dense + RRF`，
-可选 Cross-Encoder 二次重排；带"有意义相关度门槛"（词/CJK 大词重叠或强向量相似度），
-无关问题会拒答而不是编造。真实向量模型可用时自动启用（`auto→real`），
-`hash` 为无模型快速模式。核心实现见 `PaperStormRAGIndex` / `HybridPaperIndex`。
-
-### Context Engine：分层预算与结构化压缩
-
-Pinned / Active / Recursive Summary / Retrieved Memory / Evidence / Artifact 六类
-工作集；DeepSeek V4 使用 1M token 硬上限，但日常聊天、证据问答和深度调研分别采用
-128K、256K、512K 软工作集，避免每轮无差别填满窗口。各层先获得任务相关目标份额，
-空闲预算再按优先级借给 Active 或 Evidence，并受绝对上限保护。达到 78% 软水位时触发
-结构化递归摘要，保留否定条件、数值、路径、错误、引用 ID、主题切换和待办；原始事件
-仍可按 `compaction_id` 恢复。摘要候选按当前问题的 BM25 风格相关性选取，不再固定只取
-最后两条。
-
-### Memory Engine：时序记忆与跨会话召回
-
-SQLite WAL 规范化存储 episode、fact、source provenance、entity 与 audit event；
-事实更新保留 `valid_from/valid_to/supersedes_id`，支持历史 `as_of` 查询；检索融合
-BM25、真实 embedding、entity、time、importance/recency、RRF 与 MMR。v4.3 API 由
-兼容 facade 保留（`Memory v4.3` 契约测试仍保留）。
-
-### 会话历史、长期记忆与证据边界
-
-- **Session Recall** 保存完整消息到 SQLite WAL，FTS5 BM25 跨会话检索，中文无空格文本
-  使用 n-gram 子串兜底，并回填命中消息前后文；只允许同一用户范围内召回。
-- **Long-term Memory** 只存稳定偏好、用户事实、明确决定和可复用流程。真实模式由 LLM
-  输出结构化候选，规则负责禁止项、置信度、去重、时效和审计；fake 模式保留确定性规则。
-- **Evidence** 存论文和文档中的外部事实，保留 source / document / chunk / citation
-  provenance，经 BM25 + Dense + RRF 和可选 Rerank 召回，不写入用户长期记忆。
-
-因此“之前聊过的 PIM 论文”先从 Session Recall 找到旧会话和引用指针，再按需去
-Evidence 取论文原文；用户偏好则从 Long-term Memory 取。三者不会混成一个向量池。
-
-### Agent Runtime：LangGraph 状态编排
-
-`classify → memory_recall → knowledge_retrieval → evidence_grade →
-deep_research → answer_with_citations → memory_candidate_write → final_trace`，
-SQLite checkpointer 持久化（一次聊天产生多个 checkpoint）、节点级瞬时故障重试、
-span trace、`storm_deep_research` 隔离工具。
-
-### Production Runtime：可靠性与治理
-
-每条聊天/调研请求外层都走 SQLite WAL 控制面：tenant/resource ACL、审计、
-事务幂等（相同载荷重放复用结果）、TTL+tag 缓存、持久任务、熔断、层级 span。
-
-### Action Planner：LLM 主决策与规则故障兜底
-
-`run_mode=paperstorm` 默认由 DeepSeek Turn Planner 根据最近 24 条消息、相关摘要、
-长期记忆和当前请求输出结构化 action / retrieval / tool / working_subject；旧 topic 不再
-自动注入并否决 LLM 决策。仅在 LLM 不可用、超时或 JSON 解析失败时回退规则。
-`fake` 模式仍使用纯规则，保证离线测试完全可复现且不产生 API 费用。
-
-**回复策略是"生成优先、答不了才检索"**：聊天类消息默认直接由 LLM 生成自然回复；
-只有当 LLM 明确表示需要检索或消息明显是调研请求时，才升级到知识检索 / 深度调研。
-
-**证据充分性由"LLM 证据裁判"判定**：有 key 时自动启用，裁判认为证据不足就升级到
-深度调研；无 LLM 时用保守的确定性判定（实质词重叠 + 会话主题锚点相关）。
-
-### 缓存
-
-- LLM 调用层：`functools.lru_cache`；litellm 磁盘缓存改为显式 opt-in，避免 import
-  阶段写入用户目录导致服务启动失败。
-- 运行时检索索引：进程内 LRU（默认 16），文件变化自动失效。
-- 意图路由 LLM：prompt 级 LRU（默认 512）。
-- 治理缓存：SQLite TTL + tag 失效（数据变更驱动，非 LRU）。
-
-## Benchmark：公开评测与口径
-
-### 能力矩阵
-
-| 能力 | 公开数据与指标 | 当前定位 |
-| --- | --- | --- |
-| <img src="docs/assets/benchmark-icon-retrieval.svg" width="42" alt="Retrieval"> **Retrieval** | SciFact / QASPER；Recall、MRR、nDCG、P95 | BM25、Dense、Hybrid、Hybrid + Rerank 同口径对比 |
-| <img src="docs/assets/benchmark-icon-answer.svg" width="42" alt="Answer F1"> **Answer** | QASPER；Answer F1、EM、Evidence F1 | 冻结检索结果后评估 Reader，区分召回问题与生成问题 |
-| <img src="docs/assets/benchmark-icon-memory.svg" width="42" alt="Memory"> **Memory** | LongMemEval-S；Evidence Recall@5、P50/P95 | 跨会话长期记忆检索；不冒充端到端答案准确率 |
-| <img src="docs/assets/benchmark-icon-context.svg" width="42" alt="Context"> **Context** | QASPER Context；证据保留率、预算率、压缩比 | 验证压缩是否丢失已召回证据与结构完整性 |
-
-开发者控制台从本地 `PAPERSTORM_BENCHMARK_ROOT` 自动发现数据与历史结果，按
-`READY / BLOCKED` 显示运行条件，并提供可复制命令、实时日志、PID、结果路径与停止操作。
-
-### 评测原则
-
-所有对外数字均来自**公开、可复现的数据集**，并按证据等级报告：
-
-- **public-official**：SciFact / QASPER 官方 split，使用官方 evaluator 对拍；
-- **public-official-retrieval-only**：LongMemEval-S evidence retrieval，不含
-  reader LLM，不等同于端到端答案准确率；
-- **diagnostic**：QASPER Context 预算与证据保留诊断，不评价生成答案质量。
-
-口径约定：`n` 为题数，`split` 为官方划分，`Top-K` 明确列出；test 一旦用于冻结报告
-就不再参与调参；延迟为冷建索引后的单机 CPU warm-query 参考值，不代表线上 SLA；
-小样本结果给出 Bootstrap 95% CI。
-
-### 主结果 1：LongMemEval-S 长期记忆检索
-
-官方 cleaned-2025-09，500/500 题，Top-5。该结果只衡量 evidence session retrieval，
-**不等同于 reader LLM 的端到端答案准确率**。
-
-| 方法 | Recall@5 | P50 | P95 |
-| --- | ---: | ---: | ---: |
-| Recent 5 sessions | 0.1358 | 0 ms | 0 ms |
-| Temporal Memory，hash 协议基线 | 0.4813 | 146.8 ms | 202.6 ms |
-| Temporal Memory，paraphrase-multilingual-MiniLM-L12-v2（向量持久化） | **0.8003** | 218.1 ms | 359.3 ms |
-
-Temporal Memory 在写入时一次性编码事实并持久化向量（SQLite `memory_fact_vectors`，按模型指纹
-隔离），查询只编码 query、按主键取向量，不再逐查询重编码全部 session：与早期
-`0.7930 / P95 1857ms` 相比，Recall@5 提升到 `0.8003`，P95 降到 `359.3ms`
-（-80.6%）。LongBench adapter/paired scorer 已通过离线测试，官方数据下载因外部
-网络中断未完成，因此不声称 LongBench task score。
-
-### 主结果 2：QASPER Context 预算治理
-
-复用官方 QASPER test 1309 条真实 Hybrid+Rerank Top-5 排名；8K 模型窗口、1536 输出
-预留、Evidence 层预算 70%。
-
-| 指标 | 结果 |
-| --- | ---: |
-| 题数 | 1309 |
-| 已召回 evidence 保留率 | **0.999847** |
-| Gold evidence recall（装配前 / 后） | **0.618648 / 0.618648** |
-| 平均 Context / 完整论文 token 比 | **0.166570** |
-| Context token P50 | 554 |
-| 超预算率 / 结构校验失败率 | **0 / 0** |
-
-结论：当前预算下 Context 没有进一步损害上游金证据召回，并把完整论文输入缩减到
-平均 16.657%。这是 Context 保真诊断，不是生成答案准确率。
-
-### 主结果 3：公开论文检索 Benchmark
-
-**SciFact 官方 test**：5,183 篇科学摘要、300 条官方 query、Top-10。
-
-| 方法 | Recall@10 | MRR@10 | nDCG@10 | P95 query |
-| --- | ---: | ---: | ---: | ---: |
-| BM25 | 0.7592 | 0.6069 | 0.6395 | 42.2 ms |
-| Dense | 0.7857 | 0.6071 | 0.6492 | 20.5 ms |
-| Hybrid | 0.8114 | 0.6298 | 0.6687 | 67.8 ms |
-| Hybrid + Rerank | **0.8379** | **0.6659** | **0.7001** | 2733.5 ms |
-
-**QASPER 官方 test**：19,914 段论文段落、1,309 条有人工 evidence 的问题、Top-5；
-按问题所属论文 scoped 检索，保留同论文非证据段落作为 hard negatives。
-
-| 方法 | Evidence Recall@5 | MRR@5 | nDCG@5 | P95 query |
-| --- | ---: | ---: | ---: | ---: |
-| BM25 | 0.4279 | 0.3714 | 0.3396 | 0.34 ms |
-| Dense | 0.4771 | 0.4527 | 0.4026 | 14.5 ms |
-| Hybrid | 0.5057 | 0.4595 | 0.4155 | 15.3 ms |
-| Hybrid + Rerank | **0.6186** | **0.5802** | **0.5327** | 1316.7 ms |
-
-Rerank 排序质量最高，但 CPU P95 达 1.3~2.7 秒，超过低延迟预算；因此**质量最优配置
-是 Hybrid+Rerank，低延迟部署默认是 Hybrid**。质量与延迟联合选型，而不是只看一个
-nDCG 数字。
-
-### 主结果 4：QASPER 端到端 Answer F1
-
-冻结 Hybrid+Rerank Top-5 与 `deepseek/deepseek-chat` 后，在全部官方 test 问题上
-运行一次（test 不再调参），并使用数据集自带 `qasper_evaluator.py` 对拍：
-
-| split | 问题数 | 成功率 | Answer F1 | Exact Match | Evidence F1 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| validation | 1,005 | 100% | 0.4722 | 0.2428 | 0.5025 |
-| test | 1,451 | 100% | **0.5441** | **0.3274** | **0.5814** |
-
-检索与生成分开评测：Recall/MRR/nDCG 判断"有没有找到证据"，Answer F1 判断"找到证据后
-是否答对"。Boolean 与不可答问题表现较好，Abstractive F1（0.2651）是主要短板。
-
-### 付费协议运行（1/4 规模，2026-08-10）
-
-在正式全量付费实验前，先按 **1/4 协议规模** 完成两组长上下文实验（DeepSeek
-`deepseek-chat`，温度 0，逐题 checkpoint，成本约 $1.1）：
-
-**LongMemEval-S 端到端问答（125/500）**：复用持久化 Temporal Memory 检索 Top-5 会话
-作为证据，reader 生成答案。证据 Recall@5 `0.8075`，整体 EM `0.256`；分类型看，
-单会话问答 EM `0.4286`，多会话推理 EM `0.0364` —— 检索证据足够，但多会话跨 session
-推理是当前主要瓶颈（与头尾截断的证据表示有关）。该运行使用非官方 token-F1/EM 判分，
-不能与官方 LongMemEval Judge 直接对比。
-
-| 维度 | 结果 |
-| --- | ---: |
-| 成功 / 总题数 | 125 / 125 |
-| Evidence Recall@5 | 0.8075 |
-| 单会话问答 EM / F1 | 0.4286 / 0.5303 |
-| 多会话推理 EM / F1 | 0.0364 / 0.0622 |
-| 成本估算 | $0.34 |
-
-**QASPER full-paper vs 预算上下文（validation 251 题）**：同一批问题分别用
-整篇论文段落与预算装配上下文生成，250 条成功配对：
-
-| 指标 | full | budgeted context | Δ |
-| --- | ---: | ---: | ---: |
-| Answer F1 | 0.5383 | 0.5399 | +0.002 |
-| Exact Match | 0.2590 | 0.2550 | -0.004 |
-| Evidence F1 | 0.5732 | 0.5674 | -0.006 |
-| Prompt tokens | 1,453,417 | 1,306,984 | -10.1% |
-
-结论：预算上下文在全部指标上保持在 2pp 质量预算内（"压缩不丢证据"成立）；
-但 QASPER validation 论文大多能装进 6656 token 预算，平均只省 10% 输入，
-50% 削减目标需要真正超预算的长文（见 QASPER Context 诊断的 16.7% 全论文口径）。
-完整逐题数据见
-[docs/benchmarks/paperstorm_v56_paid_quarter_summary.json](docs/benchmarks/paperstorm_v56_paid_quarter_summary.json)。
-
-### 如何复现
-
-数据与模型缓存放在仓库外（`PAPERSTORM_BENCHMARK_ROOT`），仓库只保存 adapter、
-测试、小型 fixture 与聚合报告：
-
-```powershell
-# SciFact 官方 test 检索（含 5000 次 Bootstrap 95% CI）
-python examples/storm_examples/run_paperstorm_public_benchmark.py `
-  --benchmark scifact --download `
-  --cache-dir <external-cache> `
-  --output-dir results/public_benchmarks/v55_scifact_real `
-  --split test --modes bm25 dense hybrid hybrid_rerank `
-  --embedding real --model sentence-transformers/all-MiniLM-L6-v2 `
-  --reranker --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2 `
-  --top-k 10 --bootstrap-samples 5000 --seed 55
-
-# QASPER 官方 test 证据检索
-python examples/storm_examples/run_paperstorm_public_benchmark.py `
-  --benchmark qasper --cache-dir <external-cache> `
-  --output-dir results/public_benchmarks/v55_qasper_test_real `
-  --split test --modes bm25 dense hybrid hybrid_rerank `
-  --embedding real --model sentence-transformers/all-MiniLM-L6-v2 `
-  --reranker --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2 `
-  --top-k 5 --bootstrap-samples 5000 --seed 55
-
-# QASPER 端到端 Answer F1（需 API Key，断点续跑）
-python examples/storm_examples/run_qasper_answer_benchmark.py `
-  --split test `
-  --retrieval-predictions results/public_benchmarks/v55_qasper_test_real/predictions.jsonl `
-  --output-dir results/public_benchmarks/v55_qasper_answer_test_real `
-  --cache-dir <external-cache> --top-k 5
-
-# LongMemEval-S 长期记忆检索（500 题）
-python examples/storm_examples/run_longmemeval_benchmark.py `
-  --dataset <longmemeval_s_cleaned.json> `
-  --output-dir <external-cache>/v56/longmemeval-real `
-  --embedding sentence-transformer --top-k 5
-
-# QASPER Context 预算与证据保留诊断
-python examples/storm_examples/run_qasper_context_benchmark.py `
-  --dataset <qasper-test-v0.3.json> `
-  --rankings results/public_benchmarks/v55_qasper_test_real/predictions.jsonl `
-  --output-dir <external-cache>/v56/runs/qasper-context-v56
-
-# 1/4 付费协议运行（需 API Key，可断点续跑）
-python examples/storm_examples/run_longmemeval_answer_benchmark.py `
-  --dataset <longmemeval_s_cleaned.json> --memory-root <persisted-memory> `
-  --output-dir <external-cache>/v56/runs/longmemeval-answer-quarter --limit 125
-python examples/storm_examples/run_qasper_answer_benchmark.py `
-  --split validation --retrieval-predictions <validation-rankings.jsonl> `
-  --output-dir <external-cache>/v56/runs/qasper-context-quarter/full `
-  --limit 251 --context-mode full
-python examples/storm_examples/run_qasper_answer_benchmark.py `
-  --split validation --retrieval-predictions <validation-rankings.jsonl> `
-  --output-dir <external-cache>/v56/runs/qasper-context-quarter/v56 `
-  --limit 251 --context-mode v56 --input-budget-tokens 6656
-```
-
-网页端开发者控制台可运行所有输入已就绪的 Benchmark；缺少配对预测的 LongBench 会
-明确显示 `BLOCKED`，不会伪造分数。
-
-### 历史与审计
-
-更早的 synthetic seed 回归（0.99 级 Recall 与同分布生成规则高度相关）与本地真实论文
-早期候选实验（含文档级 dev/test 隔离与人工审核门禁）不再作为主结果发布，
-完整审计记录保留在
-[docs/PAPERSTORM_V54_EVALUATION.md](docs/PAPERSTORM_V54_EVALUATION.md) 与
-[docs/PAPERSTORM_V55_PUBLIC_BENCHMARKS.md](docs/PAPERSTORM_V55_PUBLIC_BENCHMARKS.md)
-中，仅供回归与追溯。
-
-## 设计借鉴来源
-
-Claude Code（上下文分层 / MCP / 工作流）、Hermes（会话搜索 / Context Compressor）、
-Anthropic Contextual Retrieval / Context Engineering、MemGPT（虚拟内存与按需分页）、
-Mem0 / Graphiti（episode provenance、时间有效事实）、Stanford STORM。逐条对照与
-相关实现均在对应模块、测试与公开评测记录中给出，可按下方目录直接定位和复现。
-
-## 目录结构
+| 调研任务 | `paperstorm.research` trace + pipeline spans | run success、scorecard metrics |
+| 对话轮次 | `paperstorm.chat` trace + graph node spans | trajectory success、retrieval triggered |
+| Benchmark | `paperstorm.benchmark` trace | metrics.json 数值指标、run success |
+
+未启用 Langfuse 时，事件仍写入 `<service-root>/observability/events.jsonl`。测试环境设置
+`PAPERSTORM_OFFLINE_TESTS=1` 后会禁用远程 exporter 和模型下载。
+
+## 关键环境变量
+
+| 变量 | 说明 |
+| --- | --- |
+| `PAPERSTORM_RETRIEVAL_EMBEDDING` | `auto` / `real` / `hash`；生产默认 real，hash 仅供测试 |
+| `PAPERSTORM_RETRIEVAL_MODE` | `hybrid` / `bm25` / `dense` / `hybrid_rerank` |
+| `PAPERSTORM_RETRIEVAL_INDEX_CACHE_SIZE` | 运行时索引 LRU 容量 |
+| `PAPERSTORM_MODEL_CACHE` | SentenceTransformer/Cross-Encoder 模型缓存目录 |
+| `PAPERSTORM_BENCHMARK_ROOT` | SciFact、QASPER、LongMemEval 等数据集根目录 |
+| `PAPERSTORM_ZOTERO_ROOT` | Zotero 数据目录 |
+| `PAPERSTORM_OBSERVABILITY` | 设置为 `langfuse` 启用远程观测 |
+| `PAPERSTORM_OFFLINE_TESTS` | 设置为 `1` 禁止测试访问远程观测与模型下载 |
+
+## 项目结构
 
 ```text
 knowledge_storm/
-  paperstorm_retrieval_v41.py        # BM25+Dense+RRF 检索栈
-  paperstorm_context_v56.py          # 六类 Context 与递归 compaction lineage
-  paperstorm_memory_v56.py           # SQLite temporal memory 与混合召回
-  paperstorm_session_recall.py       # FTS5 BM25 跨会话历史检索
-  paperstorm_langgraph_v44.py        # LangGraph 会话运行时
-  paperstorm_production_v45.py       # SQLite WAL 生产控制面
-  paperstorm_benchmarks.py           # 公开 Benchmark 契约与指标
-  paperstorm_intent_router.py        # Action Planner（规则护栏+LLM）
-  evaluation/public_benchmarks/      # BEIR / QASPER / LongMemEval adapter
-examples/storm_examples/             # FastAPI 服务 / MCP server / 评测 CLI
-frontend/paperstorm_dashboard/       # 网页端 Dashboard（两模式 + 评测工作台）
-tests/                               # 离线单元、API、前端契约与发布完整性测试
-docs/                                # 评测记录 / Benchmark 口径 / 截图
+  document_ingestion.py            # PDF 与结构化 chunk
+  retrieval.py                     # BM25 / Dense / RRF / Cross-Encoder
+  retrieval_pipeline.py            # 产品与 Benchmark 的统一检索契约
+  retrieval_runtime.py             # 调研产物索引与缓存
+  context_engine.py                # 分层上下文预算、压缩与恢复
+  memory_policy.py                 # 长期记忆候选与写入策略
+  memory_store.py                  # SQLite temporal memory
+  conversation_runtime.py          # LangGraph 会话运行时
+  control_plane.py                 # ACL、幂等、缓存、任务与 trace
+  paperstorm_service.py            # 应用服务层
+  evaluation/public_benchmarks/    # SciFact/QASPER/LongMemEval adapters
+examples/storm_examples/           # FastAPI、MCP 与 Benchmark CLI
+frontend/paperstorm_dashboard/     # 调研、问答和开发者控制台
+tests/                              # 离线单元、API、前端与评测契约测试
+docs/                               # 架构、评测协议、路线图与开发记录
 ```
 
-Memory、Context 与 Planner 的边界定义、根因分析和逐项验收见
-[Memory、Context 与 Agent Planner 改进记录](docs/PAPERSTORM_V59_CONTEXT_MEMORY.md)。
+## 质量边界与路线图
+
+当前系统已经统一检索主链并建立公开 Benchmark，但仍需继续处理查询扩展、多跳证据、冲突来源、
+动态 rerank、生成阶段 citation faithfulness 和低置信度纠错。相关优先级、案例和验收指标见
+[RAG_BAD_CASES_AND_ROADMAP.md](docs/RAG_BAD_CASES_AND_ROADMAP.md)。
 
 ## License
 
-MIT（原 STORM 为 MIT License，见 [LICENSE](LICENSE)）。
+MIT License。Stanford STORM 原始代码与本项目扩展均遵循仓库中的 [LICENSE](LICENSE)。

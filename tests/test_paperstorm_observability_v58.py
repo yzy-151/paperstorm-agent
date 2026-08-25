@@ -242,7 +242,7 @@ class PaperStormObservabilityV58Test(unittest.TestCase):
                 popen_factory=lambda *args, **kwargs: process,
                 observability=observability,
             )
-            run = manager.start("longmemeval-retrieval-v56", profile="smoke")
+            run = manager.start("longmemeval-retrieval", profile="smoke")
             output = Path(run["output_dir"])
             output.mkdir(parents=True)
             (output / "metrics.json").write_text(

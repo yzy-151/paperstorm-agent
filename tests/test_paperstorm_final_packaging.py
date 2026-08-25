@@ -8,24 +8,22 @@ class PaperStormFinalPackagingTest(unittest.TestCase):
         readme = (root / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("PaperStorm Agent", readme)
-        self.assertIn("项目一眼看懂", readme)
-        self.assertIn("最终能力地图", readme)
+        self.assertIn("系统架构", readme)
+        self.assertIn("核心能力", readme)
         self.assertIn("官方 STORM 基础架构", readme)
-        self.assertIn(
-            "STORM Workflow -> PaperStorm Runtime -> Service/Dashboard", readme
-        )
+        self.assertIn("Stanford STORM Workflow", readme)
         self.assertIn("启动服务", readme)
 
     def test_readme_documents_rag_memory_and_runtime(self):
         root = Path(__file__).resolve().parents[1]
         readme = (root / "README.md").read_text(encoding="utf-8")
 
-        self.assertIn("PaperStormRAGIndex", readme)
-        self.assertIn("Context v5.9", readme)
-        self.assertIn("Memory v5.6", readme)
+        self.assertIn("RetrievalPipeline", readme)
+        self.assertIn("Context", readme)
+        self.assertIn("Memory", readme)
         self.assertIn("Session Recall", readme)
-        self.assertIn("LangGraph v4.4", readme)
-        self.assertIn("Production v4.5", readme)
+        self.assertIn("LangGraph", readme)
+        self.assertIn("Control Plane", readme)
         self.assertIn("本地文档知识库", readme)
 
 

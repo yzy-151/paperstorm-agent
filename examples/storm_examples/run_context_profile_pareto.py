@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 
 from knowledge_storm.evaluation.public_benchmarks.longbench_context import load_longbench_v2
-from knowledge_storm.evaluation.public_benchmarks.v60_harness import run_context_profile_benchmark
-from knowledge_storm.evaluation.public_benchmarks.v60_llm import StreamingReader
+from knowledge_storm.evaluation.public_benchmarks.harness import run_context_profile_benchmark
+from knowledge_storm.evaluation.public_benchmarks.llm_reader import StreamingReader
 from knowledge_storm.paperstorm_router_llm import _load_flat_toml_env
 
 

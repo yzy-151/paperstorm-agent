@@ -19,8 +19,8 @@ from knowledge_storm.evaluation.public_benchmarks.longmemeval_answer import (
     LiteLLMPlainGenerator,
     run_longmemeval_answers,
 )
-from knowledge_storm.paperstorm_memory_v56 import LongTermMemoryServiceV56
-from knowledge_storm.paperstorm_retrieval_v41 import SentenceTransformerProvider
+from knowledge_storm.memory_store import LongTermMemoryService
+from knowledge_storm.retrieval import SentenceTransformerProvider
 from knowledge_storm.paperstorm_router_llm import _load_flat_toml_env
 
 
@@ -66,7 +66,7 @@ def main(argv=None):
         model_name=args.embedding_model,
         cache_folder=args.model_cache or None,
     )
-    service = LongTermMemoryServiceV56(
+    service = LongTermMemoryService(
         Path(args.memory_root), embedding_provider=provider
     )
     _load_flat_toml_env()

@@ -17,7 +17,7 @@ from knowledge_storm.evaluation.public_benchmarks.qasper_generation import (
     load_rankings,
     run_qasper_generation,
 )
-from knowledge_storm.paperstorm_retrieval_v41 import (
+from knowledge_storm.retrieval import (
     CrossEncoderReranker,
     SentenceTransformerProvider,
 )

@@ -35,7 +35,7 @@ class PaperStormBenchmarkRegistryTest(unittest.TestCase):
             "datasets/scifact/qrels/test.tsv",
             "qasper-official-v0.3/qasper-test-v0.3.json",
             "v56/longmemeval_s_cleaned.json",
-            "v56/runs/qasper-context-v56/predictions.jsonl",
+            "v56/runs/qasper-context/predictions.jsonl",
         ):
             path = self.benchmark_root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -58,11 +58,11 @@ class PaperStormBenchmarkRegistryTest(unittest.TestCase):
         self.assertEqual(
             ids[:5],
             [
-                "scifact-retrieval-v55",
-                "qasper-retrieval-v55",
-                "qasper-answer-v55",
-                "longmemeval-retrieval-v56",
-                "qasper-context-v56",
+                "scifact-retrieval",
+                "qasper-retrieval",
+                "qasper-answer",
+                "longmemeval-retrieval",
+                "qasper-context",
             ],
         )
         self.assertEqual(catalog["benchmark_root"], str(self.benchmark_root))
@@ -77,7 +77,7 @@ class PaperStormBenchmarkRegistryTest(unittest.TestCase):
 
         registry = BenchmarkRegistry(benchmark_root=self.benchmark_root)
         command = registry.build_command(
-            "longmemeval-retrieval-v56",
+            "longmemeval-retrieval",
             output_dir=self.root / "run",
             profile="smoke",
         )
@@ -94,12 +94,12 @@ class PaperStormBenchmarkRegistryTest(unittest.TestCase):
         registry = BenchmarkRegistry(benchmark_root=self.benchmark_root)
         with self.assertRaisesRegex(ValueError, "付费 LLM"):
             registry.build_command(
-                "qasper-answer-v55", self.root / "answer", profile="smoke"
+                "qasper-answer", self.root / "answer", profile="smoke"
             )
         with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": ""}, clear=False):
             with self.assertRaisesRegex(ValueError, "DEEPSEEK_API_KEY"):
                 registry.build_command(
-                    "qasper-answer-v55",
+                    "qasper-answer",
                     self.root / "answer",
                     profile="smoke",
                     allow_paid_llm=True,
@@ -117,7 +117,7 @@ class PaperStormBenchmarkRegistryTest(unittest.TestCase):
             registry=BenchmarkRegistry(benchmark_root=self.benchmark_root),
             popen_factory=lambda *args, **kwargs: process,
         )
-        run = manager.start("longmemeval-retrieval-v56", profile="smoke")
+        run = manager.start("longmemeval-retrieval", profile="smoke")
         self.assertEqual(run["status"], "running")
         self.assertTrue(Path(run["manifest_path"]).exists())
         cancelled = manager.cancel(run["run_id"])
@@ -143,7 +143,7 @@ class PaperStormBenchmarkWorkbenchApiTest(unittest.TestCase):
                 self.assertIn("benchmarks", response.json())
                 blocked = client.post(
                     "/benchmarks/runs",
-                    json={"benchmark_id": "qasper-answer-v55"},
+                    json={"benchmark_id": "qasper-answer"},
                 )
                 self.assertEqual(blocked.status_code, 400)
 
@@ -173,6 +173,7 @@ class PaperStormBenchmarkWorkbenchApiTest(unittest.TestCase):
         self.assertIn("loadBenchmarkCatalog", script)
         self.assertIn("startBenchmarkRun", script)
         self.assertIn("pollBenchmarkRun", script)
+        self.assertIn("result.modes?.paperstorm_memory", script)
 
 
 if __name__ == "__main__":

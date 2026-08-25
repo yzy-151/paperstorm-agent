@@ -178,7 +178,10 @@ class PaperStormLoggingTest(unittest.TestCase):
                 events = [json.loads(line) for line in f.read().splitlines()]
 
         legacy_events = [
-            event for event in events if not event["event"].startswith("stage_")
+            event
+            for event in events
+            if not event["event"].startswith("stage_")
+            and event["event"] != "artifact_ready"
         ]
         self.assertEqual(
             [event["event"] for event in legacy_events],

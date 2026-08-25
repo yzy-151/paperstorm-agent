@@ -198,7 +198,7 @@ class MemoryContextPublicBenchmarkV56Tests(unittest.TestCase):
             self.assertEqual(checkpoint.completed_ids(), {"q1", "q2"})
             self.assertEqual(len(checkpoint.rows()), 2)
 
-    def test_longmemeval_retrieval_runner_compares_recent_and_v56(self):
+    def test_longmemeval_retrieval_runner_compares_recent_and_memory(self):
         import sqlite3
         from contextlib import closing
 
@@ -208,7 +208,7 @@ class MemoryContextPublicBenchmarkV56Tests(unittest.TestCase):
         dataset = load_longmemeval(FIXTURE_ROOT / "longmemeval_tiny.json")
         with tempfile.TemporaryDirectory() as temp_dir:
             report = run_memory_retrieval(dataset, Path(temp_dir), top_k=1)
-            database = Path(temp_dir) / "memory" / "memory_v56.sqlite3"
+            database = Path(temp_dir) / "memory" / "memory.sqlite3"
             with closing(sqlite3.connect(database)) as connection:
                 before = connection.execute("SELECT COUNT(*) FROM memory_events").fetchone()[0]
             run_memory_retrieval(dataset, Path(temp_dir), top_k=1)
@@ -216,9 +216,9 @@ class MemoryContextPublicBenchmarkV56Tests(unittest.TestCase):
                 after = connection.execute("SELECT COUNT(*) FROM memory_events").fetchone()[0]
 
         self.assertEqual(report["case_count"], 2)
-        self.assertEqual(set(report["modes"]), {"recent_window", "v56_memory"})
+        self.assertEqual(set(report["modes"]), {"recent_window", "paperstorm_memory"})
         self.assertEqual(report["answerable_case_count"], 1)
-        self.assertIn("retrieval_recall_at_1", report["modes"]["v56_memory"])
+        self.assertIn("retrieval_recall_at_1", report["modes"]["paperstorm_memory"])
         self.assertEqual(report["evidence_tier"], "public-official-retrieval-only")
         self.assertEqual(before, after)
 

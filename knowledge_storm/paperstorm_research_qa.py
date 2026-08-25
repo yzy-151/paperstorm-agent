@@ -281,7 +281,7 @@ def _meaningful_overlap(question: str, evidence_text: str):
     """Word / CJK-bigram overlap between question and evidence; single CJK
     characters are noise (e.g. one shared char must not make a PIM KB look
     relevant to a Muon-optimizer question)."""
-    from .paperstorm_retrieval_runtime import meaningful_terms
+    from .retrieval_runtime import meaningful_terms
 
     return sorted(meaningful_terms(question) & meaningful_terms(evidence_text))
 

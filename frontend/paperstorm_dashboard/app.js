@@ -989,12 +989,12 @@ function buildBenchmarkPreview(item, profile) {
   const paths = Object.fromEntries(item.inputs.map((input) => [input.key, input.path || `<${input.key}>`]));
   const output = "<service-root>/benchmark_runs/<run-id>/artifacts";
   const commands = {
-    "scifact-retrieval-v55": `python examples/storm_examples/run_paperstorm_public_benchmark.py --benchmark scifact --dataset-dir "${paths.scifact_dir}" --output-dir "${output}" --embedding ${profile === "smoke" ? "hash --smoke-limit 20" : "real --reranker"}`,
-    "qasper-retrieval-v55": `python examples/storm_examples/run_paperstorm_public_benchmark.py --benchmark qasper --dataset-dir "${paths.qasper_json}" --output-dir "${output}" --embedding ${profile === "smoke" ? "hash --smoke-limit 20" : "real --reranker"}`,
-    "qasper-answer-v55": `python examples/storm_examples/run_qasper_answer_benchmark.py --split test --retrieval-predictions "${paths.qasper_rankings}" --output-dir "${output}"${profile === "smoke" ? " --smoke-limit 10" : ""}`,
-    "longmemeval-retrieval-v56": `python examples/storm_examples/run_longmemeval_benchmark.py --dataset "${paths.longmemeval_json}" --output-dir "${output}" --embedding ${profile === "smoke" ? "hash --limit 10" : "sentence-transformer"}`,
-    "qasper-context-v56": `python examples/storm_examples/run_qasper_context_benchmark.py --dataset "${paths.qasper_json}" --rankings "${paths.qasper_rankings}" --output-dir "${output}"`,
-    "longbench-context-v56": "Blocked: 先生成同模型 full/fixed/v5.6 配对预测。",
+    "scifact-retrieval": `python examples/storm_examples/run_paperstorm_public_benchmark.py --benchmark scifact --dataset-dir "${paths.scifact_dir}" --output-dir "${output}" --embedding ${profile === "smoke" ? "hash --smoke-limit 20" : "real --reranker"}`,
+    "qasper-retrieval": `python examples/storm_examples/run_paperstorm_public_benchmark.py --benchmark qasper --dataset-dir "${paths.qasper_json}" --output-dir "${output}" --embedding ${profile === "smoke" ? "hash --smoke-limit 20" : "real --reranker"}`,
+    "qasper-answer": `python examples/storm_examples/run_qasper_answer_benchmark.py --split test --retrieval-predictions "${paths.qasper_rankings}" --output-dir "${output}"${profile === "smoke" ? " --smoke-limit 10" : ""}`,
+    "longmemeval-retrieval": `python examples/storm_examples/run_longmemeval_benchmark.py --dataset "${paths.longmemeval_json}" --output-dir "${output}" --embedding ${profile === "smoke" ? "hash --limit 10" : "sentence-transformer"}`,
+    "qasper-context": `python examples/storm_examples/run_qasper_context_benchmark.py --dataset "${paths.qasper_json}" --rankings "${paths.qasper_rankings}" --output-dir "${output}"`,
+    "longbench-context": "Blocked: 先生成同模型 full/fixed/v5.6 配对预测。",
   };
   return commands[item.id] || "该任务不可运行";
 }
@@ -1083,23 +1083,23 @@ function renderBenchmarkMetrics(container, result) {
       metrics.push([`${labels[mode] || mode} nDCG@${suffix}`, values[`ndcg_at_${suffix}`]]);
       metrics.push([`${labels[mode] || mode} P95`, values.p95_latency_ms, "ms"]);
     });
-  } else if (id === "qasper-answer-v55") {
+  } else if (id === "qasper-answer") {
     const values = result.metrics || result;
     metrics = [
       ["Answer F1", values.answer_f1], ["Evidence F1", values.evidence_f1],
       ["Exact Match", values.answer_exact_match], ["样本数", values.case_count || result.case_count],
       ["成功预测", result.successful_predictions], ["失败预测", result.failed_predictions],
     ];
-  } else if (id === "longmemeval-retrieval-v56") {
+  } else if (id === "longmemeval-retrieval") {
     const recent = result.modes?.recent_window || {};
-    const memory = result.modes?.v56_memory || {};
+    const memory = result.modes?.paperstorm_memory || result.modes?.v56_memory || {};
     metrics = [
       ["样本数", result.case_count], ["Top K", result.top_k],
       ["Recent Recall@5", recent.retrieval_recall_at_5],
-      ["v5.6 Memory Recall@5", memory.retrieval_recall_at_5],
-      ["v5.6 P50", memory.p50_latency_ms, "ms"], ["v5.6 P95", memory.p95_latency_ms, "ms"],
+      ["PaperStorm Memory Recall@5", memory.retrieval_recall_at_5],
+      ["Memory P50", memory.p50_latency_ms, "ms"], ["Memory P95", memory.p95_latency_ms, "ms"],
     ];
-  } else if (id === "qasper-context-v56") {
+  } else if (id === "qasper-context") {
     metrics = [
       ["样本数", result.case_count], ["输入上限", result.input_limit_tokens, "tokens"],
       ["证据保留率", result.retrieved_evidence_retention],

@@ -280,9 +280,10 @@ class SpanHandle(AbstractContextManager):
 
 
 def build_observability(root_dir, langfuse_client=None):
-    offline = str(os.getenv("PAPERSTORM_TEST_OFFLINE", "0")).strip().lower() in {
-        "1", "true", "yes", "on"
-    }
+    offline = any(
+        str(os.getenv(name, "0")).strip().lower() in {"1", "true", "yes", "on"}
+        for name in ("PAPERSTORM_TEST_OFFLINE", "PAPERSTORM_OFFLINE_TESTS")
+    )
     enabled = (
         not offline
         and os.getenv("PAPERSTORM_OBSERVABILITY", "").lower() == "langfuse"

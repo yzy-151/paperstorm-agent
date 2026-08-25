@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from .paperstorm_context_v56 import ContextEngine
+from .context_engine import ContextEngine
 from .paperstorm_memory import PaperStormMemoryStore
-from .paperstorm_memory_v56 import LongTermMemoryService
+from .memory_store import LongTermMemoryService
 
 
 @dataclass

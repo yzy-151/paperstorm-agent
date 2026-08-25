@@ -1,4 +1,4 @@
-"""Run PaperStorm v5.6 LongMemEval retrieval diagnostics.
+"""Run PaperStorm LongMemEval retrieval diagnostics.
 
 This command deliberately labels the result retrieval-only.  End-to-end answer
 accuracy requires a separately frozen reader LLM and the official evaluator.
@@ -10,8 +10,8 @@ from pathlib import Path
 
 from knowledge_storm.evaluation.public_benchmarks.longmemeval import load_longmemeval
 from knowledge_storm.evaluation.public_benchmarks.longmemeval_runner import run_memory_retrieval
-from knowledge_storm.paperstorm_rag import HashEmbeddingProvider
-from knowledge_storm.paperstorm_retrieval_v41 import SentenceTransformerProvider
+from knowledge_storm.retrieval import HashEmbeddingProvider
+from knowledge_storm.retrieval import SentenceTransformerProvider
 
 
 def build_parser():

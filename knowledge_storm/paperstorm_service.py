@@ -524,7 +524,7 @@ class PaperStormTaskService:
         user_id: str,
         idempotency_key: str,
     ):
-        control = self._production_control_v45()
+        control = self._production_control()
         control.authorize(tenant_id, user_id, "knowledge_base", kb_id, "write")
         return control.enqueue_job(
             tenant_id=tenant_id,
@@ -543,9 +543,9 @@ class PaperStormTaskService:
         from .paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService
 
         enterprise = EnterpriseKnowledgeBaseService(
-            self.root_dir, control_plane=self._production_control_v45()
+            self.root_dir, control_plane=self._production_control()
         )
-        return self._production_control_v45().run_worker_tick(
+        return self._production_control().run_worker_tick(
             {
                 "incremental_index": lambda payload: enterprise.update_knowledge_base(
                     **payload
@@ -709,48 +709,48 @@ class PaperStormTaskService:
         return PaperStormChatAgent(self).restore_context(chat_id, compaction_id)
 
     def create_memory(self, **payload):
-        return self._memory_service_v43().upsert(**payload)
+        return self._memory_service().upsert(**payload)
 
     def list_memories(self, namespace: str, include_inactive: bool = False):
         return {
             "namespace": namespace,
-            "memories": self._memory_service_v43().list_memories(
+            "memories": self._memory_service().list_memories(
                 namespace, include_inactive=include_inactive
             ),
         }
 
     def search_memories(self, namespace: str, query: str, top_k: int = 5):
-        return self._memory_service_v43().search(namespace, query, top_k=top_k)
+        return self._memory_service().search(namespace, query, top_k=top_k)
 
     def edit_memory(self, namespace: str, memory_id: str, content: str, **updates):
-        return self._memory_service_v43().edit(
+        return self._memory_service().edit(
             namespace=namespace, memory_id=memory_id, content=content, **updates
         )
 
     def delete_memory(
         self, namespace: str, memory_id: str, reason: str = "user_request"
     ):
-        return self._memory_service_v43().delete(namespace, memory_id, reason=reason)
+        return self._memory_service().delete(namespace, memory_id, reason=reason)
 
     def export_memories(self, namespace: str):
-        return self._memory_service_v43().export_namespace(namespace)
+        return self._memory_service().export_namespace(namespace)
 
     def set_memory_enabled(self, namespace: str, enabled: bool):
-        return self._memory_service_v43().set_enabled(namespace, enabled)
+        return self._memory_service().set_enabled(namespace, enabled)
 
     def invoke_conversation_graph(self, **payload):
-        return self._production_runtime_v45().invoke(**payload)
+        return self._production_runtime().invoke(**payload)
 
     def get_conversation_graph_spec(self):
-        return self._production_runtime_v45().get_graph_spec()
+        return self._production_runtime().get_graph_spec()
 
     def get_conversation_thread_state(
         self, thread_id: str, tenant_id: str = "local", user_id: str = "local-user"
     ):
-        self._production_control_v45().authorize(
+        self._production_control().authorize(
             tenant_id, user_id, "conversation_thread", thread_id, "read_state"
         )
-        return self._production_runtime_v45().get_thread_state(thread_id)
+        return self._production_runtime().get_thread_state(thread_id)
 
     def get_conversation_thread_history(
         self,
@@ -759,253 +759,56 @@ class PaperStormTaskService:
         tenant_id: str = "local",
         user_id: str = "local-user",
     ):
-        self._production_control_v45().authorize(
+        self._production_control().authorize(
             tenant_id, user_id, "conversation_thread", thread_id, "read_history"
         )
-        return self._production_runtime_v45().get_thread_history(thread_id, limit=limit)
+        return self._production_runtime().get_thread_history(thread_id, limit=limit)
 
     def get_production_trace(self, trace_id: str, tenant_id: str, user_id: str):
-        self._production_control_v45().authorize(
+        self._production_control().authorize(
             tenant_id, user_id, "trace", trace_id, "read"
         )
         return {
             "trace_id": trace_id,
-            "spans": self._production_control_v45().list_spans(trace_id),
+            "spans": self._production_control().list_spans(trace_id),
         }
 
     def get_production_status(self):
-        return self._production_control_v45().status()
+        return self._production_control().status()
 
-    def run_production_benchmark_v45(self, request_count: int = 100):
-        from .paperstorm_production_benchmark_v45 import run_production_benchmark
+    def _conversation_runtime(self):
+        from .conversation_runtime import PaperStormConversationRuntime
 
-        return run_production_benchmark(
-            self.root_dir / "evaluations" / "production_v45_latest",
-            request_count=request_count,
-        )
-
-    def get_production_benchmark_v45(self):
-        return _read_json(
-            self.root_dir
-            / "evaluations"
-            / "production_v45_latest"
-            / "production_benchmark_v45.json",
-            {},
-        )
-
-    def run_langgraph_benchmark_v44(self):
-        from .paperstorm_langgraph_benchmark_v44 import run_langgraph_benchmark
-
-        return run_langgraph_benchmark(
-            self.root_dir / "evaluations" / "runtime_v44_latest"
-        )
-
-    def get_langgraph_benchmark_v44(self):
-        root = self.root_dir / "evaluations" / "runtime_v44_latest"
-        return _read_json(root / "langgraph_benchmark_v44.json", {})
-
-    def import_evaluation_v54_dataset(self, dataset_path: str):
-        from .paperstorm_eval_v54 import AnnotationStore
-
-        source = Path(dataset_path)
-        if not source.exists():
-            raise ValueError("找不到 v5.4 候选数据集：{0}".format(source))
-        dataset = json.loads(source.read_text(encoding="utf-8"))
-        if not dataset.get("cases") or not dataset.get("corpus"):
-            raise ValueError("v5.4 数据集必须同时包含 cases 和 corpus")
-        root = self._evaluation_v54_root()
-        target = root / "candidate_dataset.json"
-        target.write_text(
-            json.dumps(dataset, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        progress = AnnotationStore(root, dataset).progress()
-        return dict(progress, configured=True)
-
-    def get_evaluation_v54_status(self):
-        from .paperstorm_eval_v54 import AnnotationStore
-
-        dataset = self._evaluation_v54_dataset(required=False)
-        if not dataset:
-            return {
-                "configured": False,
-                "trust_level": "candidate",
-                "candidate_count": 0,
-                "reviewed_count": 0,
-                "valid_reviewed_test_count": 0,
-                "frozen_test_allowed": False,
-                "message": "尚未导入 v5.4 候选数据集。",
-            }
-        return dict(AnnotationStore(self._evaluation_v54_root(), dataset).progress(), configured=True)
-
-    def list_evaluation_v54_annotations(self, offset: int = 0, limit: int = 50):
-        from .paperstorm_eval_v54 import AnnotationStore
-
-        dataset = self._evaluation_v54_dataset()
-        store = AnnotationStore(self._evaluation_v54_root(), dataset)
-        cases = store.list_cases()
-        offset = max(0, int(offset))
-        limit = max(1, min(200, int(limit)))
-        return {
-            "cases": cases[offset : offset + limit],
-            "offset": offset,
-            "limit": limit,
-            "total": len(cases),
-            "progress": store.progress(),
-        }
-
-    def save_evaluation_v54_review(self, case_id: str, review: Dict):
-        from .paperstorm_eval_v54 import AnnotationStore
-
-        dataset = self._evaluation_v54_dataset()
-        payload = dict(review or {}, case_id=case_id)
-        return AnnotationStore(self._evaluation_v54_root(), dataset).save_review(payload)
-
-    def run_evaluation_v54_context(self):
-        from .paperstorm_eval_v54 import (
-            AnnotationStore,
-            enrich_context_cases,
-            evaluate_context_scenarios,
-            normalize_v54_corpus,
-        )
-
-        dataset = self._evaluation_v54_dataset()
-        store = AnnotationStore(self._evaluation_v54_root(), dataset)
-        reviewed = store.export_reviewed_dataset()["cases"]
-        cases = reviewed or store.list_cases()[: min(20, len(dataset.get("cases") or []))]
-        cases = enrich_context_cases(cases, normalize_v54_corpus(dataset))
-        report = evaluate_context_scenarios(cases)
-        report["trust"] = store.progress()
-        self._write_evaluation_v54_report("context", report)
-        return report
-
-    def run_evaluation_v54_retrieval(
-        self,
-        embedding: str = "hash",
-        top_k: int = 5,
-        configurations: Optional[List[str]] = None,
-        candidate_k: int = 20,
-        enable_reranker: bool = False,
-    ):
-        from .paperstorm_eval_v54 import (
-            AnnotationStore,
-            normalize_v54_corpus,
-            ranked_document_ids,
-            run_retrieval_benchmark,
-        )
-        from .paperstorm_retrieval_runtime import _dense_provider
-        from .paperstorm_retrieval_v41 import CrossEncoderReranker, HybridPaperIndex
-
-        dataset = self._evaluation_v54_dataset()
-        store = AnnotationStore(self._evaluation_v54_root(), dataset)
-        evaluated_dataset = dict(dataset, cases=store.list_cases())
-        provider = _dense_provider(embedding)
-        index = HybridPaperIndex(normalize_v54_corpus(dataset), provider)
-        requested = list(configurations or ["bm25", "dense", "hybrid"])
-        skipped = {}
-        reranker = None
-        if enable_reranker and "hybrid_rerank" not in requested:
-            requested.append("hybrid_rerank")
-        if "hybrid_rerank" in requested:
-            try:
-                reranker = CrossEncoderReranker()
-            except Exception as error:
-                requested.remove("hybrid_rerank")
-                skipped["hybrid_rerank"] = str(error)
-        if not requested:
-            raise ValueError("没有可运行的检索配置")
-
-        def search(case, mode, retrieve_k):
-            started = time.perf_counter()
-            chunks = index.search(
-                case.get("query") or "",
-                mode=mode,
-                top_k=retrieve_k,
-                candidate_k=max(int(candidate_k), retrieve_k),
-                reranker=reranker if mode == "hybrid_rerank" else None,
-            )
-            return {
-                "ranked_document_ids": ranked_document_ids(chunks),
-                "latency_ms": (time.perf_counter() - started) * 1000.0,
-            }
-
-        progress = store.progress()
-        report = run_retrieval_benchmark(
-            evaluated_dataset,
-            search_fn=search,
-            configurations=requested,
-            top_k=top_k,
-            trust_level=progress["trust_level"],
-        )
-        report["models"] = {
-            "embedding": str(getattr(provider, "name", embedding)),
-            "reranker": str(getattr(reranker, "model_name", "")) if reranker else None,
-        }
-        report["skipped_configurations"] = skipped
-        report["trust"] = progress
-        self._write_evaluation_v54_report("retrieval", report)
-        return report
-
-    def get_evaluation_v54_latest(self):
-        from .paperstorm_eval_v54 import sanitize_v54_report
-
-        root = self._evaluation_v54_root()
-        return sanitize_v54_report(
-            {
-                "project": "PaperStorm v5.4 Benchmark Console",
-                "status": self.get_evaluation_v54_status(),
-                "retrieval": _read_json(root / "retrieval_report.json", {}),
-                "context": _read_json(root / "context_report.json", {}),
-            }
-        )
-
-    def _evaluation_v54_root(self):
-        root = self.root_dir / "evaluations" / "v54"
-        root.mkdir(parents=True, exist_ok=True)
-        return root
-
-    def _evaluation_v54_dataset(self, required: bool = True):
-        dataset = _read_json(
-            self._evaluation_v54_root() / "candidate_dataset.json", {}
-        )
-        if required and not dataset:
-            raise ValueError("尚未导入 v5.4 候选数据集")
-        return dataset
-
-    def _write_evaluation_v54_report(self, name: str, report: Dict):
-        path = self._evaluation_v54_root() / "{0}_report.json".format(name)
-        path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-
-    def _langgraph_runtime_v44(self):
-        from .paperstorm_langgraph_v44 import PaperStormLangGraphRuntime
-
-        return PaperStormLangGraphRuntime(
-            root_dir=self.root_dir / "langgraph_runtime_v44",
+        return PaperStormConversationRuntime(
+            root_dir=self.root_dir / "conversation_runtime",
             task_service=self,
-            memory_service=self._memory_service_v43(),
+            memory_service=self._memory_service(),
         )
 
-    def _production_runtime_v45(self):
-        from .paperstorm_production_v45 import PaperStormProductionRuntimeV45
+    def _production_runtime(self):
+        from .control_plane import ProductionRuntime
 
-        return PaperStormProductionRuntimeV45(
-            root_dir=self.root_dir / "production_runtime_v45",
+        current = self.root_dir / "production_runtime"
+        legacy = self.root_dir / "production_runtime_v45"
+        return ProductionRuntime(
+            root_dir=legacy if legacy.exists() else current,
             task_service=self,
-            control_plane=self._production_control_v45(),
+            control_plane=self._production_control(),
         )
 
-    def _production_control_v45(self):
-        from .paperstorm_production_v45 import ProductionControlPlaneV45
+    def _production_control(self):
+        from .control_plane import ProductionControlPlane
 
-        return ProductionControlPlaneV45(
-            self.root_dir / "production_control_v45.sqlite"
-        )
+        current = self.root_dir / "production_control.sqlite"
+        legacy = self.root_dir / "production_control_v45.sqlite"
+        return ProductionControlPlane(legacy if legacy.exists() else current)
 
-    def _memory_service_v43(self):
-        from .paperstorm_memory_v56 import LongTermMemoryService
+    def _memory_service(self):
+        from .memory_store import LongTermMemoryService
 
-        return LongTermMemoryService(self.root_dir / "memory_service_v56")
+        current = self.root_dir / "memory_service"
+        legacy = self.root_dir / "memory_service_v56"
+        return LongTermMemoryService(legacy if legacy.exists() else current)
 
     def _run_fake_research(self, state: Dict):
         output_dir = Path(state["output_dir"])

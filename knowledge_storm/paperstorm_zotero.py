@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from .paperstorm_document_v41 import chunk_pdf_pages, extract_pdf_pages
+from .document_ingestion import chunk_pdf_pages, extract_pdf_pages
 
 
 def resolve_attachment_path(zotero_root, attachment_key: str, stored_path: str) -> Path:

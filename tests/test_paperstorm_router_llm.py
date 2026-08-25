@@ -94,7 +94,7 @@ class PaperStormRouterLLMTest(unittest.TestCase):
 
     def test_injected_llm_router_reaches_graph_result(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
-        from knowledge_storm.paperstorm_production_v45 import PaperStormProductionRuntimeV45
+        from knowledge_storm.control_plane import ProductionRuntime
 
         service = self.make_service()
 
@@ -104,7 +104,7 @@ class PaperStormRouterLLMTest(unittest.TestCase):
                 '"rewritten_query":"你是什么模型？","confidence":0.96,"reason":"identity"}'
             )
 
-        runtime = PaperStormProductionRuntimeV45(
+        runtime = ProductionRuntime(
             root_dir=Path(service.root_dir) / "production_runtime_test",
             task_service=service,
             intent_router=PaperStormIntentRouter(llm_router=fake_llm),
