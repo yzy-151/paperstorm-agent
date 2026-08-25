@@ -673,6 +673,91 @@ class ParentChildRetrievalTest(unittest.TestCase):
         self.assertIs(index.token_codec, codec)
         self.assertEqual(result["parent_context"], "中文a")
 
+    def test_loaded_index_lazily_gets_codec_for_bm25_parent_expansion(self):
+        from knowledge_storm.retrieval import HybridPaperIndex
+
+        class Codec:
+            def encode(self, text):
+                return list(text)
+
+            def decode(self, tokens):
+                return "".join(tokens)
+
+        class LazyProvider:
+            name = "lazy-load-codec"
+            dim = 2
+            normalize = True
+
+            def __init__(self):
+                self.token_codec = None
+                self.codec_calls = 0
+
+            def embed(self, texts):
+                return [[1.0, 0.0] for _ in texts]
+
+            def embed_query(self, _text):
+                return [1.0, 0.0]
+
+            def get_token_codec(self):
+                self.codec_calls += 1
+                self.token_codec = Codec()
+                return self.token_codec
+
+        parent = {"node_id": "p", "node_type": "section", "content": "中文abcdef"}
+        child = {"chunk_id": "c", "node_id": "c", "node_type": "passage", "parent_id": "p", "content": "needle"}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "index.json"
+            HybridPaperIndex([parent, child], LazyProvider()).save(path)
+            fresh_provider = LazyProvider()
+            loaded = HybridPaperIndex.load(path, fresh_provider)
+            result = loaded.search(
+                "needle", mode="bm25", top_k=1, parent_budget_tokens=3
+            )[0]
+
+        self.assertEqual(result["parent_context"], "中文a")
+        self.assertEqual(fresh_provider.codec_calls, 1)
+        self.assertIs(loaded.token_codec, fresh_provider.token_codec)
+
+    def test_parent_expansion_refreshes_codec_after_dense_initializes_provider(self):
+        from knowledge_storm.retrieval import HybridPaperIndex
+
+        class Codec:
+            def encode(self, text):
+                return list(text)
+
+            def decode(self, tokens):
+                return "".join(tokens)
+
+        class DenseLazyProvider:
+            name = "dense-lazy-codec"
+            dim = 2
+            normalize = True
+            token_codec = None
+
+            def embed(self, texts):
+                return [[1.0, 0.0] for _ in texts]
+
+            def embed_query(self, _text):
+                self.token_codec = Codec()
+                return [1.0, 0.0]
+
+        provider = DenseLazyProvider()
+        index = HybridPaperIndex(
+            [
+                {"node_id": "p", "node_type": "section", "content": "中文abcdef"},
+                {"chunk_id": "c", "node_id": "c", "node_type": "passage", "parent_id": "p", "content": "needle"},
+            ],
+            provider,
+        )
+        self.assertIsNone(index.token_codec)
+        index.search("needle", mode="dense", top_k=1)
+        result = index.search(
+            "needle", mode="bm25", top_k=1, parent_budget_tokens=3
+        )[0]
+
+        self.assertIs(index.token_codec, provider.token_codec)
+        self.assertEqual(result["parent_context"], "中文a")
+
 
 if __name__ == "__main__":
     unittest.main()

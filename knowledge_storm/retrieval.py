@@ -203,6 +203,11 @@ class SentenceTransformerProvider:
     def embed_query(self, text: str):
         return self.embed([text])[0]
 
+    def get_token_codec(self):
+        """Lazily expose the model tokenizer under the provider's offline policy."""
+        self._ensure_model()
+        return self.token_codec
+
 
 class HashEmbeddingProvider:
     """Deterministic embedding fixture for tests and offline smoke runs."""
@@ -819,6 +824,7 @@ class HybridPaperIndex:
         if token_budget <= 0:
             return ""
         text = str(text or "")
+        self._refresh_token_codec()
         if self.token_codec is not None:
             encoded = self.token_codec.encode(text)
             return str(self.token_codec.decode(encoded[:token_budget]))
@@ -826,6 +832,16 @@ class HybridPaperIndex:
 
         units = _token_units(text)[:token_budget]
         return _join_units(units).strip()[: token_budget * 4]
+
+    def _refresh_token_codec(self):
+        if self.token_codec is not None:
+            return self.token_codec
+        getter = getattr(self.embedding_provider, "get_token_codec", None)
+        codec = getter() if callable(getter) else getattr(
+            self.embedding_provider, "token_codec", None
+        )
+        self.token_codec = self._validated_token_codec(codec)
+        return self.token_codec
 
     @staticmethod
     def _bounded_node_copies(nodes, max_nodes):
