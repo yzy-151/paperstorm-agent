@@ -1,8 +1,10 @@
+import copy
 import json
 import hashlib
 import math
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence
 
@@ -241,6 +243,10 @@ class HybridPaperIndex:
     schema_version = "paperstorm-hybrid-index"
     schema_revision = 3
     node_schema = "structured-parent-child-v1"
+    default_max_nodes = 250_000
+    default_max_node_chars = 2_000_000
+    default_max_embedding_values = 100_000_000
+    default_max_file_bytes = 512 * 1024 * 1024
 
     def __init__(
         self,
@@ -249,8 +255,23 @@ class HybridPaperIndex:
         embeddings=None,
         manifest=None,
         parents=None,
+        token_codec=None,
+        max_nodes=default_max_nodes,
+        max_node_chars=default_max_node_chars,
+        max_embedding_values=default_max_embedding_values,
     ):
-        supplied_nodes = [dict(item) for item in (chunks or [])]
+        self.max_nodes = int(max_nodes)
+        self.max_node_chars = int(max_node_chars)
+        self.max_embedding_values = int(max_embedding_values)
+        if min(self.max_nodes, self.max_node_chars, self.max_embedding_values) <= 0:
+            raise ValueError("index resource limits must be positive")
+        if token_codec is not None and not (
+            callable(getattr(token_codec, "encode", None))
+            and callable(getattr(token_codec, "decode", None))
+        ):
+            raise ValueError("token_codec must provide encode and decode")
+        self.token_codec = token_codec
+        supplied_nodes = self._bounded_node_copies(chunks or [], self.max_nodes)
         parent_nodes = [
             item for item in supplied_nodes if item.get("node_type") in {"document", "section"}
         ]
@@ -258,31 +279,48 @@ class HybridPaperIndex:
             item for item in supplied_nodes if item.get("node_type") not in {"document", "section"}
         ]
         if parents is not None:
-            parent_nodes = [dict(item) for item in parents]
+            parent_nodes = self._bounded_node_copies(parents, self.max_nodes)
+        if len(parent_nodes) + len(retrievable_nodes) > self.max_nodes:
+            raise ValueError("index node count exceeds max_nodes")
+        self._validate_nodes(parent_nodes, retrievable_nodes)
         self.parents = {
-            str(item["node_id"]): self._normalize_parent(item)
+            str(item["node_id"]): self._normalize_parent(copy.deepcopy(item))
             for item in parent_nodes
-            if item.get("node_id")
         }
         self.chunks = [
-            self._normalize_chunk(item, index)
+            self._normalize_chunk(copy.deepcopy(item), index)
             for index, item in enumerate(retrievable_nodes)
         ]
         self.embedding_provider = embedding_provider
         self._tokens = [
             multilingual_tokenize(self._search_text(item)) for item in self.chunks
         ]
-        try:
-            from rank_bm25 import BM25Okapi
-        except ImportError as exc:
-            raise RuntimeError("Hybrid retrieval requires dependency rank-bm25") from exc
-        self._bm25 = BM25Okapi(self._tokens)
-        self.embeddings = embeddings or embedding_provider.embed(
-            [self._search_text(item) for item in self.chunks]
+        self._bm25 = None
+        if self.chunks:
+            try:
+                from rank_bm25 import BM25Okapi
+            except ImportError as exc:
+                raise RuntimeError("Hybrid retrieval requires dependency rank-bm25") from exc
+            self._bm25 = BM25Okapi(self._tokens)
+        declared_dimension = int(getattr(embedding_provider, "dim", 0) or 0)
+        if (
+            self.chunks
+            and declared_dimension
+            and len(self.chunks) * declared_dimension > self.max_embedding_values
+        ):
+            raise ValueError("embedding value count exceeds max_embedding_values")
+        if embeddings is None:
+            self.embeddings = (
+                embedding_provider.embed([self._search_text(item) for item in self.chunks])
+                if self.chunks
+                else []
+            )
+        else:
+            self.embeddings = embeddings
+        embedding_matrix, dimension = self._validated_embedding_matrix(
+            self.embeddings, embedding_provider
         )
-        if len(self.embeddings) != len(self.chunks):
-            raise ValueError("embedding count must match chunk count")
-        embedding_matrix = np.asarray(self.embeddings, dtype=np.float32)
+        self.embeddings = embedding_matrix.tolist()
         norms = np.linalg.norm(embedding_matrix, axis=1, keepdims=True)
         self._normalized_embedding_matrix = np.divide(
             embedding_matrix,
@@ -290,9 +328,6 @@ class HybridPaperIndex:
             out=np.zeros_like(embedding_matrix),
             where=norms != 0,
         )
-        dimension = int(getattr(embedding_provider, "dim", 0) or 0)
-        if not dimension and self.embeddings:
-            dimension = len(self.embeddings[0])
         self.manifest = dict(manifest or {})
         self.manifest.setdefault(
             "embedding_model", str(getattr(embedding_provider, "name", "unknown"))
@@ -317,6 +352,8 @@ class HybridPaperIndex:
             raise ValueError("unsupported retrieval mode: {0}".format(mode))
         if parent_budget_tokens < 0:
             raise ValueError("parent_budget_tokens must not be negative")
+        if not self.chunks:
+            return []
         candidate_k = min(len(self.chunks), candidate_k or max(top_k * 4, 20))
         if mode == "bm25":
             selected = self._bm25_search(query, candidate_k)
@@ -364,7 +401,7 @@ class HybridPaperIndex:
                     if parent_context
                     else enriched.get("content", "")
                 )
-            output.append(enriched)
+            output.append(copy.deepcopy(enriched))
         return output
 
     @classmethod
@@ -506,20 +543,44 @@ class HybridPaperIndex:
             ensure_ascii=False,
             indent=2,
         )
-        temporary = path.with_name(path.name + ".tmp")
+        temporary = None
         try:
-            with temporary.open("w", encoding="utf-8") as handle:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(path.parent),
+                prefix=path.name + ".",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary = Path(handle.name)
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, path)
         finally:
-            temporary.unlink(missing_ok=True)
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
         return path
 
     @classmethod
-    def load(cls, path, embedding_provider):
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    def load(
+        cls,
+        path,
+        embedding_provider,
+        token_codec=None,
+        max_nodes=default_max_nodes,
+        max_node_chars=default_max_node_chars,
+        max_embedding_values=default_max_embedding_values,
+        max_file_bytes=default_max_file_bytes,
+    ):
+        path = Path(path)
+        if path.stat().st_size > int(max_file_bytes):
+            raise ValueError("index file size exceeds max_file_bytes")
+        payload = json.loads(path.read_text(encoding="utf-8"))
         manifest = payload.get("manifest") or {}
         if manifest.get("schema_version") != cls.schema_version:
             raise IndexMigrationRequiredError(
@@ -592,6 +653,10 @@ class HybridPaperIndex:
             embeddings=payload.get("embeddings") or [],
             manifest=manifest,
             parents=parents,
+            token_codec=token_codec,
+            max_nodes=max_nodes,
+            max_node_chars=max_node_chars,
+            max_embedding_values=max_embedding_values,
         )
 
     def _refresh_manifest_integrity(self):
@@ -609,7 +674,7 @@ class HybridPaperIndex:
     @staticmethod
     def _normalize_chunk(item, index):
         chunk = dict(item)
-        chunk["chunk_id"] = str(chunk.get("chunk_id") or "chunk-{0}".format(index + 1))
+        chunk["chunk_id"] = str(chunk.get("chunk_id") or "")
         chunk["content"] = str(chunk.get("content") or chunk.get("text") or "")
         chunk.setdefault("retrieval_content", chunk["content"])
         return chunk
@@ -622,14 +687,87 @@ class HybridPaperIndex:
         parent.setdefault("retrieval_content", parent["content"])
         return parent
 
-    @staticmethod
-    def _truncate_to_budget(text, token_budget):
+    def _truncate_to_budget(self, text, token_budget):
         if token_budget <= 0:
             return ""
+        text = str(text or "")
+        if self.token_codec is not None:
+            encoded = self.token_codec.encode(text)
+            return str(self.token_codec.decode(encoded[:token_budget]))
         from .document_ingestion import _join_units, _token_units
 
-        units = _token_units(str(text or ""))[:token_budget]
-        return _join_units(units).strip()
+        units = _token_units(text)[:token_budget]
+        return _join_units(units).strip()[: token_budget * 4]
+
+    @staticmethod
+    def _bounded_node_copies(nodes, max_nodes):
+        output = []
+        for index, item in enumerate(nodes, start=1):
+            if index > max_nodes:
+                raise ValueError("index node count exceeds max_nodes")
+            if not isinstance(item, dict):
+                raise ValueError("index nodes must be mappings")
+            output.append(dict(item))
+        return output
+
+    def _validate_nodes(self, parents, chunks):
+        for item in parents + chunks:
+            content = str(item.get("content") or item.get("text") or "")
+            retrieval_content = str(item.get("retrieval_content") or content)
+            if max(len(content), len(retrieval_content)) > self.max_node_chars:
+                raise ValueError("index node character count exceeds max_node_chars")
+        parent_ids = [str(item.get("node_id") or "") for item in parents]
+        if any(not value for value in parent_ids):
+            raise ValueError("parent node_id must be non-empty")
+        if len(set(parent_ids)) != len(parent_ids):
+            raise ValueError("duplicate parent node_id")
+        chunk_ids = [str(item.get("chunk_id") or "") for item in chunks]
+        if any(not value for value in chunk_ids):
+            raise ValueError("chunk_id must be non-empty")
+        if len(set(chunk_ids)) != len(chunk_ids):
+            raise ValueError("duplicate chunk_id")
+        child_node_ids = []
+        for item in chunks:
+            if item.get("node_type") and not str(item.get("node_id") or ""):
+                raise ValueError("structured child node_id must be non-empty")
+            if "node_id" in item:
+                value = str(item.get("node_id") or "")
+                if not value:
+                    raise ValueError("child node_id must be non-empty")
+                child_node_ids.append(value)
+        if len(set(child_node_ids)) != len(child_node_ids):
+            raise ValueError("duplicate child node_id")
+        if set(parent_ids) & set(child_node_ids):
+            raise ValueError("parent and child node_id collision")
+
+    def _validated_embedding_matrix(self, embeddings, provider):
+        if not isinstance(embeddings, (list, tuple, np.ndarray)):
+            raise ValueError("embedding matrix must be a two-dimensional sequence")
+        row_count = len(embeddings)
+        if row_count != len(self.chunks):
+            raise ValueError("embedding row count must match chunk count")
+        provider_dim = int(getattr(provider, "dim", 0) or 0)
+        if row_count == 0:
+            return np.zeros((0, provider_dim), dtype=np.float32), provider_dim
+        try:
+            column_counts = [len(row) for row in embeddings]
+        except TypeError as exc:
+            raise ValueError("embedding matrix must be two-dimensional") from exc
+        if len(set(column_counts)) != 1:
+            raise ValueError("embedding matrix rows must have equal column count")
+        column_count = column_counts[0]
+        if row_count * column_count > self.max_embedding_values:
+            raise ValueError("embedding value count exceeds max_embedding_values")
+        if provider_dim and column_count != provider_dim:
+            raise ValueError(
+                "embedding column count does not match provider dimension"
+            )
+        matrix = np.asarray(embeddings, dtype=np.float32)
+        if matrix.ndim != 2:
+            raise ValueError("embedding matrix must be two-dimensional")
+        if not np.isfinite(matrix).all():
+            raise ValueError("embedding matrix values must be finite")
+        return matrix, provider_dim or column_count
 
     @staticmethod
     def _search_text(item):

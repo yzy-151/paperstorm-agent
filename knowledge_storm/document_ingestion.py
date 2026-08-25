@@ -19,6 +19,9 @@ _CHINESE_NUMBERED_HEADING_PATTERN = re.compile(
     r"^(?:[（(][一二三四五六七八九十百0-9]+[）)]|[一二三四五六七八九十百]+[、.．])\s*\S+"
 )
 
+DEFAULT_MAX_PAGES = 5000
+DEFAULT_MAX_PAGE_CHARS = 2_000_000
+
 
 def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 100):
     """Split text into deterministic overlapping character windows."""
@@ -120,6 +123,8 @@ def ingest_document(
     title: str = "",
     chunk_tokens: int = 320,
     overlap_tokens: int = 48,
+    max_pages: int = DEFAULT_MAX_PAGES,
+    max_page_chars: int = DEFAULT_MAX_PAGE_CHARS,
 ) -> List[Dict]:
     """Build a stable hierarchy while keeping tables and formulas atomic."""
     if chunk_tokens <= 0 or overlap_tokens < 0 or overlap_tokens >= chunk_tokens:
@@ -127,9 +132,15 @@ def ingest_document(
     document_id = str(document_id or "").strip()
     if not document_id:
         raise ValueError("document_id is required")
+    if max_pages <= 0 or max_page_chars <= 0:
+        raise ValueError("ingestion limits must be positive")
     normalized_pages = []
-    for page in pages or []:
+    for page_index, page in enumerate(pages or [], start=1):
+        if page_index > max_pages:
+            raise ValueError("document page count exceeds max_pages")
         text = str(page.get("text") or "").replace("\x00", "").strip()
+        if len(text) > max_page_chars:
+            raise ValueError("document page character count exceeds max_page_chars")
         if text:
             normalized_pages.append(
                 {"page_number": int(page.get("page_number") or 0), "text": text}
@@ -154,13 +165,16 @@ def ingest_document(
     current = None
     preamble = []
     section_ordinal = 0
+    formula_state = None
     for page in normalized_pages:
         page_number = page["page_number"]
         lines = page["text"].splitlines()
         content_lines = []
         for line in lines:
             candidate = re.sub(r"\s+", " ", line).strip()
-            if _is_heading(candidate):
+            starts_inside_formula = formula_state is not None
+            formula_state = _display_formula_state_after(line, formula_state)
+            if not starts_inside_formula and _is_heading(candidate):
                 if content_lines:
                     _append_section_content(current, preamble, page_number, content_lines)
                     content_lines = []
@@ -206,8 +220,8 @@ def ingest_document(
             overlap_tokens,
         )
         section_content = "\n".join(
-            node["content"] for node in child_nodes if node["content"]
-        )
+            part["text"] for part in section["page_lines"] if part["text"]
+        ).strip()
         nodes.append(
             _node(
                 node_id=section_id,
@@ -387,6 +401,33 @@ def _is_escaped(source, position):
         backslashes += 1
         cursor -= 1
     return backslashes % 2 == 1
+
+
+def _display_formula_state_after(line, state):
+    position = 0
+    while position < len(line):
+        if state == "$$":
+            close = line.find("$$", position)
+            if close < 0:
+                return state
+            state = None
+            position = close + 2
+            continue
+        if state == "\\]":
+            close = line.find("\\]", position)
+            if close < 0:
+                return state
+            state = None
+            position = close + 2
+            continue
+        display = line.find("$$", position)
+        bracket = line.find("\\[", position)
+        candidates = [(offset, marker) for offset, marker in ((display, "$$"), (bracket, "\\]")) if offset >= 0]
+        if not candidates:
+            return None
+        offset, state = min(candidates, key=lambda item: item[0])
+        position = offset + 2
+    return state
 
 
 def _chunk_units(text, chunk_tokens, overlap_tokens):

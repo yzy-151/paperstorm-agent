@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -177,6 +178,52 @@ class StructuredIngestionTest(unittest.TestCase):
         )
         self.assertEqual(len(table["content"].splitlines()), 3)
 
+    def test_section_parent_content_comes_from_raw_pages_without_overlap_duplicates(self):
+        from knowledge_storm.document_ingestion import ingest_document
+
+        raw = "alpha beta gamma delta epsilon"
+        nodes = ingest_document(
+            "paper-parent",
+            [{"page_number": 1, "text": "1 Method\n" + raw}],
+            chunk_tokens=3,
+            overlap_tokens=2,
+        )
+        section = next(node for node in nodes if node["node_type"] == "section")
+        self.assertEqual(section["content"], raw)
+
+    def test_open_formula_prevents_heading_detection_on_following_page(self):
+        from knowledge_storm.document_ingestion import ingest_document
+
+        nodes = ingest_document(
+            "paper-heading-formula",
+            [
+                {"page_number": 1, "text": "1 Method\nBefore $$x+"},
+                {"page_number": 2, "text": "2 y$$\nafter"},
+            ],
+            chunk_tokens=2,
+            overlap_tokens=0,
+        )
+        sections = [node for node in nodes if node["node_type"] == "section"]
+        formula = next(node for node in nodes if node["node_type"] == "formula")
+        self.assertEqual([node["title"] for node in sections], ["1 Method"])
+        self.assertEqual(formula["content"], "$$x+\n2 y$$")
+
+    def test_ingestion_limits_are_configurable(self):
+        from knowledge_storm.document_ingestion import ingest_document
+
+        with self.assertRaisesRegex(ValueError, "page count"):
+            ingest_document(
+                "too-many",
+                [{"page_number": 1, "text": "a"}, {"page_number": 2, "text": "b"}],
+                max_pages=1,
+            )
+        with self.assertRaisesRegex(ValueError, "page character"):
+            ingest_document(
+                "too-long",
+                [{"page_number": 1, "text": "abcdef"}],
+                max_page_chars=5,
+            )
+
 
 class ParentChildRetrievalTest(unittest.TestCase):
     @staticmethod
@@ -327,6 +374,156 @@ class ParentChildRetrievalTest(unittest.TestCase):
             index.save(path)
             payload = json.loads(path.read_text(encoding="utf-8"))
         self.assertNotIn("node_type", payload["chunks"][0])
+
+    def test_empty_index_never_calls_embedding_or_reranker(self):
+        from knowledge_storm.retrieval import HybridPaperIndex
+
+        class NoCallEmbedding:
+            name = "no-call"
+            dim = 4
+            normalize = True
+
+            def embed(self, _texts):
+                raise AssertionError("empty index must not embed")
+
+            def embed_query(self, _text):
+                raise AssertionError("empty index must not embed query")
+
+        index = HybridPaperIndex([], NoCallEmbedding())
+        reranker = lambda *_args: (_ for _ in ()).throw(AssertionError("no rerank"))
+        for mode in ("bm25", "dense", "hybrid", "hybrid_rerank"):
+            self.assertEqual(index.search("anything", mode=mode, reranker=reranker), [])
+        self.assertEqual(index.manifest["chunk_count"], 0)
+        self.assertEqual(index.manifest["parent_count"], 0)
+
+    def test_parent_budget_uses_codec_and_conservative_fallback(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        class CharacterCodec:
+            def encode(self, text):
+                return list(text)
+
+            def decode(self, tokens):
+                return "".join(tokens)
+
+        parent = {
+            "node_id": "parent",
+            "node_type": "section",
+            "document_id": "doc",
+            "content": "中文abcdef",
+        }
+        child = {
+            "chunk_id": "child",
+            "node_id": "child",
+            "node_type": "passage",
+            "document_id": "doc",
+            "parent_id": "parent",
+            "content": "needle",
+        }
+        encoded = HybridPaperIndex(
+            [parent, child], HashEmbeddingProvider(), token_codec=CharacterCodec()
+        ).search("needle", mode="bm25", top_k=1, parent_budget_tokens=3)[0]
+        fallback = HybridPaperIndex(
+            [dict(parent, content="x" * 10000), child], HashEmbeddingProvider()
+        ).search("needle", mode="bm25", top_k=1, parent_budget_tokens=1)[0]
+
+        self.assertEqual(encoded["parent_context"], "中文a")
+        self.assertLessEqual(len(fallback["parent_context"]), 4)
+
+    def test_rejects_duplicate_ids_and_invalid_embedding_matrices(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        base = {"chunk_id": "same", "content": "alpha"}
+        with self.assertRaisesRegex(ValueError, "duplicate chunk_id"):
+            HybridPaperIndex([base, dict(base)], HashEmbeddingProvider())
+        with self.assertRaisesRegex(ValueError, "node_id"):
+            HybridPaperIndex(
+                [{"chunk_id": "c", "node_id": "", "node_type": "passage", "content": "x"}],
+                HashEmbeddingProvider(),
+            )
+        with self.assertRaisesRegex(ValueError, "column"):
+            HybridPaperIndex([{"chunk_id": "c", "content": "x"}], HashEmbeddingProvider(dim=2), embeddings=[[1.0]])
+        with self.assertRaisesRegex(ValueError, "finite"):
+            HybridPaperIndex([{"chunk_id": "c", "content": "x"}], HashEmbeddingProvider(dim=2), embeddings=[[float("nan"), 0.0]])
+
+    def test_search_results_are_deep_copies(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        index = HybridPaperIndex(
+            [{"chunk_id": "c", "content": "needle", "metadata": {"nested": {"value": 1}}}],
+            HashEmbeddingProvider(),
+        )
+        result = index.search("needle", mode="bm25", top_k=1)[0]
+        result["metadata"]["nested"]["value"] = 99
+        self.assertEqual(index.chunks[0]["metadata"]["nested"]["value"], 1)
+
+    def test_concurrent_saves_use_unique_temporary_files(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        provider = HashEmbeddingProvider()
+        index = HybridPaperIndex([{"chunk_id": "c", "content": "needle"}], provider)
+        errors = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "index.json"
+
+            def save():
+                try:
+                    index.save(path)
+                except Exception as exc:
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=save) for _ in range(4)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            loaded = HybridPaperIndex.load(path, provider)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(loaded.chunks[0]["chunk_id"], "c")
+
+    def test_index_and_load_limits_fail_before_large_allocation(self):
+        from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+        provider = HashEmbeddingProvider(dim=2)
+        with self.assertRaisesRegex(ValueError, "node count"):
+            HybridPaperIndex(
+                [{"chunk_id": "a", "content": "a"}, {"chunk_id": "b", "content": "b"}],
+                provider,
+                max_nodes=1,
+            )
+        with self.assertRaisesRegex(ValueError, "node character"):
+            HybridPaperIndex(
+                [{"chunk_id": "a", "content": "abcdef"}],
+                provider,
+                max_node_chars=5,
+            )
+        with self.assertRaisesRegex(ValueError, "embedding value"):
+            HybridPaperIndex(
+                [{"chunk_id": "a", "content": "a"}],
+                provider,
+                embeddings=[[1.0, 0.0]],
+                max_embedding_values=1,
+            )
+        class NoAllocateProvider:
+            name = "no-allocate"
+            dim = 100
+            normalize = True
+
+            def embed(self, _texts):
+                raise AssertionError("limit must be checked before embedding")
+
+        with self.assertRaisesRegex(ValueError, "embedding value"):
+            HybridPaperIndex(
+                [{"chunk_id": "a", "content": "a"}],
+                NoAllocateProvider(),
+                max_embedding_values=10,
+            )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "large.json"
+            path.write_text("{}" + " " * 20, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "file size"):
+                HybridPaperIndex.load(path, provider, max_file_bytes=10)
 
 
 if __name__ == "__main__":
