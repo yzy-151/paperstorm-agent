@@ -130,6 +130,7 @@ class PaperStormMilestoneTest(unittest.TestCase):
             self.assertIn("baseline_reference", manifest)
             self.assertNotIn("secret", json.dumps(manifest).lower())
             self.assertTrue(any(row["before"].get("source") == "archived_observation" for row in dossiers))
+            self.assertTrue(all(row["before"].get("baseline_sha256") for row in dossiers))
             by_id = {row["case_id"]: row for row in dossiers}
             self.assertTrue(by_id["pim-rf-zh"]["after"]["resolved"])
             self.assertTrue(by_id["pim-lexical"]["after"]["resolved"])
@@ -219,6 +220,16 @@ class PaperStormMilestoneTest(unittest.TestCase):
         self.assertFalse(dossier["after"]["resolved"])
         self.assertEqual(["dram-pim-1"], dossier["after"]["forbidden_hits_at_k"])
         self.assertEqual(["dram-pim-1"], dossier["after"]["top_1"])
+
+    def test_change_does_not_claim_filtering_when_plan_has_no_filters(self):
+        from examples.storm_examples.run_paperstorm_milestone import _actual_change
+
+        change = _actual_change({
+            "search_plan": {"subqueries": ["query"], "must_terms": [], "negative_terms": [], "filters": {}},
+            "retrieval_stages": [{"name": "gate", "status": "completed"}],
+        })
+        self.assertNotIn("filter", change.lower())
+        self.assertIn("final selection", change.lower())
 
 
 if __name__ == "__main__":

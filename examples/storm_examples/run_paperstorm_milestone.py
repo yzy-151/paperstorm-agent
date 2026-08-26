@@ -333,6 +333,8 @@ def _pim_dossiers(fixture_path, report):
                     case["before"],
                     evidence_level="anecdotal",
                     paired_comparison_allowed=False,
+                    baseline_reference=BASELINE_REFERENCE,
+                    baseline_sha256=_sha256_file(_baseline_path()),
                 ),
                 root_cause=(
                     "PIM acronym/domain ambiguity or bilingual lexical mismatch"
@@ -458,7 +460,9 @@ def _actual_change(prediction):
         changes.append("section parent context expansion")
     gate = stage_by_name.get("gate") or {}
     if gate.get("status") == "completed":
-        changes.append("typed evidence filtering and final selection")
+        if plan.get("filters") or plan.get("must_terms") or plan.get("negative_terms"):
+            changes.append("typed evidence filtering")
+        changes.append("final selection")
     return "; ".join(changes)
 
 
