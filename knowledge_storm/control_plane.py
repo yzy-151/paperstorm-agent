@@ -4,6 +4,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from contextlib import AbstractContextManager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -433,33 +434,57 @@ class ProductionControlPlane:
         max_attempts: int = 2,
         failure_threshold: int = 3,
         cooldown_seconds: float = 30,
+        timeout_seconds: Optional[float] = None,
     ):
         circuit = self._get_circuit(operation_name)
+        half_open_probe = False
         if circuit["state"] == "open":
             elapsed = time.time() - float(circuit.get("opened_at") or 0)
             if elapsed < float(cooldown_seconds):
                 error = RuntimeError("Circuit is open for {0}".format(operation_name))
-                return _degraded_result(fallback, error, "open", 0)
+                return _degraded_result(
+                    fallback, error, "open", 0, failure_type="circuit_open"
+                )
+            half_open_probe = True
+            self._set_circuit(
+                operation_name,
+                "half_open",
+                int(circuit.get("failure_count") or 0),
+                float(circuit.get("opened_at") or 0),
+            )
         last_error = None
         attempts = 0
         for attempts in range(1, max(1, int(max_attempts)) + 1):
             try:
-                result = operation()
+                result = _call_with_timeout(operation, timeout_seconds)
                 self._set_circuit(operation_name, "closed", 0, 0)
                 return {
                     "result": result,
                     "degraded": False,
                     "circuit_state": "closed",
                     "attempts": attempts,
+                    "failure_type": "",
+                    "half_open_probe": half_open_probe,
                 }
             except (ConnectionError, TimeoutError) as error:
                 last_error = error
         failures = int(circuit.get("failure_count") or 0) + attempts
-        state = "open" if failures >= max(1, int(failure_threshold)) else "closed"
+        state = (
+            "open"
+            if half_open_probe or failures >= max(1, int(failure_threshold))
+            else "closed"
+        )
         self._set_circuit(
             operation_name, state, failures, time.time() if state == "open" else 0
         )
-        return _degraded_result(fallback, last_error, state, attempts)
+        return _degraded_result(
+            fallback,
+            last_error,
+            state,
+            attempts,
+            failure_type=("timeout" if isinstance(last_error, TimeoutError) else "connection_error"),
+            half_open_probe=half_open_probe,
+        )
 
     def trace_span(
         self,
@@ -474,6 +499,8 @@ class ProductionControlPlane:
         )
 
     def record_span(self, payload: Dict):
+        from .paperstorm_observability import sanitize_payload
+
         span = {
             "span_id": payload.get("span_id") or uuid.uuid4().hex,
             "trace_id": payload.get("trace_id") or uuid.uuid4().hex,
@@ -488,7 +515,10 @@ class ProductionControlPlane:
             "duration_ms": float(payload.get("duration_ms") or 0),
             "token_count": int(payload.get("token_count") or 0),
             "cost_usd": float(payload.get("cost_usd") or 0),
-            "attributes": payload.get("attributes") or payload.get("details") or {},
+            "attributes": sanitize_payload(
+                payload.get("attributes") or payload.get("details") or {},
+                max_string_length=512,
+            ),
         }
         with self._connect() as connection:
             connection.execute(
@@ -857,7 +887,14 @@ def _job_row(row):
     return result
 
 
-def _degraded_result(fallback, error, state, attempts):
+def _degraded_result(
+    fallback,
+    error,
+    state,
+    attempts,
+    failure_type="provider_error",
+    half_open_probe=False,
+):
     if fallback is None:
         raise error
     return {
@@ -866,7 +903,35 @@ def _degraded_result(fallback, error, state, attempts):
         "circuit_state": state,
         "attempts": attempts,
         "error": repr(error),
+        "failure_type": failure_type,
+        "half_open_probe": bool(half_open_probe),
     }
+
+
+def _call_with_timeout(operation, timeout_seconds):
+    if timeout_seconds is None:
+        return operation()
+    timeout = float(timeout_seconds)
+    if timeout <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="paperstorm-deadline")
+    future = executor.submit(operation)
+    try:
+        return future.result(timeout=timeout)
+    except FutureTimeoutError as error:
+        future.cancel()
+        raise TimeoutError("operation deadline exceeded after {0}s".format(timeout)) from error
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def execute_batch(items, operation, max_workers=4):
+    """Execute independent work concurrently while preserving input order."""
+    if not callable(operation):
+        raise TypeError("operation must be callable")
+    workers = max(1, int(max_workers))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="paperstorm-batch") as executor:
+        return list(executor.map(operation, list(items)))
 
 
 def _component_for_node(node):
