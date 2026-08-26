@@ -32,7 +32,7 @@ class RerankDecision:
 
 
 class RerankPolicy:
-    """Enable one fused-candidate rerank only for risky, uncertain requests."""
+    """Enable risky reranks; ``rerank_hit`` may reuse cached work over budget."""
 
     def __init__(
         self,
@@ -54,14 +54,6 @@ class RerankPolicy:
         budget = values.get("latency_budget_ms", self.max_p95_ms)
         budget = 0 if budget is None else max(0, int(budget))
         observed_p95 = _number(values.get("observed_p95_ms"), 0.0)
-        if budget and observed_p95 > budget:
-            return RerankDecision(
-                False,
-                "latency_budget_exceeded",
-                candidate_count,
-                self.model,
-                budget,
-            )
         if candidate_count < 2:
             return RerankDecision(
                 False, "insufficient_candidates", candidate_count, self.model, budget
@@ -73,16 +65,32 @@ class RerankPolicy:
             overlap < self.low_overlap_threshold
             or margin < self.small_margin_threshold
         )
-        if risk >= self.high_risk_threshold and uncertain:
+        if risk < self.high_risk_threshold or not uncertain:
             return RerankDecision(
-                True, "high_risk_uncertain_evidence", candidate_count, self.model, budget
+                False,
+                "risk_or_evidence_is_sufficient",
+                candidate_count,
+                self.model,
+                budget,
+            )
+        if budget and observed_p95 > budget:
+            if str(values.get("cache_state", "")).strip().casefold() == "rerank_hit":
+                return RerankDecision(
+                    True,
+                    "latency_budget_exceeded_cached_rerank",
+                    candidate_count,
+                    self.model,
+                    budget,
+                )
+            return RerankDecision(
+                False,
+                "latency_budget_exceeded_cache_miss",
+                candidate_count,
+                self.model,
+                budget,
             )
         return RerankDecision(
-            False,
-            "risk_or_evidence_is_sufficient",
-            candidate_count,
-            self.model,
-            budget,
+            True, "high_risk_uncertain_evidence", candidate_count, self.model, budget
         )
 
 
@@ -395,13 +403,26 @@ def _claim_key(claim):
 
 
 def _contradicts(left, right):
+    if not _conditions_compatible(
+        left.get("conditions") or {}, right.get("conditions") or {}
+    ):
+        return False
     left_value = str(left.get("value", left.get("claim", ""))).casefold()
     right_value = str(right.get("value", right.get("claim", ""))).casefold()
     if left_value != right_value and ("not" in left_value or "not" in right_value):
         return True
     if _numeric(left_value) is not None and _numeric(right_value) is not None:
         return _numeric(left_value) != _numeric(right_value)
-    return dict(left.get("conditions") or {}) != dict(right.get("conditions") or {})
+    return False
+
+
+def _conditions_compatible(left, right):
+    """Conditions are compatible when every shared key has the same value."""
+    left_values, right_values = dict(left), dict(right)
+    return all(
+        left_values[key] == right_values[key]
+        for key in left_values.keys() & right_values.keys()
+    )
 
 
 def _numeric(value):

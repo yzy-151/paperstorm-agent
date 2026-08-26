@@ -27,10 +27,28 @@ class EvidenceGovernanceTest(unittest.TestCase):
         )
 
         self.assertFalse(decision.enabled)
-        self.assertEqual("latency_budget_exceeded", decision.reason)
+        self.assertEqual("latency_budget_exceeded_cache_miss", decision.reason)
         self.assertEqual(8, decision.candidate_count)
         self.assertEqual("test-cross-encoder", decision.model)
         self.assertEqual(800, decision.latency_budget_ms)
+
+    def test_policy_reuses_cached_rerank_when_latency_budget_is_exceeded(self):
+        from knowledge_storm.evidence_governance import RerankPolicy
+
+        decision = RerankPolicy(model="test-cross-encoder").decide(
+            {
+                "answer_risk": 0.95,
+                "bm25_dense_overlap": 0.10,
+                "rrf_margin": 0.01,
+                "candidate_count": 8,
+                "cache_state": "rerank_hit",
+                "observed_p95_ms": 901,
+                "latency_budget_ms": 800,
+            }
+        )
+
+        self.assertTrue(decision.enabled)
+        self.assertEqual("latency_budget_exceeded_cached_rerank", decision.reason)
 
     def test_policy_selectively_enables_only_high_risk_uncertain_requests(self):
         from knowledge_storm.evidence_governance import RerankPolicy
@@ -85,6 +103,45 @@ class EvidenceGovernanceTest(unittest.TestCase):
         self.assertEqual("conflict", assessment.failure_type)
         self.assertEqual("contradicted", assessment.conflicts[0].relation)
         self.assertEqual(1, assessment.max_corrections)
+
+    def test_assessor_keeps_different_conditions_as_qualified_evidence(self):
+        from knowledge_storm.evidence_governance import EvidenceAssessor
+
+        evidence = [
+            {
+                "chunk_id": "adults",
+                "source": "study-a",
+                "content": "The adult dose is 10 mg.",
+                "score": 0.9,
+                "claims": [
+                    {
+                        "claim_id": "recommended-dose",
+                        "claim": "recommended dose",
+                        "value": 10,
+                        "conditions": {"population": "adults"},
+                    }
+                ],
+            },
+            {
+                "chunk_id": "children",
+                "source": "study-b",
+                "content": "The child dose is 5 mg.",
+                "score": 0.9,
+                "claims": [
+                    {
+                        "claim_id": "recommended-dose",
+                        "claim": "recommended dose",
+                        "value": 5,
+                        "conditions": {"population": "children"},
+                    }
+                ],
+            },
+        ]
+
+        assessment = EvidenceAssessor().assess("What is the recommended dose?", evidence)
+
+        self.assertEqual((), assessment.conflicts)
+        self.assertEqual("answer", assessment.next_action)
 
     def test_assessor_abstains_when_there_is_no_evidence(self):
         from knowledge_storm.evidence_governance import EvidenceAssessor
@@ -182,7 +239,10 @@ class EvidenceGovernanceTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual("latency_budget_exceeded", result["rerank_decision"]["reason"])
+        self.assertEqual(
+            "latency_budget_exceeded_cache_miss",
+            result["rerank_decision"]["reason"],
+        )
 
 
 if __name__ == "__main__":
