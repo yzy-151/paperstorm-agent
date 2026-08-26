@@ -35,11 +35,28 @@ class PaperStormMilestoneTest(unittest.TestCase):
             model="sentence-transformers/all-MiniLM-L6-v2",
             embedding_kind="real",
             smoke_limit=None,
+            actual_manifest={"corpus_sha256": "wrong", "case_count": 300, "document_count": 5183},
         )
         self.assertEqual("incomparable", metadata["status"])
         self.assertFalse(metadata["paired_comparison_allowed"])
         self.assertNotIn("delta", metadata)
         self.assertTrue(metadata["baseline_sha256"])
+
+    def test_matching_protocol_requires_dataset_fingerprint_and_size(self):
+        from examples.storm_examples.run_paperstorm_milestone import _comparison_metadata
+
+        metadata = _comparison_metadata(
+            benchmark="scifact", split="test", top_k=10,
+            model="sentence-transformers/all-MiniLM-L6-v2",
+            embedding_kind="real", smoke_limit=None,
+            actual_manifest={
+                "corpus_sha256": "54e2468b7b03e164cd2a0d87bafe248e00e991cde4f5eab0d5122f540f6731a9",
+                "case_count": 300,
+                "document_count": 5183,
+            },
+        )
+        self.assertEqual("comparable_aggregate_only", metadata["status"])
+        self.assertTrue(metadata["aggregate_comparison_allowed"])
 
     def test_cli_rejects_non_p1_milestones(self):
         from examples.storm_examples.run_paperstorm_milestone import build_parser
@@ -204,6 +221,26 @@ class PaperStormMilestoneTest(unittest.TestCase):
         self.assertEqual("failed", summary["status"])
         self.assertEqual("failed", lifecycle["status"])
         self.assertEqual(1, module.exit_code(summary))
+
+    def test_blocked_run_returns_distinct_nonzero_exit_code(self):
+        from examples.storm_examples.run_paperstorm_milestone import exit_code
+
+        self.assertEqual(2, exit_code({"status": "completed_with_blocks"}))
+
+    def test_qasper_retrieval_excludes_cases_without_gold_evidence(self):
+        from examples.storm_examples.run_paperstorm_milestone import _retrieval_cases_only
+        from knowledge_storm.evaluation.public_benchmarks.base import BenchmarkCase, BenchmarkDataset, BenchmarkDocument
+
+        dataset = BenchmarkDataset(
+            "qasper", "fixture",
+            (BenchmarkDocument("p", "T", "text"),),
+            (
+                BenchmarkCase("answerable", "q1", ("p",), "validation", evidence_ids=("p",)),
+                BenchmarkCase("no-evidence", "q2", (), "validation", unanswerable=True),
+            ),
+        )
+        filtered = _retrieval_cases_only(dataset)
+        self.assertEqual(["answerable"], [case.case_id for case in filtered.cases])
 
     def test_pim_top_k_hit_with_wrong_top1_is_not_resolved(self):
         from examples.storm_examples.run_paperstorm_milestone import _pim_dossiers

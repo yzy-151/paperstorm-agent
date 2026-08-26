@@ -73,6 +73,23 @@ class PublicBenchmarkContractTest(unittest.TestCase):
         self.assertEqual("completed", parent["status"])
         self.assertEqual("structured-parent-child-v1", report["manifest"]["node_schema"])
 
+    def test_qasper_parent_expansion_does_not_repeat_child_raw_text(self):
+        from knowledge_storm.evaluation.public_benchmarks.base import BenchmarkDataset, BenchmarkDocument
+        from knowledge_storm.evaluation.public_benchmarks.runner import HashEmbeddingProvider, _benchmark_nodes
+        from knowledge_storm.retrieval import HybridPaperIndex
+
+        raw = "contrastive loss is optimized"
+        dataset = BenchmarkDataset(
+            "qasper", "fixture",
+            (BenchmarkDocument(
+                "paper-1::section-0::paragraph-0", "Paper", "Method\n" + raw,
+                {"paper_id": "paper-1", "section": "Method", "section_index": 0, "raw_text": raw},
+            ),), (),
+        )
+        index = HybridPaperIndex(_benchmark_nodes(dataset, structured=True), HashEmbeddingProvider())
+        result = index.search("contrastive loss", mode="hybrid", top_k=1, parent_budget_tokens=64)[0]
+        self.assertEqual(1, result["expanded_content"].count(raw))
+
     def test_prediction_includes_sanitized_explicit_milestone_only(self):
         from knowledge_storm.evaluation.public_benchmarks.base import BenchmarkCase, BenchmarkDataset, BenchmarkDocument
         from knowledge_storm.evaluation.public_benchmarks.runner import HashEmbeddingProvider, run_retrieval_benchmark

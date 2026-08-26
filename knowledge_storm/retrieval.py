@@ -521,6 +521,9 @@ class HybridPaperIndex:
             parent_content = str(parent.get("content", "") if parent else "")
             if child_content:
                 parent_content = parent_content.replace(child_content, "")
+            raw_child = str((item.get("metadata") or {}).get("raw_text") or "")
+            if raw_child:
+                parent_content = parent_content.replace(raw_child, "")
             if not parent_id or parent_id in expanded_parent_ids:
                 parent_content = ""
             elif parent:

@@ -30,6 +30,7 @@ from knowledge_storm.evaluation.public_benchmarks.runner import (
     HashEmbeddingProvider,
     run_retrieval_benchmark,
 )
+from knowledge_storm.evaluation.public_benchmarks.report import write_benchmark_artifacts
 from knowledge_storm.retrieval import SentenceTransformerProvider
 
 
@@ -142,14 +143,6 @@ def _run_one(args, benchmark, output_root):
     run_dir = output_root / benchmark
     run_dir.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(run_dir / "run_status.json", {"status": "running", "started_at": started_at})
-    comparison = _comparison_metadata(
-        benchmark=benchmark,
-        split=split,
-        top_k=top_k,
-        model=args.model,
-        embedding_kind=args.embedding,
-        smoke_limit=args.smoke_limit,
-    )
     report = run_retrieval_benchmark(
         dataset,
         embedding_provider=provider,
@@ -157,15 +150,33 @@ def _run_one(args, benchmark, output_root):
         top_k=top_k,
         seed=args.seed,
         bootstrap_samples=100 if args.smoke_limit else 2000,
-        output_dir=run_dir,
+        output_dir=None,
         scope_field=scope_field,
         milestone_metadata={
             "milestone": "P1",
             "baseline_reference": BASELINE_REFERENCE,
-            "comparison": comparison,
         },
         structured_nodes=benchmark in {"scifact", "qasper-retrieval"},
         parent_budget_tokens=512 if benchmark == "qasper-retrieval" else (256 if benchmark == "scifact" else 0),
+    )
+    comparison = _comparison_metadata(
+        benchmark=benchmark,
+        split=split,
+        top_k=top_k,
+        model=args.model,
+        embedding_kind=args.embedding,
+        smoke_limit=args.smoke_limit,
+        actual_manifest=report["manifest"],
+    )
+    report["manifest"]["comparison"] = comparison
+    report.setdefault("milestone", {})["comparison"] = comparison
+    recall_key = "recall_at_{0}".format(top_k)
+    bad_cases = [
+        row for row in report["predictions"]
+        if float((row.get("metrics") or {}).get(recall_key, 0.0)) < 1.0
+    ]
+    write_benchmark_artifacts(
+        run_dir, report["manifest"], report, report["predictions"], bad_cases
     )
     manifest = build_milestone_manifest(
         milestone="P1",
@@ -233,7 +244,7 @@ def _load_dataset(args, benchmark, split):
         ),
         file_required=True,
     )
-    return load_qasper_official_json(path, split=split), path, "paper_id"
+    return _retrieval_cases_only(load_qasper_official_json(path, split=split)), path, "paper_id"
 
 
 def _load_pim_fixture(path):
@@ -295,6 +306,13 @@ def _subset(dataset, limit, scope_field):
     else:
         documents = dataset.documents
     return BenchmarkDataset(dataset.name, dataset.version, documents, cases, dataset.metadata)
+
+
+def _retrieval_cases_only(dataset):
+    cases = tuple(case for case in dataset.cases if case.evidence_ids)
+    return BenchmarkDataset(
+        dataset.name, dataset.version, dataset.documents, cases, dataset.metadata
+    )
 
 
 def _pim_dossiers(fixture_path, report):
@@ -478,7 +496,7 @@ def _protocol_for(benchmark, evaluation_phase, requested_top_k):
 
 
 def _comparison_metadata(
-    benchmark, split, top_k, model, embedding_kind, smoke_limit
+    benchmark, split, top_k, model, embedding_kind, smoke_limit, actual_manifest
 ):
     baseline_path = _baseline_path()
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
@@ -501,6 +519,17 @@ def _comparison_metadata(
             reasons.append("smoke_embedding")
         if smoke_limit:
             reasons.append("partial_case_set")
+        expected_document_count = int(
+            expected.get("document_count", expected.get("paragraph_count", 0))
+        )
+        if str(actual_manifest.get("corpus_sha256") or "") != str(
+            expected.get("corpus_sha256") or ""
+        ):
+            reasons.append("corpus_fingerprint_mismatch")
+        if int(actual_manifest.get("case_count") or 0) != int(expected.get("case_count") or 0):
+            reasons.append("case_count_mismatch")
+        if int(actual_manifest.get("document_count") or 0) != expected_document_count:
+            reasons.append("document_count_mismatch")
     return {
         "status": "incomparable" if reasons else "comparable_aggregate_only",
         "reasons": reasons,
@@ -546,7 +575,11 @@ def _write_benchmark_status(run_dir, result):
 
 
 def exit_code(summary):
-    return 1 if summary.get("status") == "failed" else 0
+    if summary.get("status") == "failed":
+        return 1
+    if summary.get("status") == "completed_with_blocks":
+        return 2
+    return 0
 
 
 def _first_existing(candidates, file_required=False):
