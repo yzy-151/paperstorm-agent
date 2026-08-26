@@ -44,6 +44,175 @@ class BenchmarkDefinition:
     blocked_reason: str = ""
 
 
+@dataclass(frozen=True)
+class ReleaseGatePolicy:
+    """Frozen offline release thresholds; zero ACL leakage is non-negotiable."""
+
+    quality_metrics: tuple[str, ...] = ("recall_at_5",)
+    max_quality_regression: float = 0.01
+    max_p95_ratio: float = 1.20
+    max_unsupported_claim_increase: float = 0.01
+    max_failure_rate_increase: float = 0.01
+    manifest_keys: tuple[str, ...] = ("dataset_sha256", "protocol_sha256")
+
+
+@dataclass(frozen=True)
+class ReleaseGateDecision:
+    allowed: bool
+    reasons: tuple[str, ...]
+    checks: dict
+
+    def to_dict(self):
+        return {
+            "allowed": self.allowed,
+            "reasons": list(self.reasons),
+            "checks": self.checks,
+        }
+
+
+class ReleaseGate:
+    """Compare two fingerprint-compatible offline runs before release."""
+
+    def evaluate(self, baseline, candidate, policy=None):
+        policy = policy or ReleaseGatePolicy()
+        baseline = dict(baseline or {})
+        candidate = dict(candidate or {})
+        checks = {}
+        reasons = []
+
+        baseline_manifest = dict(baseline.get("manifest") or {})
+        candidate_manifest = dict(candidate.get("manifest") or {})
+        mismatched = [
+            key
+            for key in policy.manifest_keys
+            if not baseline_manifest.get(key)
+            or baseline_manifest.get(key) != candidate_manifest.get(key)
+        ]
+        checks["manifest"] = {
+            "status": "fail" if mismatched else "pass",
+            "mismatched_keys": mismatched,
+        }
+        if mismatched:
+            reasons.append("manifest_mismatch")
+
+        baseline_metrics = dict(baseline.get("metrics") or {})
+        candidate_metrics = dict(candidate.get("metrics") or {})
+        paired_intervals = dict(candidate.get("paired_delta_ci") or {})
+        for metric in policy.quality_metrics:
+            before = _finite_metric(baseline_metrics.get(metric), metric)
+            after = _finite_metric(candidate_metrics.get(metric), metric)
+            delta = after - before
+            passed = delta >= -float(policy.max_quality_regression)
+            checks[metric] = {
+                "status": "pass" if passed else "fail",
+                "baseline": before,
+                "candidate": after,
+                "delta": round(delta, 10),
+            }
+            if not passed:
+                reasons.append("quality_regression:{0}".format(metric))
+            if metric in paired_intervals:
+                interval = paired_intervals[metric]
+                if not isinstance(interval, (list, tuple)) or len(interval) != 2:
+                    raise ValueError("paired_delta_ci[{0}] must contain lower and upper".format(metric))
+                lower = _finite_metric(interval[0], metric + "_ci_lower")
+                upper = _finite_metric(interval[1], metric + "_ci_upper")
+                if lower > upper:
+                    raise ValueError("paired_delta_ci[{0}] is not ordered".format(metric))
+                checks[metric]["paired_delta_ci"] = [lower, upper]
+                if upper < -float(policy.max_quality_regression):
+                    checks[metric]["status"] = "fail"
+                    reasons.append("quality_ci_regression:{0}".format(metric))
+
+        before_p95 = _finite_metric(baseline.get("p95_ms"), "p95_ms")
+        after_p95 = _finite_metric(candidate.get("p95_ms"), "p95_ms")
+        ratio = after_p95 / before_p95 if before_p95 > 0 else (1.0 if after_p95 == 0 else float("inf"))
+        p95_passed = ratio <= float(policy.max_p95_ratio)
+        checks["p95"] = {
+            "status": "pass" if p95_passed else "fail",
+            "baseline": before_p95,
+            "candidate": after_p95,
+            "ratio": ratio,
+        }
+        if not p95_passed:
+            reasons.append("p95_regression")
+
+        _bounded_rate_check(
+            checks, reasons, baseline, candidate, "unsupported_claim_rate",
+            float(policy.max_unsupported_claim_increase), "unsupported_claim_regression",
+        )
+        _bounded_rate_check(
+            checks, reasons, baseline, candidate, "failure_rate",
+            float(policy.max_failure_rate_increase), "failure_rate_regression",
+        )
+        acl_leaks = int(candidate.get("acl_leak_count") or 0)
+        checks["acl_leak"] = {
+            "status": "pass" if acl_leaks == 0 else "fail",
+            "candidate": acl_leaks,
+        }
+        if acl_leaks:
+            reasons.append("acl_leak")
+        return ReleaseGateDecision(not reasons, tuple(reasons), checks)
+
+
+def load_offline_replay(run_dir):
+    """Summarize frozen JSONL predictions without executing models or network."""
+    root = Path(run_dir)
+    manifest_path = root / "manifest.json"
+    predictions_path = root / "predictions.jsonl"
+    if not manifest_path.is_file() or not predictions_path.is_file():
+        raise FileNotFoundError("offline replay requires manifest.json and predictions.jsonl")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    rows = [
+        json.loads(line)
+        for line in predictions_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    latencies = sorted(float(row.get("latency_ms") or 0.0) for row in rows)
+    failures = sum(row.get("status") != "succeeded" for row in rows)
+    unsupported = sum(int(row.get("unsupported_claim_count") or 0) for row in rows)
+    validated = sum(int(row.get("validated_claim_count") or 0) for row in rows)
+    return {
+        "manifest": manifest,
+        "case_count": len(rows),
+        "failure_rate": failures / len(rows) if rows else 0.0,
+        "acl_leak_count": sum(bool(row.get("acl_leak")) for row in rows),
+        "unsupported_claim_rate": unsupported / validated if validated else 0.0,
+        "p95_ms": _nearest_rank_percentile(latencies, 0.95),
+    }
+
+
+def _finite_metric(value, name):
+    number = float(value)
+    if not (number == number and abs(number) != float("inf")):
+        raise ValueError("{0} must be finite".format(name))
+    return number
+
+
+def _bounded_rate_check(checks, reasons, baseline, candidate, key, allowed, reason):
+    before = _finite_metric(baseline.get(key), key)
+    after = _finite_metric(candidate.get(key), key)
+    delta = after - before
+    passed = delta <= allowed
+    checks[key] = {
+        "status": "pass" if passed else "fail",
+        "baseline": before,
+        "candidate": after,
+        "delta": round(delta, 10),
+    }
+    if not passed:
+        reasons.append(reason)
+
+
+def _nearest_rank_percentile(values, quantile):
+    if not values:
+        return 0.0
+    import math
+
+    index = max(0, min(len(values) - 1, math.ceil(float(quantile) * len(values)) - 1))
+    return float(values[index])
+
+
 DEFINITIONS = (
     BenchmarkDefinition(
         "scifact-retrieval",
