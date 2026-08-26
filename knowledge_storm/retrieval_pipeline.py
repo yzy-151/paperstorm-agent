@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Mapping, Optional, Tuple
 
+from .evidence_governance import select_evidence
 from .retrieval import reciprocal_rank_fusion
 from .search_planning import SearchPlan, SearchPlanner, normalize_filter_mapping
 
@@ -27,6 +28,7 @@ class RetrievalRequest:
     history: Tuple[Mapping, ...] = ()
     parent_budget_tokens: int = 0
     metadata_filters: Mapping = field(default_factory=dict)
+    governance_features: Mapping = field(default_factory=dict)
 
 
 class RetrievalPipeline:
@@ -40,11 +42,15 @@ class RetrievalPipeline:
         reranker=None,
         relevance_gate: Optional[Callable] = None,
         search_planner: Optional[SearchPlanner] = None,
+        rerank_policy=None,
+        evidence_assessor=None,
     ):
         self.index = index
         self.reranker = reranker
         self.relevance_gate = relevance_gate
         self.search_planner = search_planner or SearchPlanner()
+        self.rerank_policy = rerank_policy
+        self.evidence_assessor = evidence_assessor
 
     def search(self, request: RetrievalRequest):
         query = " ".join(str(request.query or "").split())
@@ -82,11 +88,17 @@ class RetrievalPipeline:
             )
         ]
 
-        rerank_enabled = bool(request.enable_reranker or request.mode == "hybrid_rerank")
-        mode = "hybrid_rerank" if rerank_enabled else request.mode
-        if rerank_enabled and self.reranker is None:
-            raise ValueError("hybrid_rerank mode requires reranker")
-        cheap_mode = "hybrid" if rerank_enabled else request.mode
+        requested_rerank = bool(
+            request.enable_reranker or request.mode == "hybrid_rerank"
+        )
+        governance_enabled = (
+            self.rerank_policy is not None or self.evidence_assessor is not None
+        )
+        cheap_mode = (
+            "hybrid"
+            if requested_rerank or self.rerank_policy is not None
+            else request.mode
+        )
         retrieve_started = time.perf_counter()
         candidate_k = max(int(request.candidate_k), int(request.top_k), 1)
         rankings = []
@@ -131,6 +143,35 @@ class RetrievalPipeline:
                 ),
             )
         )
+
+        rerank_decision = None
+        rerank_enabled = requested_rerank
+        if self.rerank_policy is not None:
+            policy_started = time.perf_counter()
+            policy_features = dict(request.governance_features)
+            policy_features["candidate_count"] = len(results)
+            policy_features.setdefault("rrf_margin", _rrf_margin(results))
+            policy_features.setdefault("answer_risk", 0.0)
+            policy_features.setdefault("bm25_dense_overlap", 1.0)
+            policy_features.setdefault("cache_state", "unknown")
+            policy_features.setdefault("observed_p95_ms", 0.0)
+            rerank_decision = self.rerank_policy.decide(policy_features)
+            rerank_enabled = rerank_decision.enabled
+            stages.append(
+                _stage(
+                    "policy",
+                    "completed",
+                    _elapsed_ms(policy_started),
+                    len(results),
+                    len(results),
+                    rerank_decision.reason,
+                )
+            )
+        mode = "hybrid_rerank" if rerank_enabled else (
+            "hybrid" if requested_rerank else request.mode
+        )
+        if rerank_enabled and self.reranker is None:
+            raise ValueError("hybrid_rerank mode requires reranker")
 
         if rerank_enabled:
             rerank_started = time.perf_counter()
@@ -192,7 +233,26 @@ class RetrievalPipeline:
                 for item in results
                 if all(marker in _search_text(item).lower() for marker in must_terms)
             ]
-        results = results[: max(1, int(request.top_k))]
+        coverage_score = None
+        if governance_enabled:
+            coverage_started = time.perf_counter()
+            selected = select_evidence(results, top_k=max(1, int(request.top_k)))
+            coverage_score = selected.coverage_score
+            results = list(selected)
+            stages.append(
+                _stage(
+                    "coverage",
+                    "completed",
+                    _elapsed_ms(coverage_started),
+                    gate_input,
+                    len(results),
+                    "mmr diversity selection; coverage_score={0:.6f}".format(
+                        coverage_score
+                    ),
+                )
+            )
+        else:
+            results = results[: max(1, int(request.top_k))]
         results = _rewrite_final_ranking(
             results,
             score_key="rerank_score" if rerank_enabled else "rrf_score",
@@ -221,6 +281,23 @@ class RetrievalPipeline:
         )
         stages.append(gate_stage)
 
+        evidence_assessment = None
+        if self.evidence_assessor is not None:
+            assessment_started = time.perf_counter()
+            evidence_assessment = self.evidence_assessor.assess(
+                query, results, coverage_score=coverage_score
+            )
+            stages.append(
+                _stage(
+                    "assessment",
+                    "completed",
+                    _elapsed_ms(assessment_started),
+                    len(results),
+                    len(results),
+                    evidence_assessment.next_action,
+                )
+            )
+
         parent_started = time.perf_counter()
         parent_input = len(results)
         if parent_budget > 0 and results:
@@ -239,7 +316,7 @@ class RetrievalPipeline:
             )
         )
         provider = getattr(self.index, "embedding_provider", None)
-        return {
+        output = {
             "schema": "paperstorm-retrieval-result",
             "schema_revision": self.schema_revision,
             "query": query,
@@ -253,6 +330,11 @@ class RetrievalPipeline:
             "mode": mode,
             "latency_ms": _elapsed_ms(started),
         }
+        if rerank_decision is not None:
+            output["rerank_decision"] = rerank_decision.to_dict()
+        if evidence_assessment is not None:
+            output["evidence_assessment"] = evidence_assessment.to_dict()
+        return output
 
 
 def _planned_queries(plan):
@@ -403,6 +485,14 @@ def _stage(name, status, latency_ms, input_count, output_count, reason):
 
 def _elapsed_ms(started):
     return (time.perf_counter() - started) * 1000.0
+
+
+def _rrf_margin(results):
+    if len(results) < 2:
+        return 1.0
+    first = float(results[0].get("rrf_score", results[0].get("score", 0.0)))
+    second = float(results[1].get("rrf_score", results[1].get("score", 0.0)))
+    return abs(first - second)
 
 
 def _search_text(item):

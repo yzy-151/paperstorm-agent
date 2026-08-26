@@ -1,0 +1,13 @@
+{
+  "coverage_candidates": [
+    {"chunk_id": "a-1", "parent_id": "parent-a", "source": "paper-a", "content": "Neural cancellation reduces passive intermodulation.", "score": 0.99},
+    {"chunk_id": "a-2", "parent_id": "parent-a", "source": "paper-a", "content": "The same method uses a nonlinear model.", "score": 0.98},
+    {"chunk_id": "b-1", "parent_id": "parent-b", "source": "paper-b", "content": "Calibration stabilizes the cancellation method.", "score": 0.80},
+    {"chunk_id": "c-1", "parent_id": "parent-c", "source": "paper-c", "content": "A receiver measures residual distortion.", "score": 0.70}
+  ],
+  "conflict_evidence": [
+    {"chunk_id": "positive", "source": "study-a", "content": "The treatment improves survival.", "claims": [{"claim_id": "survival", "claim": "treatment improves survival", "value": "improves", "conditions": {"population": "adults"}}]},
+    {"chunk_id": "negative", "source": "study-b", "content": "The treatment does not improve survival.", "claims": [{"claim_id": "survival", "claim": "treatment improves survival", "value": "does not improve", "conditions": {"population": "adults"}}]}
+  ],
+  "no_answer_evidence": []
+}
