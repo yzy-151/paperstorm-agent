@@ -50,6 +50,24 @@ class RetrievalPipelineTest(unittest.TestCase):
             _rrf_margin([{"rrf_score": 0.03}, {"rrf_score": 0.027}]),
         )
 
+    def test_single_query_preserves_inner_hybrid_scores(self):
+        from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
+
+        class ScoredIndex:
+            embedding_provider = type("Provider", (), {"name": "test"})()
+
+            def search(self, _query, **_kwargs):
+                return [
+                    {"chunk_id": "a", "content": "alpha", "rrf_score": 0.032},
+                    {"chunk_id": "b", "content": "beta", "rrf_score": 0.016},
+                ]
+
+        result = RetrievalPipeline(ScoredIndex()).search(
+            RetrievalRequest(query="alpha", top_k=2)
+        )
+
+        self.assertEqual([0.032, 0.016], [item["rrf_score"] for item in result["results"]])
+
     def test_parent_expansion_runs_once_after_gate_for_final_candidates(self):
         from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
         from knowledge_storm.search_planning import SearchPlan

@@ -130,7 +130,11 @@ class RetrievalPipeline:
         )
 
         fuse_started = time.perf_counter()
-        results = reciprocal_rank_fusion(rankings)[:candidate_k]
+        results = (
+            list(rankings[0])
+            if len(rankings) == 1
+            else reciprocal_rank_fusion(rankings)
+        )[:candidate_k]
         stages.append(
             _stage(
                 "fuse",
@@ -138,8 +142,10 @@ class RetrievalPipeline:
                 _elapsed_ms(fuse_started),
                 retrieved_count,
                 len(results),
-                "RRF by stable chunk_id across {0} ranking(s)".format(
-                    len(rankings)
+                (
+                    "preserved inner hybrid scores for one planned query"
+                    if len(rankings) == 1
+                    else "RRF by stable chunk_id across {0} rankings".format(len(rankings))
                 ),
             )
         )
@@ -176,17 +182,27 @@ class RetrievalPipeline:
         if rerank_enabled:
             rerank_started = time.perf_counter()
             rerank_input = len(results)
+            rerank_limit = (
+                min(len(results), int(self.rerank_policy.max_candidates))
+                if self.rerank_policy is not None
+                else len(results)
+            )
+            rerank_candidates = results[:rerank_limit]
             if hasattr(self.reranker, "rerank"):
                 reranked = list(
                     self.reranker.rerank(
-                        plan.standalone_query, results, top_k=candidate_k
+                        plan.standalone_query,
+                        rerank_candidates,
+                        top_k=rerank_limit,
                     )
                 )
                 results = _normalize_reranker_results(
                     reranked, candidate_k=candidate_k, accept_score=False
                 )
             else:
-                reranked = list(self.reranker(plan.standalone_query, results))
+                reranked = list(
+                    self.reranker(plan.standalone_query, rerank_candidates)
+                )
                 results = _normalize_reranker_results(
                     reranked, candidate_k=candidate_k, accept_score=True
                 )

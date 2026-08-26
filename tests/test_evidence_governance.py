@@ -81,6 +81,54 @@ class EvidenceGovernanceTest(unittest.TestCase):
         self.assertFalse(disabled.enabled)
         self.assertEqual("risk_or_evidence_is_sufficient", disabled.reason)
 
+    def test_policy_uses_two_percent_relative_margin_boundary(self):
+        from knowledge_storm.evidence_governance import RerankPolicy
+
+        policy = RerankPolicy()
+        common = {
+            "answer_risk": 0.9,
+            "bm25_dense_overlap": 1.0,
+            "candidate_count": 30,
+        }
+
+        self.assertTrue(policy.decide(dict(common, rrf_margin=0.019)).enabled)
+        self.assertFalse(policy.decide(dict(common, rrf_margin=0.021)).enabled)
+        self.assertEqual(20, policy.max_candidates)
+
+    def test_pipeline_caps_policy_rerank_pool_without_shrinking_retrieval_pool(self):
+        from knowledge_storm.evidence_governance import RerankPolicy
+        from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
+
+        class Index:
+            def search(self, _query, **_kwargs):
+                return [
+                    {"chunk_id": str(index), "content": str(index), "rrf_score": 1.0 - index * 0.001}
+                    for index in range(40)
+                ]
+
+        class Reranker:
+            model_name = "test"
+
+            def __init__(self):
+                self.input_count = 0
+
+            def rerank(self, _query, candidates, top_k=None):
+                self.input_count = len(candidates)
+                return [dict(item, rerank_score=1.0 - index * 0.01) for index, item in enumerate(candidates[:top_k])]
+
+        reranker = Reranker()
+        result = RetrievalPipeline(
+            Index(), reranker=reranker, rerank_policy=RerankPolicy()
+        ).search(RetrievalRequest(
+            query="risk",
+            top_k=5,
+            candidate_k=40,
+            governance_features={"answer_risk": 0.9, "bm25_dense_overlap": 0.1},
+        ))
+
+        self.assertEqual(20, reranker.input_count)
+        self.assertEqual(40, next(stage for stage in result["stages"] if stage["name"] == "fuse")["output_count"])
+
     def test_mmr_selects_diverse_parents_and_reports_coverage(self):
         from knowledge_storm.evidence_governance import select_evidence
 

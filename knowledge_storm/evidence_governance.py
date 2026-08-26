@@ -40,13 +40,15 @@ class RerankPolicy:
         max_p95_ms=None,
         high_risk_threshold=0.7,
         low_overlap_threshold=0.5,
-        small_margin_threshold=0.08,
+        small_margin_threshold=0.02,
+        max_candidates=20,
     ):
         self.model = str(model)
         self.max_p95_ms = max_p95_ms
         self.high_risk_threshold = float(high_risk_threshold)
         self.low_overlap_threshold = float(low_overlap_threshold)
         self.small_margin_threshold = float(small_margin_threshold)
+        self.max_candidates = max(2, int(max_candidates))
 
     def decide(self, features):
         values = dict(features or {})
