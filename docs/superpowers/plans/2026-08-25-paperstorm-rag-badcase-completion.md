@@ -8,6 +8,18 @@
 
 **Tech Stack:** Python 3.10/3.11、rank-bm25、SentenceTransformers、Cross-Encoder、SQLite WAL、FastAPI、Langfuse、SciFact、QASPER、unittest。
 
+## 执行状态
+
+| 阶段 | 状态 | 证据 |
+| --- | --- | --- |
+| Task 1-4 / P1 | 已完成 | `119 tests OK`；规格、质量评审通过；PIM/SciFact/QASPER Retrieval 已运行 |
+| Task 5-6 / P2 | 进行中 | 选择性重排、Coverage、冲突与有限纠错 |
+| Task 7-8 / P3 | 待执行 | Claim-Citation 与 QASPER Answer |
+| Task 9-11 / P4 | 待执行 | ACL、韧性、可观测性、Release Gate |
+| Task 12-13 | 待执行 | 文档、UI、全量验证、交付 |
+
+P1 结果见 `docs/RAG_BADCASE_PROGRESSIVE_RESULTS.md`。冻结 v5.5 基线缺 query/qrels 指纹，因此当前候选结果仅用于无回归与案例证据，不计算未经审计的 delta。
+
 ---
 
 ## File Map
