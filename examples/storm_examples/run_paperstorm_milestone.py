@@ -1,12 +1,14 @@
 """Run cumulative PaperStorm retrieval milestones without implicit downloads."""
 
 import argparse
+import hashlib
 import json
 import os
 import platform
 import re
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,10 +54,13 @@ def build_parser():
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--embedding", choices=("hash", "real"), default="real")
     parser.add_argument(
-        "--model",
-        default="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        "--evaluation-phase", choices=("development", "final"), default="development"
     )
-    parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument(
+        "--model",
+        default="sentence-transformers/all-MiniLM-L6-v2",
+    )
+    parser.add_argument("--top-k", type=int)
     parser.add_argument("--seed", type=int, default=55)
     parser.add_argument("--smoke-limit", type=int)
     return parser
@@ -72,7 +77,8 @@ def main(argv=None):
     )
     output_root = Path(args.output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
-    summary = {"milestone": args.milestone, "benchmarks": {}}
+    summary = {"milestone": args.milestone, "status": "running", "benchmarks": {}}
+    _atomic_write_json(output_root / "run_status.json", {"status": "running", "started_at": _now()})
     for benchmark in resolve_benchmarks(args):
         try:
             result = _run_one(args, benchmark, output_root)
@@ -109,26 +115,46 @@ def main(argv=None):
                 "reason": str(exc),
             }
         result = sanitize_json_payload(result)
+        if result.get("status") in {"failed", "blocked"}:
+            _write_benchmark_status(output_root / benchmark, result)
         summary["benchmarks"][benchmark] = result
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    (output_root / "milestone_summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+    statuses = {item.get("status") for item in summary["benchmarks"].values()}
+    summary["status"] = (
+        "failed" if "failed" in statuses else
+        "completed_with_blocks" if "blocked" in statuses else
+        "completed"
+    )
+    _atomic_write_json(output_root / "milestone_summary.json", summary)
+    _atomic_write_json(
+        output_root / "run_status.json",
+        {"status": summary["status"], "finished_at": _now()},
     )
     return summary
 
 
 def _run_one(args, benchmark, output_root):
     started_at = _now()
-    dataset, dataset_path, scope_field = _load_dataset(args, benchmark)
+    split, top_k = _protocol_for(benchmark, args.evaluation_phase, args.top_k)
+    dataset, dataset_path, scope_field = _load_dataset(args, benchmark, split)
     dataset = _subset(dataset, args.smoke_limit, scope_field)
     provider = _embedding_provider(args)
     run_dir = output_root / benchmark
     run_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(run_dir / "run_status.json", {"status": "running", "started_at": started_at})
+    comparison = _comparison_metadata(
+        benchmark=benchmark,
+        split=split,
+        top_k=top_k,
+        model=args.model,
+        embedding_kind=args.embedding,
+        smoke_limit=args.smoke_limit,
+    )
     report = run_retrieval_benchmark(
         dataset,
         embedding_provider=provider,
         modes=("hybrid",),
-        top_k=args.top_k,
+        top_k=top_k,
         seed=args.seed,
         bootstrap_samples=100 if args.smoke_limit else 2000,
         output_dir=run_dir,
@@ -136,15 +162,18 @@ def _run_one(args, benchmark, output_root):
         milestone_metadata={
             "milestone": "P1",
             "baseline_reference": BASELINE_REFERENCE,
+            "comparison": comparison,
         },
+        structured_nodes=benchmark in {"scifact", "qasper-retrieval"},
+        parent_budget_tokens=512 if benchmark == "qasper-retrieval" else (256 if benchmark == "scifact" else 0),
     )
     manifest = build_milestone_manifest(
         milestone="P1",
         git_sha=_git_sha(),
         dataset_path=dataset_path,
-        split="test",
+        split=split,
         models={"embedding": getattr(provider, "name", args.model)},
-        top_k=args.top_k,
+        top_k=top_k,
         seed=args.seed,
         command=args.command,
         started_at=started_at,
@@ -156,6 +185,7 @@ def _run_one(args, benchmark, output_root):
         },
     )
     manifest["baseline_reference"] = BASELINE_REFERENCE
+    manifest["comparison"] = comparison
     manifest["benchmark"] = benchmark
     write_milestone_manifest(run_dir / "milestone_manifest.json", manifest)
     dossiers = []
@@ -167,17 +197,20 @@ def _run_one(args, benchmark, output_root):
     elif benchmark == "qasper-retrieval":
         dossiers = _qasper_dossiers(dataset, report)
         write_case_dossiers(run_dir / "case_dossiers.jsonl", dossiers)
-    return {
+    result = {
         "status": "completed",
         "benchmark": benchmark,
         "output_dir": str(run_dir),
         "case_count": report["case_count"],
         "dossier_count": len(dossiers),
         "dossier_status": "written" if dossiers else "no_cases_available",
+        "comparison": comparison,
     }
+    _atomic_write_json(run_dir / "run_status.json", {"status": "completed", "finished_at": _now()})
+    return result
 
 
-def _load_dataset(args, benchmark):
+def _load_dataset(args, benchmark, split):
     root = Path(args.benchmark_root)
     if benchmark == "pim":
         fixture = (
@@ -189,16 +222,18 @@ def _load_dataset(args, benchmark):
         return _load_pim_fixture(fixture), fixture, None
     if benchmark == "scifact":
         path = _first_existing((root / "scifact", root / "datasets" / "scifact", root))
-        return load_scifact(path, split="test"), path, None
+        return load_scifact(path, split=split), path, None
+    filename = "qasper-{0}-v0.3.json".format(split)
     path = _first_existing(
         (
-            root / "qasper" / "qasper-test-v0.3.json",
-            root / "qasper-test-v0.3.json",
-            root / "qasper" / "test.json",
+            root / "qasper" / filename,
+            root / "qasper-official-v0.3" / filename,
+            root / filename,
+            root / "qasper" / (split + ".json"),
         ),
         file_required=True,
     )
-    return load_qasper_official_json(path, split="test"), path, "paper_id"
+    return load_qasper_official_json(path, split=split), path, "paper_id"
 
 
 def _load_pim_fixture(path):
@@ -294,14 +329,15 @@ def _pim_dossiers(fixture_path, report):
                 case_id=case["id"],
                 milestone="P1",
                 question=case["query"],
-                before=case["before"],
+                before=dict(
+                    case["before"],
+                    evidence_level="anecdotal",
+                    paired_comparison_allowed=False,
+                ),
                 root_cause=(
                     "PIM acronym/domain ambiguity or bilingual lexical mismatch"
                 ),
-                change=(
-                    "structured SearchPlan, subquery expansion, RRF and "
-                    "negative-term gate"
-                ),
+                change=_actual_change(prediction),
                 after={
                     "ranked_document_ids": ranked_ids,
                     "relevant_document_ids": relevant_ids,
@@ -360,6 +396,8 @@ def _qasper_dossiers(dataset, report):
         "source": "archived_aggregate",
         "case_level_before_available": False,
         "baseline_reference": BASELINE_REFERENCE,
+        "baseline_sha256": _sha256_file(_baseline_path()),
+        "paired_comparison_allowed": False,
         "benchmark": "qasper_test",
         "aggregate": _archived_qasper_aggregate(),
         "note": "Archived aggregate only; no case-level baseline was recorded.",
@@ -373,7 +411,7 @@ def _qasper_dossiers(dataset, report):
             root_cause=(
                 "Low query-to-gold lexical overlap and/or failure to retrieve gold evidence"
             ),
-            change="SearchPlan query expansion, multi-query RRF and parent context retrieval",
+            change=_actual_change(prediction),
             after={
                 "ranked_document_ids": ranked_ids,
                 "relevant_document_ids": relevant_ids,
@@ -401,9 +439,110 @@ def _lexical_overlap(left, right):
 
 
 def _archived_qasper_aggregate():
-    path = Path(__file__).resolve().parents[2] / BASELINE_REFERENCE
+    path = _baseline_path()
     payload = json.loads(path.read_text(encoding="utf-8"))
     return dict(payload["qasper_test"]["methods"]["hybrid"])
+
+
+def _actual_change(prediction):
+    plan = prediction.get("search_plan") or {}
+    stages = prediction.get("retrieval_stages") or []
+    stage_by_name = {str(item.get("name")): item for item in stages}
+    changes = ["RRF candidate fusion"]
+    if len(plan.get("subqueries") or []) > 1:
+        changes.insert(0, "structured multi-query planning")
+    elif plan.get("must_terms") or plan.get("negative_terms"):
+        changes.insert(0, "structured domain constraints")
+    parent = stage_by_name.get("parent_expand") or {}
+    if parent.get("status") == "completed":
+        changes.append("section parent context expansion")
+    gate = stage_by_name.get("gate") or {}
+    if gate.get("status") == "completed":
+        changes.append("typed evidence filtering and final selection")
+    return "; ".join(changes)
+
+
+def _protocol_for(benchmark, evaluation_phase, requested_top_k):
+    split = {
+        ("scifact", "development"): "dev",
+        ("scifact", "final"): "test",
+        ("qasper-retrieval", "development"): "validation",
+        ("qasper-retrieval", "final"): "test",
+    }.get((benchmark, evaluation_phase), "test")
+    default_top_k = 10 if benchmark == "scifact" else 5
+    return split, max(1, int(requested_top_k or default_top_k))
+
+
+def _comparison_metadata(
+    benchmark, split, top_k, model, embedding_kind, smoke_limit
+):
+    baseline_path = _baseline_path()
+    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    baseline_key = {
+        "scifact": "scifact_test",
+        "qasper-retrieval": "qasper_test",
+    }.get(benchmark)
+    reasons = []
+    if not baseline_key:
+        reasons.append("no_frozen_baseline")
+    else:
+        expected = baseline[baseline_key]
+        if split != "test":
+            reasons.append("split_mismatch")
+        if int(top_k) != int(expected["top_k"]):
+            reasons.append("top_k_mismatch")
+        if str(model) != str(baseline["protocol"]["embedding_model"]):
+            reasons.append("embedding_model_mismatch")
+        if embedding_kind != "real":
+            reasons.append("smoke_embedding")
+        if smoke_limit:
+            reasons.append("partial_case_set")
+    return {
+        "status": "incomparable" if reasons else "comparable_aggregate_only",
+        "reasons": reasons,
+        "baseline_reference": BASELINE_REFERENCE,
+        "baseline_sha256": _sha256_file(baseline_path),
+        "paired_comparison_allowed": False,
+        "aggregate_comparison_allowed": not reasons,
+    }
+
+
+def _baseline_path():
+    return Path(__file__).resolve().parents[2] / BASELINE_REFERENCE
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _atomic_write_json(path, payload):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp." + uuid.uuid4().hex)
+    try:
+        temporary.write_text(
+            json.dumps(sanitize_json_payload(payload), ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        os.replace(str(temporary), str(path))
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _write_benchmark_status(run_dir, result):
+    _atomic_write_json(
+        Path(run_dir) / "run_status.json",
+        {"status": result.get("status"), "reason_code": result.get("reason_code"), "finished_at": _now()},
+    )
+
+
+def exit_code(summary):
+    return 1 if summary.get("status") == "failed" else 0
 
 
 def _first_existing(candidates, file_required=False):
@@ -433,4 +572,4 @@ def _now():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(exit_code(main()))

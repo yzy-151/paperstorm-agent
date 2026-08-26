@@ -14,6 +14,32 @@ class PaperStormMilestoneTest(unittest.TestCase):
         args = build_parser().parse_args(["--output-dir", "out", "--benchmark-root", "data"])
         self.assertEqual("P1", args.milestone)
         self.assertEqual(("pim", "scifact", "qasper-retrieval"), resolve_benchmarks(args))
+        self.assertEqual("development", args.evaluation_phase)
+        self.assertEqual("sentence-transformers/all-MiniLM-L6-v2", args.model)
+        self.assertIsNone(args.top_k)
+
+    def test_benchmark_protocol_uses_development_splits_and_baseline_top_k(self):
+        from examples.storm_examples.run_paperstorm_milestone import _protocol_for
+
+        self.assertEqual(("dev", 10), _protocol_for("scifact", "development", None))
+        self.assertEqual(("validation", 5), _protocol_for("qasper-retrieval", "development", None))
+        self.assertEqual(("test", 10), _protocol_for("scifact", "final", None))
+
+    def test_incompatible_protocol_is_explicit_and_has_no_delta(self):
+        from examples.storm_examples.run_paperstorm_milestone import _comparison_metadata
+
+        metadata = _comparison_metadata(
+            benchmark="scifact",
+            split="dev",
+            top_k=10,
+            model="sentence-transformers/all-MiniLM-L6-v2",
+            embedding_kind="real",
+            smoke_limit=None,
+        )
+        self.assertEqual("incomparable", metadata["status"])
+        self.assertFalse(metadata["paired_comparison_allowed"])
+        self.assertNotIn("delta", metadata)
+        self.assertTrue(metadata["baseline_sha256"])
 
     def test_cli_rejects_non_p1_milestones(self):
         from examples.storm_examples.run_paperstorm_milestone import build_parser
@@ -32,6 +58,7 @@ class PaperStormMilestoneTest(unittest.TestCase):
                     "--benchmark-root", str(root / "missing"),
                     "--output-dir", str(root / "out"),
                     "--embedding", "hash",
+                    "--evaluation-phase", "final",
                     "--smoke-limit", "2",
                 ])
             self.assertEqual("blocked", summary["benchmarks"]["scifact"]["status"])
@@ -104,15 +131,15 @@ class PaperStormMilestoneTest(unittest.TestCase):
             self.assertNotIn("secret", json.dumps(manifest).lower())
             self.assertTrue(any(row["before"].get("source") == "archived_observation" for row in dossiers))
             by_id = {row["case_id"]: row for row in dossiers}
-            self.assertFalse(by_id["pim-rf-zh"]["after"]["resolved"])
-            self.assertFalse(by_id["pim-lexical"]["after"]["resolved"])
+            self.assertTrue(by_id["pim-rf-zh"]["after"]["resolved"])
+            self.assertTrue(by_id["pim-lexical"]["after"]["resolved"])
             self.assertFalse(by_id["pim-ambiguous"]["after"]["resolved"])
             self.assertTrue(by_id["pim-ambiguous"]["residual_risk"])
             self.assertIn("search_plan", by_id["pim-rf-zh"]["after"])
             for case_id in ("pim-rf-zh", "pim-lexical"):
                 after = by_id[case_id]["after"]
                 self.assertEqual(after["relevant_document_ids"][0] in after["top_1"], True)
-                self.assertEqual(["product-pim-1"], after["forbidden_hits_at_k"])
+                self.assertEqual([], after["forbidden_hits_at_k"])
                 self.assertIn("acceptance", after)
 
     def test_qasper_run_writes_auditable_non_fabricated_dossier(self):
@@ -140,6 +167,7 @@ class PaperStormMilestoneTest(unittest.TestCase):
                     "--benchmark-root", str(root),
                     "--output-dir", str(root / "out"),
                     "--embedding", "hash",
+                    "--evaluation-phase", "final",
                     "--smoke-limit", "1",
                 ])
             run_dir = Path(summary["benchmarks"]["qasper-retrieval"]["output_dir"])
@@ -154,6 +182,27 @@ class PaperStormMilestoneTest(unittest.TestCase):
         self.assertIn("resolved", dossier["after"])
         self.assertIn("lexical_overlap", dossier["after"])
         self.assertIn("search_plan", dossier["after"])
+        self.assertFalse(dossier["before"]["paired_comparison_allowed"])
+        self.assertIn("baseline_sha256", dossier["before"])
+        self.assertNotIn("query expansion", dossier["change"].lower())
+
+    def test_failed_run_writes_lifecycle_and_cli_returns_nonzero(self):
+        from examples.storm_examples import run_paperstorm_milestone as module
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
+            module, "_run_one", side_effect=RuntimeError("boom")
+        ), redirect_stdout(io.StringIO()):
+            output = Path(temp_dir) / "out"
+            summary = module.main([
+                "--benchmark", "pim",
+                "--benchmark-root", temp_dir,
+                "--output-dir", str(output),
+                "--embedding", "hash",
+            ])
+            lifecycle = json.loads((output / "run_status.json").read_text(encoding="utf-8"))
+        self.assertEqual("failed", summary["status"])
+        self.assertEqual("failed", lifecycle["status"])
+        self.assertEqual(1, module.exit_code(summary))
 
     def test_pim_top_k_hit_with_wrong_top1_is_not_resolved(self):
         from examples.storm_examples.run_paperstorm_milestone import _pim_dossiers

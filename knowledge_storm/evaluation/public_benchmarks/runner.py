@@ -49,6 +49,8 @@ def run_retrieval_benchmark(
     cache_state="warm_query_after_cold_index",
     scope_field=None,
     milestone_metadata=None,
+    structured_nodes=False,
+    parent_budget_tokens=0,
 ):
     prediction_milestone = None
     if milestone_metadata is not None:
@@ -58,17 +60,7 @@ def run_retrieval_benchmark(
         )
     top_k = max(1, int(top_k))
     cases = tuple(dataset.cases)
-    chunks = [
-        {
-            "chunk_id": document.document_id,
-            "document_id": document.document_id,
-            "title": document.title,
-            "content": document.text,
-            "retrieval_content": document.text,
-            "metadata": dict(document.metadata),
-        }
-        for document in dataset.documents
-    ]
+    chunks = _benchmark_nodes(dataset, structured=bool(structured_nodes))
     index_started = time.perf_counter()
     index = HybridPaperIndex(chunks, embedding_provider=embedding_provider)
     scoped_indices = _build_scoped_indices(index, scope_field)
@@ -100,6 +92,7 @@ def run_retrieval_benchmark(
                     top_k=top_k,
                     candidate_k=max(top_k * 4, 20),
                     enable_reranker=mode == "hybrid_rerank",
+                    parent_budget_tokens=int(parent_budget_tokens),
                 )
             )
             ranked = outcome["results"]
@@ -145,6 +138,10 @@ def run_retrieval_benchmark(
         "bootstrap_samples": bootstrap_samples,
         "cache_state": cache_state,
         "scope_field": scope_field,
+        "node_schema": (
+            HybridPaperIndex.node_schema if structured_nodes else "flat-document-v1"
+        ),
+        "parent_budget_tokens": int(parent_budget_tokens),
         "index_time_ms": round(index_time_ms, 4),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "evidence_tier": "public_official",
@@ -179,9 +176,70 @@ def _build_scoped_indices(index, scope_field):
             [index.chunks[position] for position in positions],
             embedding_provider=index.embedding_provider,
             embeddings=[index.embeddings[position] for position in positions],
+            parents=[
+                parent
+                for parent in index.parents.values()
+                if str((parent.get("metadata") or {}).get(scope_field) or "") == value
+            ],
+            token_codec=index.token_codec,
         )
         for value, positions in grouped.items()
     }
+
+
+def _benchmark_nodes(dataset, structured=False):
+    if not structured:
+        return [
+            {
+                "chunk_id": document.document_id,
+                "document_id": document.document_id,
+                "title": document.title,
+                "content": document.text,
+                "retrieval_content": document.text,
+                "metadata": dict(document.metadata),
+            }
+            for document in dataset.documents
+        ]
+
+    grouped = {}
+    children = []
+    for document in dataset.documents:
+        metadata = dict(document.metadata)
+        paper_id = str(metadata.get("paper_id") or document.document_id)
+        section_index = str(metadata.get("section_index", 0))
+        parent_id = "{0}::benchmark-section::{1}".format(paper_id, section_index)
+        raw_text = str(metadata.get("raw_text") or document.text)
+        grouped.setdefault(
+            parent_id,
+            {
+                "node_id": parent_id,
+                "node_type": "section",
+                "document_id": paper_id,
+                "parent_id": None,
+                "title": str(metadata.get("section") or document.title),
+                "content_parts": [],
+                "metadata": dict(metadata, paper_id=paper_id),
+            },
+        )["content_parts"].append(raw_text)
+        children.append(
+            {
+                "node_id": document.document_id,
+                "chunk_id": document.document_id,
+                "node_type": "passage",
+                "document_id": document.document_id,
+                "parent_id": parent_id,
+                "title": document.title,
+                "content": document.text,
+                "retrieval_content": document.text,
+                "metadata": dict(metadata, paper_id=paper_id),
+            }
+        )
+    parents = []
+    for parent in grouped.values():
+        payload = dict(parent)
+        payload["content"] = "\n".join(payload.pop("content_parts"))
+        parents.append(payload)
+    return parents + children
 
 
 def _summarize(rows, top_k, bootstrap_samples, seed):
