@@ -13,12 +13,12 @@
 | 阶段 | 状态 | 证据 |
 | --- | --- | --- |
 | Task 1-4 / P1 | 已完成 | `119 tests OK`；规格、质量评审通过；PIM/SciFact/QASPER Retrieval 已运行 |
-| Task 5-6 / P2 | 进行中 | 选择性重排、Coverage、冲突与有限纠错 |
+| Task 5-6 / P2 | 已完成 | SciFact/QASPER 配对评测完成；选择性重排、recall-safe Coverage、冲突/拒答治理已验收 |
 | Task 7-8 / P3 | 待执行 | Claim-Citation 与 QASPER Answer |
 | Task 9-11 / P4 | 待执行 | ACL、韧性、可观测性、Release Gate |
 | Task 12-13 | 待执行 | 文档、UI、全量验证、交付 |
 
-P1 结果见 `docs/RAG_BADCASE_PROGRESSIVE_RESULTS.md`。冻结 v5.5 基线缺 query/qrels 指纹，因此当前候选结果仅用于无回归与案例证据，不计算未经审计的 delta。
+P1/P2 结果见 `docs/RAG_BADCASE_PROGRESSIVE_RESULTS.md`。P1 对冻结 v5.5 基线不可比；P2 对指纹一致的 P1 运行做 2000 次配对 Bootstrap 比较。
 
 ---
 
@@ -226,7 +226,7 @@ Commit: `feat: complete P1 retrieval improvements`
 - Create: `tests/test_evidence_governance.py`
 - Create: `tests/fixtures/evidence_governance_badcases.json`
 
-- [ ] **Step 1: 写选择性 rerank 与 MMR 测试**
+- [x] **Step 1: 写选择性 rerank 与 MMR 测试**
 
 ```python
 decision = RerankPolicy(max_p95_ms=800).decide(features)
@@ -237,12 +237,12 @@ selected = select_evidence(candidates, top_k=3, lambda_mmr=0.65)
 assert len({item["parent_id"] for item in selected}) >= 2
 ```
 
-- [ ] **Step 2: 确认测试失败后实现 policy、MMR 和 coverage score**
+- [x] **Step 2: 确认测试失败后实现 policy、MMR 和 coverage score**
 
 Policy 输入 answer risk、BM25/Dense overlap、RRF margin、候选数、缓存状态和延迟预算；输出
 `enabled/reason/candidate_count/model/latency_budget_ms`。不增加 never/always 产品开关。
 
-- [ ] **Step 3: 集成 Pipeline 并提交**
+- [x] **Step 3: 集成 Pipeline 并提交**
 
 Run: `D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_evidence_governance tests.test_retrieval_pipeline -q`
 
@@ -255,7 +255,7 @@ Commit: `feat: add selective rerank and evidence coverage`
 - Modify: `knowledge_storm/retrieval_pipeline.py`
 - Modify: `tests/test_evidence_governance.py`
 
-- [ ] **Step 1: 写无答案、条件冲突和最大纠错轮数测试**
+- [x] **Step 1: 写无答案、条件冲突和最大纠错轮数测试**
 
 ```python
 assessment = assessor.assess(query, evidence)
@@ -264,19 +264,21 @@ assert assessment.next_action == "present_conflict"
 assert assessment.max_corrections == 1
 ```
 
-- [ ] **Step 2: 实现 EvidenceAssessment schema**
+- [x] **Step 2: 实现 EvidenceAssessment schema**
 
 字段为 `relevance/coverage/answerability/conflicts/confidence/failure_type/next_action`。纠错动作只允许
 `rewrite/expand_candidates/switch_source/abstain/present_conflict`，且最多一轮。
 
-- [ ] **Step 3: 运行 P2 回归与受影响评测**
+- [x] **Step 3: 运行 P2 回归与受影响评测**
 
 运行 SciFact Retrieval、QASPER Retrieval、无答案/冲突治理集；不运行 QASPER Answer 和
 LongMemEval-S。输出 `P1+P2` 对 P1 的质量-P95 delta。
 
-- [ ] **Step 4: 输出 Case Dossier 并提交**
+- [x] **Step 4: 输出 Case Dossier 并提交**
 
 至少输出 QASPER 多证据、文献条件冲突和无答案误答案例。
+
+完成证据：最终运行目录为 `C:\Users\yzy\Desktop\codex\paperstorm-benchmarks\p2\runs\2026-08-26-final-recall-safe`。SciFact Recall@10 较 P1 +0.0149，QASPER Recall@5 +0.0469；配对 95% CI 均不跨 0；治理固定集 3/3 通过。两次失败候选及具体改善/退化 case 已记录于 `docs/RAG_BADCASE_PROGRESSIVE_RESULTS.md`。
 
 Commit: `feat: complete P2 evidence governance`
 
