@@ -10,8 +10,10 @@ from pathlib import Path
 from knowledge_storm.evaluation.public_benchmarks.base import BenchmarkDataset
 from knowledge_storm.evaluation.public_benchmarks.qasper import (
     load_qasper_huggingface,
+    load_qasper_official_json,
 )
 from knowledge_storm.evaluation.public_benchmarks.qasper_generation import (
+    LiteLLMClaimVerifier,
     LiteLLMJsonGenerator,
     complete_qasper_rankings,
     load_rankings,
@@ -35,7 +37,11 @@ def build_parser():
         "--cache-dir",
         default=str(Path.home() / ".cache" / "paperstorm"),
     )
-    parser.add_argument("--retrieval-mode", default="hybrid_rerank")
+    parser.add_argument(
+        "--dataset-file",
+        help="本地 QASPER official v0.3 JSON；提供后不访问 Hugging Face",
+    )
+    parser.add_argument("--retrieval-mode", default="hybrid_governed")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--smoke-limit", type=int)
     parser.add_argument("--limit", type=int)
@@ -56,7 +62,7 @@ def build_parser():
         "--api-base",
         default=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
     )
-    parser.add_argument("--max-tokens", type=int, default=256)
+    parser.add_argument("--max-tokens", type=int, default=768)
     parser.add_argument("--timeout", type=int, default=45)
     parser.add_argument("--max-attempts", type=int, default=4)
     parser.add_argument("--parse-attempts", type=int, default=2)
@@ -65,6 +71,12 @@ def build_parser():
     )
     parser.add_argument(
         "--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2"
+    )
+    parser.add_argument(
+        "--claim-validation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="启用结构化 claim-citation 生成和一次批量证据验证",
     )
     return parser
 
@@ -75,10 +87,13 @@ def main(argv=None):
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = Path(args.cache_dir)
-    dataset = load_qasper_huggingface(
-        split=args.split,
-        cache_dir=cache_dir / "datasets",
-    )
+    if args.dataset_file:
+        dataset = load_qasper_official_json(args.dataset_file, split=args.split)
+    else:
+        dataset = load_qasper_huggingface(
+            split=args.split,
+            cache_dir=cache_dir / "datasets",
+        )
     dataset = _subset(dataset, args.limit or args.smoke_limit)
     rankings = load_rankings(args.retrieval_predictions, mode=args.retrieval_mode)
     rankings.update(_read_ranking_checkpoint(output_dir / "rankings.jsonl"))
@@ -114,6 +129,7 @@ def main(argv=None):
         timeout=args.timeout,
         max_attempts=args.max_attempts,
     )
+    claim_verifier = LiteLLMClaimVerifier(generator) if args.claim_validation else None
     completed = {"count": 0}
 
     def progress(row):
@@ -140,6 +156,7 @@ def main(argv=None):
         parse_attempts=args.parse_attempts,
         context_mode=args.context_mode,
         input_budget_tokens=args.input_budget_tokens,
+        claim_verifier=claim_verifier,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return report

@@ -8,8 +8,16 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ...answer_validation import (
+    AnswerDraft,
+    AnswerSchemaError,
+    AnswerValidator,
+    Citation,
+    Claim,
+)
 
-PROMPT_VERSION = "qasper-grounded-json-v2"
+
+PROMPT_VERSION = "qasper-grounded-json-v3"
 
 
 class LiteLLMJsonGenerator:
@@ -60,9 +68,14 @@ class LiteLLMJsonGenerator:
                 response = self.completion(**kwargs)
                 choice = response["choices"][0]
                 message = choice.get("message") or {}
+                usage = _usage_dict(response.get("usage") or {})
+                hidden = response.get("_hidden_params") or {}
+                if not isinstance(hidden, dict):
+                    hidden = getattr(response, "_hidden_params", {}) or {}
+                usage["cost_usd"] = float(hidden.get("response_cost") or 0.0)
                 return {
                     "text": str(message.get("content") or ""),
-                    "usage": _usage_dict(response.get("usage") or {}),
+                    "usage": usage,
                     "response_id": str(response.get("id") or ""),
                 }
             except Exception as exc:
@@ -70,6 +83,43 @@ class LiteLLMJsonGenerator:
                 if attempt + 1 < self.max_attempts:
                     self.sleep(min(30, 2**attempt))
         raise last_error
+
+
+class LiteLLMClaimVerifier:
+    """Batch all claims from one answer into one evidence-bounded verifier call."""
+
+    def __init__(self, generate):
+        if not callable(generate):
+            raise TypeError("generate must be callable")
+        self.generate = generate
+
+    def __call__(self, question, draft, documents):
+        return self.generate(build_claim_verification_prompt(question, draft, documents))
+
+
+def build_claim_verification_prompt(question, draft, documents):
+    evidence = "\n\n".join(
+        "evidence_id={0}\n{1}".format(document.document_id, document.text)
+        for document in documents
+    ) or "No evidence was retrieved."
+    claims = "\n".join(
+        "claim_id={0}; citation_ids={1}; text={2}".format(
+            claim.claim_id,
+            json.dumps(
+                [citation.citation_id for citation in claim.citations],
+                ensure_ascii=False,
+            ),
+            claim.text,
+        )
+        for claim in draft.claims
+    ) or "No claims."
+    return (
+        "Act as a scientific claim verifier. Judge each claim only against its cited "
+        "evidence. Allowed verdicts: entailed, partial, contradicted, unsupported. "
+        "Return strict JSON with one key assessments. assessments must contain exactly "
+        "one object per claim with claim_id, verdict, rationale. Do not use outside "
+        "knowledge.\n\nQuestion:\n{0}\n\nClaims:\n{1}\n\nEvidence:\n{2}\n\nJSON:"
+    ).format(question, claims, evidence)
 
 
 def complete_qasper_rankings(
@@ -142,6 +192,7 @@ def run_qasper_generation(
     parse_attempts=2,
     context_mode="topk",
     input_budget_tokens=None,
+    claim_verifier=None,
 ):
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -186,7 +237,9 @@ def run_qasper_generation(
                 document_map[document_id] for document_id in ranked_documents
             ]
         prompt = build_qasper_prompt(
-            case.query, selected_documents
+            case.query,
+            selected_documents,
+            structured_claims=claim_verifier is not None,
         )
         started = time.perf_counter()
         text = ""
@@ -196,27 +249,56 @@ def run_qasper_generation(
         generation_attempts = 0
         try:
             parsed = None
+            grounded_draft = None
+            generation_prompt = prompt
             for generation_attempts in range(1, max(1, int(parse_attempts)) + 1):
-                generated = generate(prompt)
+                generated = generate(generation_prompt)
                 text, call_usage = _generation_payload(generated)
                 usage = _merge_usage(usage, call_usage)
                 raw_responses.append(text)
                 try:
                     parsed = parse_generation_json(text)
+                    if claim_verifier is not None:
+                        grounded_draft = _parse_grounded_qasper_draft(
+                            parsed, selected_documents
+                        )
                     break
                 except (json.JSONDecodeError, ValueError) as exc:
                     parse_errors.append("{0}: {1}".format(type(exc).__name__, exc))
                     if generation_attempts >= max(1, int(parse_attempts)):
                         raise
-            cited_ids = [
-                str(value)
-                for value in parsed.get("evidence_ids") or []
-                if str(value) in ranked_documents
-            ]
-            abstained = bool(parsed.get("abstained")) or _is_unanswerable(
-                parsed.get("answer")
-            )
-            answer = "Unanswerable" if abstained else str(parsed.get("answer") or "")
+                    generation_prompt = _schema_repair_prompt(prompt, text, exc)
+            claim_validation = None
+            if claim_verifier is not None:
+                draft = grounded_draft
+                verification, verification_usage = _run_claim_verifier(
+                    claim_verifier,
+                    case.query,
+                    draft,
+                    selected_documents,
+                )
+                usage = _merge_usage(usage, verification_usage)
+                validator = AnswerValidator(
+                    lambda claim, _registry: verification[claim.claim_id]
+                )
+                registry = _citation_registry(selected_documents)
+                validated = validator.validate(draft, registry)
+                claim_validation = validated.to_dict()
+                cited_ids = list(_draft_citation_ids(validated.draft))
+                abstained = validated.draft.refusal
+                answer = (
+                    "Unanswerable" if abstained else validated.draft.answer
+                )
+            else:
+                cited_ids = [
+                    str(value)
+                    for value in parsed.get("evidence_ids") or []
+                    if str(value) in ranked_documents
+                ]
+                abstained = bool(parsed.get("abstained")) or _is_unanswerable(
+                    parsed.get("answer")
+                )
+                answer = "Unanswerable" if abstained else str(parsed.get("answer") or "")
             status = "succeeded"
             error = None
         except Exception as exc:
@@ -225,6 +307,7 @@ def run_qasper_generation(
             abstained = False
             status = "failed"
             error = "{0}: {1}".format(type(exc).__name__, exc)
+            claim_validation = None
         row = {
             "case_id": case.case_id,
             "split": case.split,
@@ -256,6 +339,15 @@ def run_qasper_generation(
             "model": model_name,
             "prompt_version": prompt_version,
         }
+        if claim_validation is not None:
+            row["claim_validation"] = claim_validation
+            row["unsupported_claim_count"] = sum(
+                assessment.get("verdict") in {"unsupported", "contradicted"}
+                for assessment in claim_validation.get("assessments") or []
+            )
+            row["failure_type"] = (
+                "unsupported_claims" if row["unsupported_claim_count"] else ""
+            )
         _append_jsonl(checkpoint_path, row)
         existing[case.case_id] = row
         if on_prediction is not None:
@@ -308,7 +400,7 @@ def _trim_to_budget(documents, budget_tokens):
     return selected or (documents[:1] if documents else [])
 
 
-def build_qasper_prompt(question, documents):
+def build_qasper_prompt(question, documents, structured_claims=False):
     evidence = []
     for index, document in enumerate(documents, start=1):
         evidence.append(
@@ -317,15 +409,130 @@ def build_qasper_prompt(question, documents):
             )
         )
     evidence_text = "\n\n".join(evidence) or "No evidence was retrieved."
+    if structured_claims:
+        contract = (
+            "Return strict JSON with exactly these keys: answer, answer_type, "
+            "claims, uncertainty, refusal, abstain_reason. Each claims item must "
+            "contain exactly claim_id, text, citation_ids. citation_ids may only "
+            "use evidence_id values shown below. uncertainty is a number in [0,1]. "
+            "For insufficient evidence set answer_type to refusal, refusal to true, "
+            "claims to [], and provide abstain_reason."
+        )
+    else:
+        contract = (
+            "Return strict JSON with keys answer, abstained, and evidence_ids."
+        )
     return (
         "You answer questions about one scientific paper. Use only the supplied "
         "evidence. Return the shortest directly supported answer span or comma-separated "
         "list, never an explanation. For yes/no questions return exactly Yes or No. "
         "Infer a Yes or No when the evidence directly establishes it. Return "
         "Unanswerable only when none of the evidence addresses the question. Cite only evidence_id "
-        "values shown below. Return strict JSON with keys answer, abstained, and "
-        "evidence_ids.\n\nQuestion:\n{0}\n\nEvidence:\n{1}\n\nJSON:"
-    ).format(question, evidence_text)
+        "values shown below. {0}\n\nQuestion:\n{1}\n\nEvidence:\n{2}\n\nJSON:"
+    ).format(contract, question, evidence_text)
+
+
+def _schema_repair_prompt(original_prompt, previous_response, error):
+    return (
+        "{0}\n\nThe previous response violated the required JSON contract. "
+        "Correct only the schema/type errors and return the complete JSON object again. "
+        "Do not add markdown.\nValidation error: {1}\nPrevious response:\n{2}"
+    ).format(original_prompt, error, previous_response)
+
+
+def _parse_grounded_qasper_draft(payload, documents):
+    if not isinstance(payload, dict):
+        raise AnswerSchemaError("QASPER answer must be an object")
+    required = {
+        "answer", "answer_type", "claims", "uncertainty", "refusal",
+        "abstain_reason",
+    }
+    missing = required - set(payload)
+    unknown = set(payload) - required
+    if missing or unknown:
+        raise AnswerSchemaError(
+            "QASPER answer fields mismatch; missing={0}, unknown={1}".format(
+                sorted(missing), sorted(unknown)
+            )
+        )
+    registry = _citation_registry(documents)
+    claims = []
+    for raw_claim in payload.get("claims") or []:
+        if not isinstance(raw_claim, dict):
+            raise AnswerSchemaError("QASPER claim must be an object")
+        if set(raw_claim) != {"claim_id", "text", "citation_ids"}:
+            raise AnswerSchemaError("QASPER claim fields mismatch")
+        citation_ids = raw_claim.get("citation_ids")
+        if not isinstance(citation_ids, list) or any(
+            not isinstance(value, str) for value in citation_ids
+        ):
+            raise AnswerSchemaError("QASPER citation_ids must be a string array")
+        claims.append(
+            Claim(
+                claim_id=str(raw_claim.get("claim_id") or ""),
+                text=str(raw_claim.get("text") or ""),
+                citations=tuple(
+                    registry[value] for value in citation_ids if value in registry
+                ),
+            ).to_dict()
+        )
+    return AnswerDraft.from_dict(dict(payload, claims=claims))
+
+
+def _citation_registry(documents):
+    registry = {}
+    for document in documents:
+        metadata = dict(document.metadata or {})
+        citation = Citation(
+            citation_id=str(document.document_id),
+            source_id=str(metadata.get("paper_id") or document.document_id),
+            span=str(metadata.get("raw_text") or document.text),
+            title=str(document.title or document.document_id),
+            authors=tuple(str(value) for value in metadata.get("authors") or ()),
+            page=metadata.get("page"),
+            section=str(metadata.get("section") or "") or None,
+            url=str(metadata.get("url") or "") or None,
+        )
+        registry[citation.citation_id] = citation
+    return registry
+
+
+def _run_claim_verifier(verifier, question, draft, documents):
+    result = verifier(question, draft, documents)
+    usage = {}
+    if isinstance(result, dict) and "text" in result:
+        usage = _usage_dict(result.get("usage") or {})
+        result = parse_generation_json(result.get("text"))
+    elif isinstance(result, dict):
+        usage = _usage_dict(result.get("usage") or {})
+    if not isinstance(result, dict) or not isinstance(result.get("assessments"), list):
+        raise AnswerSchemaError("Claim verifier must return assessments")
+    expected = {claim.claim_id for claim in draft.claims}
+    assessments = {}
+    for item in result["assessments"]:
+        if not isinstance(item, dict) or set(item) != {"claim_id", "verdict", "rationale"}:
+            raise AnswerSchemaError("Claim assessment fields mismatch")
+        claim_id = str(item["claim_id"])
+        if claim_id in assessments or claim_id not in expected:
+            raise AnswerSchemaError("Claim verifier returned duplicate or unknown claim_id")
+        assessments[claim_id] = {
+            "verdict": item["verdict"],
+            "rationale": item["rationale"],
+        }
+    if set(assessments) != expected:
+        raise AnswerSchemaError("Claim verifier did not assess every claim")
+    return assessments, usage
+
+
+def _draft_citation_ids(draft):
+    output = []
+    seen = set()
+    for claim in draft.claims:
+        for citation in claim.citations:
+            if citation.citation_id not in seen:
+                output.append(citation.citation_id)
+                seen.add(citation.citation_id)
+    return tuple(output)
 
 
 def parse_generation_json(text):
@@ -369,11 +576,19 @@ def _repair_bare_evidence_ids(value):
 
 
 def official_qasper_metrics(cases, predictions):
+    cases = tuple(cases)
     answer_scores = []
     evidence_scores = []
+    citation_precisions = []
+    citation_recalls = []
+    claim_verdicts = []
     by_type = {"extractive": [], "abstractive": [], "boolean": [], "none": []}
+    by_shape = {"single": [], "list": [], "comparison": []}
     missing = 0
     exact_matches = []
+    abstained_count = 0
+    correct_abstentions = 0
+    unanswerable_count = sum(bool(case.unanswerable) for case in cases)
     for case in cases:
         prediction = predictions.get(case.case_id)
         if not prediction or prediction.get("status") == "failed":
@@ -382,6 +597,10 @@ def official_qasper_metrics(cases, predictions):
             evidence_scores.append(0.0)
             exact_matches.append(0.0)
             continue
+        predicted_abstention = bool(prediction.get("abstained"))
+        if predicted_abstention:
+            abstained_count += 1
+            correct_abstentions += int(bool(case.unanswerable))
         references = _references(case)
         scored = [
             (
@@ -391,13 +610,17 @@ def official_qasper_metrics(cases, predictions):
                     _normalize_answer(prediction.get("answer", ""))
                     == _normalize_answer(reference["answer"])
                 ),
+                reference,
             )
             for reference in references
         ]
-        best_answer, answer_type, exact = max(scored, key=lambda item: item[0])
+        best_answer, answer_type, exact, best_reference = max(
+            scored, key=lambda item: item[0]
+        )
         answer_scores.append(best_answer)
         exact_matches.append(exact)
         by_type.setdefault(answer_type, []).append(best_answer)
+        by_shape[_answer_shape(case.query, best_reference)].append(best_answer)
         use_text_evidence = "evidence_texts" in prediction and any(
             "evidence_texts" in reference for reference in references
         )
@@ -417,16 +640,90 @@ def official_qasper_metrics(cases, predictions):
                 for reference in references
             )
         )
+        predicted_ids = set(prediction.get("evidence_ids") or ())
+        reference_id_sets = [
+            set(reference.get("evidence_ids") or ()) for reference in references
+        ] or [set()]
+        citation_pairs = [
+            _set_precision_recall(predicted_ids, expected)
+            for expected in reference_id_sets
+        ]
+        citation_precision, citation_recall = max(
+            citation_pairs, key=lambda item: _harmonic_mean(*item)
+        )
+        citation_precisions.append(citation_precision)
+        citation_recalls.append(citation_recall)
+        for assessment in (
+            (prediction.get("claim_validation") or {}).get("assessments") or ()
+        ):
+            verdict = str(assessment.get("verdict") or "").strip().lower()
+            if verdict:
+                claim_verdicts.append(verdict)
+    supported_claims = sum(verdict == "entailed" for verdict in claim_verdicts)
+    unsupported_claims = sum(
+        verdict in {"unsupported", "contradicted"} for verdict in claim_verdicts
+    )
+    validated_claim_count = len(claim_verdicts)
     return {
-        "case_count": len(tuple(cases)),
+        "case_count": len(cases),
         "answer_f1": _mean(answer_scores),
         "answer_exact_match": _mean(exact_matches),
         "answer_f1_by_type": {
             name: _mean(values) for name, values in by_type.items()
         },
+        "answer_f1_by_shape": {
+            name: _mean(values) for name, values in by_shape.items()
+        },
         "evidence_f1": _mean(evidence_scores),
+        "citation_precision": _mean(citation_precisions),
+        "citation_recall": _mean(citation_recalls),
+        "validated_claim_count": validated_claim_count,
+        "claim_support_rate": (
+            round(supported_claims / validated_claim_count, 6)
+            if validated_claim_count else 0.0
+        ),
+        "unsupported_claim_rate": (
+            round(unsupported_claims / validated_claim_count, 6)
+            if validated_claim_count else 0.0
+        ),
+        "abstention_precision": (
+            round(correct_abstentions / abstained_count, 6)
+            if abstained_count else 0.0
+        ),
+        "abstention_recall": (
+            round(correct_abstentions / unanswerable_count, 6)
+            if unanswerable_count else 0.0
+        ),
         "missing_predictions": missing,
     }
+
+
+def _set_precision_recall(predicted, expected):
+    if not predicted and not expected:
+        return 1.0, 1.0
+    overlap = len(set(predicted) & set(expected))
+    precision = overlap / len(predicted) if predicted else 0.0
+    recall = overlap / len(expected) if expected else 0.0
+    return precision, recall
+
+
+def _harmonic_mean(left, right):
+    return 2 * left * right / (left + right) if left + right else 0.0
+
+
+def _answer_shape(question, reference):
+    normalized = str(question or "").lower()
+    comparison_terms = (
+        "compare", "comparison", "difference", "different", "similar",
+        "versus", " vs ", "相比", "区别", "异同",
+    )
+    if any(term in normalized for term in comparison_terms):
+        return "comparison"
+    if reference.get("answer_type") == "extractive" and "," in str(
+        reference.get("answer") or ""
+    ):
+        return "list"
+    return "single"
 
 
 def load_rankings(path, mode="hybrid_rerank"):
@@ -528,19 +825,26 @@ def _usage_dict(usage):
             usage = dict(usage)
         except (TypeError, ValueError):
             usage = {}
-    return {
+    output = {
         key: int(usage.get(key) or 0)
         for key in ("prompt_tokens", "completion_tokens", "total_tokens")
     }
+    output["cost_usd"] = float(usage.get("cost_usd") or 0.0)
+    return output
 
 
 def _merge_usage(left, right):
     left = _usage_dict(left)
     right = _usage_dict(right)
-    return {
+    output = {
         key: int(left.get(key) or 0) + int(right.get(key) or 0)
         for key in ("prompt_tokens", "completion_tokens", "total_tokens")
     }
+    output["cost_usd"] = round(
+        float(left.get("cost_usd") or 0.0) + float(right.get("cost_usd") or 0.0),
+        10,
+    )
+    return output
 
 
 def _is_unanswerable(answer):
@@ -574,7 +878,12 @@ def _write_json(path, value):
 
 
 def _sum_usage(rows):
-    output = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    output = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "cost_usd": 0.0,
+    }
     for row in rows:
         usage = row.get("usage") or {}
         output["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
@@ -584,6 +893,8 @@ def _sum_usage(rows):
             or int(usage.get("prompt_tokens") or 0)
             + int(usage.get("completion_tokens") or 0)
         )
+        output["cost_usd"] += float(usage.get("cost_usd") or 0.0)
+    output["cost_usd"] = round(output["cost_usd"], 10)
     return output
 
 

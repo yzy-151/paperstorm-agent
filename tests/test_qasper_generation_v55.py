@@ -362,6 +362,7 @@ class QasperGenerationRunnerTest(unittest.TestCase):
                 {
                     "id": "response-1",
                     "choices": [{"message": {"content": '{"answer":"yes"}'}}],
+                    "_hidden_params": {"response_cost": 0.00012},
                     "usage": {
                         "prompt_tokens": 12,
                         "completion_tokens": 3,
@@ -382,6 +383,7 @@ class QasperGenerationRunnerTest(unittest.TestCase):
         result = generator("prompt")
 
         self.assertEqual(result["usage"]["total_tokens"], 15)
+        self.assertEqual(result["usage"]["cost_usd"], 0.00012)
         self.assertNotIn("secret-key", json.dumps(result))
         self.assertEqual(completion.call_count, 2)
 
@@ -404,9 +406,26 @@ class QasperGenerationCliTest(unittest.TestCase):
         )
 
         self.assertEqual(args.split, "validation")
-        self.assertEqual(args.retrieval_mode, "hybrid_rerank")
+        self.assertEqual(args.retrieval_mode, "hybrid_governed")
         self.assertEqual(args.model, "deepseek/deepseek-chat")
         self.assertEqual(args.smoke_limit, 20)
+        self.assertTrue(args.claim_validation)
+
+    def test_cli_accepts_official_local_dataset(self):
+        from examples.storm_examples.run_qasper_answer_benchmark import build_parser
+
+        args = build_parser().parse_args(
+            [
+                "--split", "test",
+                "--retrieval-predictions", "retrieval.jsonl",
+                "--output-dir", "answers",
+                "--dataset-file", "qasper-test-v0.3.json",
+                "--no-claim-validation",
+            ]
+        )
+
+        self.assertEqual(args.dataset_file, "qasper-test-v0.3.json")
+        self.assertFalse(args.claim_validation)
 
 
 if __name__ == "__main__":
