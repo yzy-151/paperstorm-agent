@@ -32,7 +32,7 @@ class RerankDecision:
 
 
 class RerankPolicy:
-    """Enable risky reranks; ``rerank_hit`` may reuse cached work over budget."""
+    """Enable risky reranks only when the observed P95 fits the budget."""
 
     def __init__(
         self,
@@ -74,17 +74,15 @@ class RerankPolicy:
                 budget,
             )
         if budget and observed_p95 > budget:
-            if str(values.get("cache_state", "")).strip().casefold() == "rerank_hit":
-                return RerankDecision(
-                    True,
-                    "latency_budget_exceeded_cached_rerank",
-                    candidate_count,
-                    self.model,
-                    budget,
-                )
+            cache_hit = (
+                str(values.get("cache_state", "")).strip().casefold()
+                == "rerank_hit"
+            )
             return RerankDecision(
                 False,
-                "latency_budget_exceeded_cache_miss",
+                "latency_budget_exceeded_cache_{0}".format(
+                    "hit" if cache_hit else "miss"
+                ),
                 candidate_count,
                 self.model,
                 budget,

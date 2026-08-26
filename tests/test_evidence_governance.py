@@ -32,7 +32,7 @@ class EvidenceGovernanceTest(unittest.TestCase):
         self.assertEqual("test-cross-encoder", decision.model)
         self.assertEqual(800, decision.latency_budget_ms)
 
-    def test_policy_reuses_cached_rerank_when_latency_budget_is_exceeded(self):
+    def test_policy_disables_cached_rerank_when_latency_budget_is_exceeded(self):
         from knowledge_storm.evidence_governance import RerankPolicy
 
         decision = RerankPolicy(model="test-cross-encoder").decide(
@@ -47,8 +47,8 @@ class EvidenceGovernanceTest(unittest.TestCase):
             }
         )
 
-        self.assertTrue(decision.enabled)
-        self.assertEqual("latency_budget_exceeded_cached_rerank", decision.reason)
+        self.assertFalse(decision.enabled)
+        self.assertEqual("latency_budget_exceeded_cache_hit", decision.reason)
 
     def test_policy_selectively_enables_only_high_risk_uncertain_requests(self):
         from knowledge_storm.evidence_governance import RerankPolicy
@@ -226,23 +226,37 @@ class EvidenceGovernanceTest(unittest.TestCase):
                     {"chunk_id": "b", "content": "b", "score": 0.7},
                 ]
 
+        class Reranker:
+            def __init__(self):
+                self.call_count = 0
+
+            def rerank(self, _query, candidates, top_k=None):
+                self.call_count += 1
+                return [
+                    dict(item, rerank_score=1.0)
+                    for item in candidates[:top_k]
+                ]
+
+        reranker = Reranker()
         result = RetrievalPipeline(
-            Index(), rerank_policy=RerankPolicy(max_p95_ms=5)
+            Index(), reranker=reranker, rerank_policy=RerankPolicy(max_p95_ms=5)
         ).search(
             RetrievalRequest(
                 query="budget",
                 governance_features={
                     "answer_risk": 0.9,
                     "bm25_dense_overlap": 0.1,
+                    "cache_state": "rerank_hit",
                     "observed_p95_ms": 6,
                 },
             )
         )
 
         self.assertEqual(
-            "latency_budget_exceeded_cache_miss",
+            "latency_budget_exceeded_cache_hit",
             result["rerank_decision"]["reason"],
         )
+        self.assertEqual(0, reranker.call_count)
 
 
 if __name__ == "__main__":
