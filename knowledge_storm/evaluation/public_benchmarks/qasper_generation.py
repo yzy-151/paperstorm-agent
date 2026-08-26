@@ -134,6 +134,8 @@ def complete_qasper_rankings(
     """Fill missing rankings with paper-scoped retrieval."""
     from ...retrieval import HybridPaperIndex
 
+    index_mode = "hybrid" if mode == "hybrid_governed" else mode
+
     rankings = {
         str(case_id): [str(value) for value in values]
         for case_id, values in (initial_rankings or {}).items()
@@ -168,7 +170,7 @@ def complete_qasper_rankings(
         for case in cases:
             results = index.search(
                 case.query,
-                mode=mode,
+                mode=index_mode,
                 top_k=max(1, int(top_k)),
                 candidate_k=max(20, int(top_k) * 4),
                 reranker=reranker,

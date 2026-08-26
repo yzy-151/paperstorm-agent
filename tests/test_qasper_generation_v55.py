@@ -351,6 +351,27 @@ class QasperGenerationRunnerTest(unittest.TestCase):
 
         self.assertEqual(rankings, {"q1": ["a1"], "q2": ["b1"]})
 
+    def test_governed_label_uses_hybrid_for_missing_ranking_completion(self):
+        from knowledge_storm.evaluation.public_benchmarks.base import (
+            BenchmarkCase, BenchmarkDataset, BenchmarkDocument,
+        )
+        from knowledge_storm.evaluation.public_benchmarks.qasper_generation import (
+            complete_qasper_rankings,
+        )
+        from knowledge_storm.evaluation.public_benchmarks.runner import HashEmbeddingProvider
+
+        dataset = BenchmarkDataset(
+            "qasper", "fixture",
+            (BenchmarkDocument("p1", "Paper", "alpha", {"paper_id": "paper"}),),
+            (BenchmarkCase("q1", "alpha", (), "test", metadata={"paper_id": "paper"}),),
+        )
+
+        rankings = complete_qasper_rankings(
+            dataset, {}, HashEmbeddingProvider(), mode="hybrid_governed", top_k=1
+        )
+
+        self.assertEqual(rankings, {"q1": ["p1"]})
+
     def test_litellm_generator_retries_and_returns_usage_without_key_leakage(self):
         from knowledge_storm.evaluation.public_benchmarks.qasper_generation import (
             LiteLLMJsonGenerator,
