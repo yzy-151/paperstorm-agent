@@ -5,6 +5,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from .answer_validation import (
+    AnswerValidator,
+    Citation,
+    ClaimVerdict,
+    parse_answer_draft,
+)
 from .paperstorm_memory import PaperStormMemoryStore
 from .paperstorm_sources import load_article_passages
 
@@ -80,8 +86,10 @@ class PaperStormKnowledgeBase:
         question: str,
         memory_store: Optional[PaperStormMemoryStore] = None,
         top_k: int = 3,
-        answer_generator: Optional[Callable[[str], str]] = None,
+        answer_generator: Optional[Callable[[str], object]] = None,
         retrieval_options: Optional[Dict] = None,
+        answer_validator: Optional[AnswerValidator] = None,
+        answer_parse_retry: Optional[Callable] = None,
     ):
         question = str(question or "").strip()
         if not question:
@@ -95,26 +103,58 @@ class PaperStormKnowledgeBase:
             else {}
         )
         answer = _compose_answer(question, evidence, memory_context)
+        validation_metadata = None
+        citations = [
+            _citation_from_doc(index, doc)
+            for index, doc in enumerate(evidence, start=1)
+        ]
         if answer_generator is not None:
-            try:
-                generated = str(
-                    answer_generator(_kb_answer_prompt(question, evidence)) or ""
-                ).strip()
-                if generated:
-                    answer = generated
-            except Exception:
-                pass
-        return {
+            if answer_validator is None:
+                try:
+                    generated = str(
+                        answer_generator(_kb_answer_prompt(question, evidence)) or ""
+                    ).strip()
+                    if generated:
+                        answer = generated
+                except Exception:
+                    pass
+            else:
+                raw_draft = answer_generator(
+                    _kb_answer_draft_prompt(question, evidence)
+                )
+                draft = parse_answer_draft(
+                    raw_draft,
+                    retry=answer_parse_retry,
+                )
+                validation = answer_validator.validate(
+                    draft, _answer_citation_registry(evidence)
+                )
+                answer = validation.draft.answer
+                citations = _validated_citations(validation.draft.claims)
+                validation_metadata = _answer_validation_metadata(validation)
+        elif answer_validator is not None:
+            raise ValueError("answer_validator requires answer_generator")
+
+        retrieval_metadata = _json_safe_copy(self.retrieval_meta)
+        payload = {
             "question": question,
             "answer": answer,
-            "citations": [_citation_from_doc(index, doc) for index, doc in enumerate(evidence, start=1)],
-            "grounded": bool(evidence),
+            "citations": citations,
+            "grounded": bool(citations) if validation_metadata is not None else bool(evidence),
             "memory_context": memory_context,
             "evidence": evidence,
             "retrieval_stack": self.retrieval_meta.get("stack", ""),
             "retrieval_mode": self.retrieval_meta.get("mode", ""),
-            "retrieval_metadata": _json_safe_copy(self.retrieval_meta),
+            "retrieval_metadata": retrieval_metadata,
         }
+        if validation_metadata is not None:
+            payload["answer_validation"] = validation_metadata
+            payload["failure_type"] = validation_metadata["failure_type"]
+            payload["unsupported_claim_count"] = validation_metadata[
+                "unsupported_claim_count"
+            ]
+            retrieval_metadata["answer_validation"] = validation_metadata
+        return payload
 
     def search(self, query: str, top_k: int = 3, **retrieval_options):
         if self.retrieval_pipeline is not None:
@@ -223,6 +263,143 @@ def _kb_answer_prompt(question: str, evidence: List[Dict]) -> str:
         )
     lines.append("回答：")
     return "\n".join(lines)
+
+
+def _kb_answer_draft_prompt(question: str, evidence: List[Dict]) -> str:
+    registry = _answer_citation_registry(evidence)
+    evidence_payload = [item.to_dict() for item in registry.values()]
+    contract = {
+        "answer": "final answer text",
+        "answer_type": "extractive|abstractive|boolean|list|comparison|factoid|refusal",
+        "claims": [
+            {
+                "claim_id": "stable unique ID",
+                "text": "one atomic claim",
+                "citations": [
+                    {
+                        "citation_id": "ID selected from evidence",
+                        "source_id": "copy from evidence",
+                        "span": "copy exact evidence span",
+                        "title": "copy exact title",
+                        "authors": ["copy exact authors"],
+                        "page": "copy page or null",
+                        "section": "copy section or null",
+                        "url": "copy URL or null",
+                    }
+                ],
+            }
+        ],
+        "uncertainty": "number from 0 to 1",
+        "refusal": False,
+        "abstain_reason": None,
+    }
+    return "\n".join(
+        [
+            "Answer the question only from the supplied evidence.",
+            "Return one JSON object matching the schema exactly; no markdown fence.",
+            "Use atomic claims. Cite only supplied citation_id values.",
+            "If evidence is insufficient, set answer_type='refusal', refusal=true, "
+            "provide abstain_reason, and return no unsupported claims.",
+            "Question: {0}".format(question),
+            "Schema: {0}".format(json.dumps(contract, ensure_ascii=False)),
+            "Evidence: {0}".format(
+                json.dumps(evidence_payload, ensure_ascii=False)
+            ),
+        ]
+    )
+
+
+def _answer_citation_registry(evidence: List[Dict]):
+    registry = {}
+    for index, doc in enumerate(evidence or [], start=1):
+        metadata = doc.get("metadata") or {}
+        span = str(doc.get("content") or doc.get("expanded_content") or "").strip()
+        if not span:
+            continue
+        citation_id = str(index)
+        registry[citation_id] = Citation(
+            citation_id=citation_id,
+            source_id=str(
+                doc.get("chunk_id") or doc.get("id") or "evidence-{0}".format(index)
+            ),
+            span=span,
+            title=str(
+                metadata.get("original_title")
+                or doc.get("title")
+                or doc.get("id")
+                or "Untitled source"
+            ),
+            authors=tuple(
+                str(author)
+                for author in (
+                    metadata.get("authors") or doc.get("authors") or []
+                )
+                if str(author).strip()
+            ),
+            page=metadata.get("page"),
+            section=metadata.get("section") or None,
+            url=doc.get("url") or None,
+        )
+    return registry
+
+
+def _validated_citations(claims):
+    citations = []
+    seen = set()
+    for claim in claims:
+        for citation in claim.citations:
+            if citation.citation_id in seen:
+                continue
+            serialized = citation.to_dict()
+            serialized["id"] = (
+                int(citation.citation_id)
+                if citation.citation_id.isdigit()
+                else citation.citation_id
+            )
+            serialized["document_id"] = citation.source_id
+            serialized["chunk_id"] = citation.source_id
+            citations.append(serialized)
+            seen.add(citation.citation_id)
+    return citations
+
+
+def _answer_validation_metadata(validation):
+    latest = {}
+    for assessment in validation.assessments:
+        latest[assessment.claim_id] = assessment
+    counts = {
+        verdict.value: sum(
+            item.verdict is verdict for item in latest.values()
+        )
+        for verdict in ClaimVerdict
+    }
+    if counts[ClaimVerdict.UNSUPPORTED.value]:
+        failure_type = "unsupported_claims"
+    elif counts[ClaimVerdict.CONTRADICTED.value]:
+        failure_type = "contradicted_claims"
+    elif counts[ClaimVerdict.PARTIAL.value]:
+        failure_type = "partial_support"
+    elif validation.draft.refusal:
+        failure_type = "abstained"
+    else:
+        failure_type = ""
+    serialized = validation.to_dict()
+    serialized.update(
+        {
+            "failure_type": failure_type,
+            "entailed_claim_count": counts[ClaimVerdict.ENTAILED.value],
+            "partial_claim_count": counts[ClaimVerdict.PARTIAL.value],
+            "contradicted_claim_count": counts[
+                ClaimVerdict.CONTRADICTED.value
+            ],
+            "unsupported_claim_count": counts[
+                ClaimVerdict.UNSUPPORTED.value
+            ],
+            "repair_attempt_count": len(validation.repaired_claim_ids),
+            "refusal": validation.draft.refusal,
+        }
+    )
+    return serialized
 
 
 def _with_score(doc: Dict, score: int):
