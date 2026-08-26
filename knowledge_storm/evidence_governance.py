@@ -108,6 +108,9 @@ def select_evidence(candidates, top_k, lambda_mmr=0.65):
     tradeoff = min(1.0, max(0.0, float(lambda_mmr)))
     remaining = [dict(item) for item in candidates]
     remaining.sort(key=_candidate_order)
+    relevance_values = [_relevance(item) for item in remaining]
+    relevance_low = min(relevance_values)
+    relevance_high = max(relevance_values)
     selected = []
     used_parents, used_sources = set(), set()
     while remaining and len(selected) < limit:
@@ -124,7 +127,8 @@ def select_evidence(candidates, top_k, lambda_mmr=0.65):
             pool,
             key=lambda item: (
                 round(
-                    tradeoff * _relevance(item)
+                    tradeoff
+                    * _scaled_relevance(item, relevance_low, relevance_high)
                     - (1.0 - tradeoff) * _max_similarity(item, selected),
                     12,
                 ),
@@ -278,6 +282,12 @@ def _relevance(item):
     return 0.0
 
 
+def _scaled_relevance(item, low, high):
+    if high <= low:
+        return 1.0
+    return (_relevance(item) - low) / (high - low)
+
+
 def _parent_key(item):
     metadata = item.get("metadata") or {}
     return str(item.get("parent_id") or metadata.get("parent_id") or _stable_id(item))
@@ -407,11 +417,17 @@ def _contradicts(left, right):
         return False
     left_value = str(left.get("value", left.get("claim", ""))).casefold()
     right_value = str(right.get("value", right.get("claim", ""))).casefold()
-    if left_value != right_value and ("not" in left_value or "not" in right_value):
+    if left_value != right_value and (
+        _contains_negation(left_value) != _contains_negation(right_value)
+    ):
         return True
     if _numeric(left_value) is not None and _numeric(right_value) is not None:
         return _numeric(left_value) != _numeric(right_value)
     return False
+
+
+def _contains_negation(value):
+    return bool(re.search(r"\b(?:not|no|never)\b", value))
 
 
 def _conditions_compatible(left, right):

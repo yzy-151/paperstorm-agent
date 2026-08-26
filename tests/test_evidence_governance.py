@@ -91,6 +91,37 @@ class EvidenceGovernanceTest(unittest.TestCase):
         self.assertGreater(selected.coverage_score, 0.5)
         self.assertEqual(selected.coverage_score, selected[0]["coverage_score"])
 
+    def test_mmr_does_not_trade_away_nearly_all_relevance_for_diversity(self):
+        from knowledge_storm.evidence_governance import select_evidence
+
+        candidates = [
+            {
+                "chunk_id": "strong-a",
+                "parent_id": "parent-a",
+                "source": "source-a",
+                "content": "passive intermodulation cancellation",
+                "rrf_score": 0.030,
+            },
+            {
+                "chunk_id": "strong-b",
+                "parent_id": "parent-b",
+                "source": "source-b",
+                "content": "passive intermodulation suppression",
+                "rrf_score": 0.029,
+            },
+            {
+                "chunk_id": "irrelevant",
+                "parent_id": "parent-c",
+                "source": "source-c",
+                "content": "renaissance painting pigments",
+                "rrf_score": 0.0001,
+            },
+        ]
+
+        selected = select_evidence(candidates, top_k=2)
+
+        self.assertEqual(["strong-a", "strong-b"], [item["chunk_id"] for item in selected])
+
     def test_assessor_presents_conflicting_evidence_without_deciding(self):
         from knowledge_storm.evidence_governance import EvidenceAssessor
 
@@ -142,6 +173,34 @@ class EvidenceGovernanceTest(unittest.TestCase):
 
         self.assertEqual((), assessment.conflicts)
         self.assertEqual("answer", assessment.next_action)
+
+    def test_assessor_does_not_treat_notable_as_negation(self):
+        from knowledge_storm.evidence_governance import EvidenceAssessor
+
+        evidence = [
+            {
+                "chunk_id": "a",
+                "source": "study-a",
+                "content": "The treatment has a notable benefit.",
+                "score": 0.9,
+                "claim": "treatment effect",
+                "claim_id": "effect",
+                "value": "notable benefit",
+            },
+            {
+                "chunk_id": "b",
+                "source": "study-b",
+                "content": "The treatment has a benefit.",
+                "score": 0.9,
+                "claim": "treatment effect",
+                "claim_id": "effect",
+                "value": "benefit",
+            },
+        ]
+
+        assessment = EvidenceAssessor().assess("Does treatment help?", evidence)
+
+        self.assertEqual((), assessment.conflicts)
 
     def test_assessor_abstains_when_there_is_no_evidence(self):
         from knowledge_storm.evidence_governance import EvidenceAssessor
