@@ -8,7 +8,6 @@ action selection; this module does not modify that router ahead of integration.
 """
 
 import json
-import math
 import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -34,6 +33,24 @@ _PLAN_FIELDS = frozenset(
         "answer_type",
     )
 )
+FILTER_FIELDS = frozenset(
+    (
+        "authors",
+        "document_id",
+        "domain",
+        "published",
+        "query",
+        "section",
+        "source",
+        "source_type",
+        "tags",
+        "venue",
+        "year",
+        "year_from",
+        "year_to",
+    )
+)
+_YEAR_FILTER_FIELDS = frozenset(("year", "year_from", "year_to"))
 _RF_DOMAIN = "rf-passive-intermodulation"
 _PROCESSING_DOMAIN = "processing-in-memory"
 _PROCESSING_MARKERS = (
@@ -115,7 +132,7 @@ class SearchPlan:
         subqueries = _normalize_string_sequence(self.subqueries, "subqueries")
         if len(subqueries) > 3:
             raise ValueError("subqueries cannot contain more than 3 items")
-        filters = _json_safe_mapping(self.filters, "filters")
+        filters = normalize_filter_mapping(self.filters, "filters")
 
         object.__setattr__(self, "original_query", original_query)
         object.__setattr__(self, "standalone_query", standalone_query)
@@ -391,7 +408,11 @@ def _build_llm_prompt(query: str, history: Sequence[Dict[str, str]]) -> str:
         "entities": ["string"],
         "must_terms": ["string"],
         "negative_terms": ["string"],
-        "filters": {"JSON-safe filter": "value"},
+        "filters": {
+            "allowed_keys": sorted(FILTER_FIELDS),
+            "year/year_from/year_to": "integer year; year may also be a list",
+            "other_fields": "string, null, or list of strings",
+        },
         "subqueries": ["at most 3 unique non-empty strings"],
         "answer_type": sorted(ALLOWED_ANSWER_TYPES),
     }
@@ -558,43 +579,47 @@ def _unique_strings(values: Sequence[str]) -> Tuple[str, ...]:
     return _normalize_string_sequence(tuple(values), "subqueries")[:3]
 
 
-def _json_safe_mapping(value: Any, field_name: str) -> Mapping[str, Any]:
+def normalize_filter_mapping(value: Any, field_name: str = "filters") -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError("{0} must be a mapping".format(field_name))
     normalized = {}
     for key, item in value.items():
         if not isinstance(key, str):
             raise TypeError("{0} keys must be strings".format(field_name))
-        normalized[key] = _normalize_filter_value(item, field_name)
+        if key not in FILTER_FIELDS:
+            raise ValueError("unknown filter key: {0}".format(key))
+        normalized[key] = _normalize_typed_filter_value(key, item)
     return MappingProxyType(normalized)
 
 
-def _normalize_filter_value(value: Any, field_name: str) -> Any:
-    if value is None or isinstance(value, (bool, int, str)):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError("{0} cannot contain non-finite floats".format(field_name))
+def _normalize_typed_filter_value(key: str, value: Any) -> Any:
+    if key in _YEAR_FILTER_FIELDS:
+        if key == "year" and isinstance(value, list):
+            return tuple(_normalize_year(item, key) for item in value)
+        return _normalize_year(value, key)
+    if value is None:
+        return None
+    if isinstance(value, str):
         return value
     if isinstance(value, list):
-        return tuple(_normalize_filter_scalar(item, field_name) for item in value)
+        return tuple(_normalize_filter_text(item, key) for item in value)
     raise TypeError(
-        "{0} values must be JSON scalars or lists of JSON scalars".format(
-            field_name
-        )
+        "{0} filter must be a string, null, or list of strings".format(key)
     )
 
 
-def _normalize_filter_scalar(value: Any, field_name: str) -> Any:
-    if value is None or isinstance(value, (bool, int, str)):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError("{0} cannot contain non-finite floats".format(field_name))
-        return value
-    raise TypeError(
-        "{0} lists must contain only JSON scalars".format(field_name)
-    )
+def _normalize_year(value: Any, key: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("{0} filter must be an integer year".format(key))
+    if value < 0 or value > 9999:
+        raise ValueError("{0} filter must be between 0 and 9999".format(key))
+    return value
+
+
+def _normalize_filter_text(value: Any, key: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError("{0} filter list must contain only strings".format(key))
+    return value
 
 
 def _thaw_json_value(value: Any) -> Any:

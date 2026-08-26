@@ -1,7 +1,9 @@
 import json
 import re
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Mapping, Optional
+
+from .search_planning import SearchPlan, SearchPlanner
 
 
 class ResearchQAAgent:
@@ -26,9 +28,17 @@ class ResearchQAAgent:
         search_plan=None,
         **options,
     ) -> Dict:
-        question = str(question or "").strip()
+        question = " ".join(str(question or "").split())
         if not question:
             raise ValueError("question is required")
+        if search_plan is None:
+            search_plan = SearchPlanner().plan(question, history=history or [])
+        elif isinstance(search_plan, Mapping):
+            search_plan = SearchPlan.from_mapping(search_plan)
+        if not isinstance(search_plan, SearchPlan):
+            raise TypeError("search_plan must be a SearchPlan or mapping")
+        if search_plan.original_query != question:
+            raise ValueError("search_plan.original_query must match question")
         trace = []
         trace.append(_event("ask_start", question=question, task_id=task_id or ""))
 
@@ -57,7 +67,7 @@ class ResearchQAAgent:
                 }
             used_task_id = task_id
         else:
-            task_topic = topic or question
+            task_topic = search_plan.standalone_query
             trace.append(
                 _event(
                     "research_task_submit",
@@ -96,7 +106,7 @@ class ResearchQAAgent:
         citations = answer.get("citations") or []
         state_keywords = _keywords_from_state(state)
         sufficiency = evaluate_evidence_sufficiency(
-            question=question,
+            question=search_plan.standalone_query,
             evidence=evidence,
             citations=citations,
             topic=state.get("topic", ""),

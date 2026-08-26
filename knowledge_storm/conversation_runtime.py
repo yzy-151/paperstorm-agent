@@ -758,7 +758,9 @@ class PaperStormConversationRuntime:
                 {
                     "question": decision.get("rewritten_query") or state["message"],
                     "topic": _question_topic(state),
-                    "task_id": state.get("task_id") or "",
+                    # This node is reached only after evidence_grade rejected the
+                    # existing KB. Start fresh without querying that task again.
+                    "task_id": "",
                     "run_mode": state.get("run_mode") or "fake",
                     "retriever": state.get("retriever") or "arxiv",
                     "output_language": state.get("output_language") or "zh",

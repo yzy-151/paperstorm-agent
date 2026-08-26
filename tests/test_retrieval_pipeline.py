@@ -76,10 +76,10 @@ class RetrievalPipelineTest(unittest.TestCase):
         expand_events = [event for event in index.events if event[0] == "expand"]
         self.assertEqual([("expand", 1, 32)], expand_events)
         self.assertEqual(["search", "search", "search", "gate", "expand"], [event[0] for event in index.events])
-        self.assertEqual("completed", outcome["stages"][3]["status"])
-        self.assertEqual(1, outcome["stages"][3]["input_count"])
-        self.assertEqual(1, outcome["stages"][3]["output_count"])
-        self.assertIn("expanded=1", outcome["stages"][3]["reason"])
+        self.assertEqual("completed", outcome["stages"][4]["status"])
+        self.assertEqual(1, outcome["stages"][4]["input_count"])
+        self.assertEqual(1, outcome["stages"][4]["output_count"])
+        self.assertIn("expanded=1", outcome["stages"][4]["reason"])
 
     def test_parent_budget_requires_expansion_capability(self):
         from knowledge_storm.retrieval_pipeline import (
@@ -120,6 +120,10 @@ class RetrievalPipelineTest(unittest.TestCase):
 
         self.assertEqual([], outcome["results"])
         self.assertEqual([], index.expansion_inputs)
+        parent_stage = next(
+            stage for stage in outcome["stages"] if stage["name"] == "parent_expand"
+        )
+        self.assertEqual("skipped", parent_stage["status"])
 
     def test_returns_stable_stage_schema_when_reranker_is_disabled(self):
         from knowledge_storm.retrieval_pipeline import (
@@ -136,9 +140,11 @@ class RetrievalPipelineTest(unittest.TestCase):
 
         self.assertEqual(["chunk-1"], [item["chunk_id"] for item in result["results"]])
         self.assertEqual(
-            ["plan", "retrieve", "fuse", "parent_expand", "gate"],
+            ["plan", "retrieve", "fuse", "gate", "parent_expand"],
             [stage["name"] for stage in result["stages"]],
         )
+        self.assertEqual("completed", result["stages"][3]["status"])
+        self.assertIn("top_k selection", result["stages"][3]["reason"])
         self.assertEqual("completed", result["stages"][2]["status"])
         self.assertGreaterEqual(result["schema_revision"], 2)
         for stage in result["stages"]:
@@ -238,6 +244,64 @@ class RetrievalPipelineTest(unittest.TestCase):
         )
         self.assertEqual(["gold"], [item["chunk_id"] for item in result["results"]])
 
+    def test_typed_filters_map_fields_and_apply_inclusive_year_range(self):
+        from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
+        from knowledge_storm.search_planning import SearchPlan
+
+        class TypedFilterIndex(RecordingIndex):
+            def search(self, query, **kwargs):
+                return [
+                    {
+                        "chunk_id": "too-old",
+                        "content": "old evidence",
+                        "source_type": "arxiv",
+                        "authors": ["Alice Zhang"],
+                        "metadata": {"domain": "rf", "published": "2021-06-01"},
+                    },
+                    {
+                        "chunk_id": "gold",
+                        "content": "current evidence",
+                        "source_type": "arxiv",
+                        "authors": ["Alice Zhang", "Bob Smith"],
+                        "metadata": {"domain": "rf", "published": "2023-04-02"},
+                    },
+                    {
+                        "chunk_id": "wrong-source",
+                        "content": "current evidence",
+                        "source_type": "web",
+                        "authors": ["Alice Zhang"],
+                        "metadata": {"domain": "rf", "year": 2023},
+                    },
+                    {
+                        "chunk_id": "split-range",
+                        "content": "conflicting year fields",
+                        "source_type": "arxiv",
+                        "authors": ["Alice Zhang"],
+                        "year": 2025,
+                        "metadata": {
+                            "domain": "rf",
+                            "published": "2021-01-01",
+                        },
+                    },
+                ]
+
+        plan = SearchPlan(
+            "q",
+            "q",
+            filters={
+                "year_from": 2022,
+                "year_to": 2024,
+                "domain": "rf",
+                "source": "arxiv",
+                "authors": "Alice Zhang",
+            },
+        )
+        result = RetrievalPipeline(TypedFilterIndex()).search(
+            RetrievalRequest(query="q", search_plan=plan, top_k=5)
+        )
+
+        self.assertEqual(["gold"], [item["chunk_id"] for item in result["results"]])
+
     def test_all_must_terms_filter_wrong_domain_candidates_using_searchable_text(self):
         from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
         from knowledge_storm.search_planning import SearchPlan
@@ -327,12 +391,53 @@ class RetrievalPipelineTest(unittest.TestCase):
         self.assertEqual([0.9, 0.2], [item["final_score"] for item in result["results"]])
         self.assertEqual([0.9, 0.2], [item["score"] for item in result["results"]])
         self.assertEqual(
-            ["plan", "retrieve", "fuse", "rerank", "parent_expand", "gate"],
+            ["plan", "retrieve", "fuse", "rerank", "gate", "parent_expand"],
             [stage["name"] for stage in result["stages"]],
         )
         rerank_stage = result["stages"][3]
         self.assertEqual(len(reranker.calls[0][1]), rerank_stage["input_count"])
         self.assertEqual(len(reranker.calls[0][1]), rerank_stage["output_count"])
+
+    def test_callable_reranker_score_is_normalized_and_controls_final_ranking(self):
+        from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
+        from knowledge_storm.search_planning import SearchPlan
+
+        class TwoCandidateIndex(RecordingIndex):
+            def search(self, query, **kwargs):
+                return [
+                    {"chunk_id": "low", "content": "low", "score": 0.99},
+                    {"chunk_id": "high", "content": "high", "score": 0.01},
+                ]
+
+        calls = []
+
+        def callable_reranker(query, candidates):
+            calls.append((query, len(candidates)))
+            output = [dict(item) for item in candidates]
+            for item in output:
+                item["score"] = 0.9 if item["chunk_id"] == "high" else 0.2
+            return output
+
+        result = RetrievalPipeline(
+            TwoCandidateIndex(), reranker=callable_reranker
+        ).search(
+            RetrievalRequest(
+                query="raw",
+                search_plan=SearchPlan("raw", "standalone"),
+                mode="hybrid_rerank",
+                top_k=2,
+            )
+        )
+
+        self.assertEqual([("standalone", 2)], calls)
+        self.assertEqual(["high", "low"], [item["chunk_id"] for item in result["results"]])
+        self.assertEqual([0.9, 0.2], [item["rerank_score"] for item in result["results"]])
+        self.assertEqual([0.9, 0.2], [item["final_score"] for item in result["results"]])
+        self.assertEqual([0.9, 0.2], [item["score"] for item in result["results"]])
+        self.assertEqual(
+            ["hybrid_rerank", "hybrid_rerank"],
+            [item["retrieval_mode"] for item in result["results"]],
+        )
 
     def test_hybrid_index_parent_expansion_is_deep_copied_and_keeps_rank(self):
         from knowledge_storm.retrieval import HashEmbeddingProvider, HybridPaperIndex
@@ -433,7 +538,8 @@ class RetrievalPipelineTest(unittest.TestCase):
         )
 
         self.assertEqual([], result["results"])
-        self.assertEqual("completed", result["stages"][4]["status"])
+        gate_stage = next(stage for stage in result["stages"] if stage["name"] == "gate")
+        self.assertEqual("completed", gate_stage["status"])
 
     def test_knowledge_base_uses_injected_pipeline_ranking(self):
         from knowledge_storm.paperstorm_qa import PaperStormKnowledgeBase

@@ -199,7 +199,16 @@ class PaperStormChatAgentTest(unittest.TestCase):
             task_id=stale_task["task_id"],
         )
 
-        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}):
+        queried_task_ids = []
+        original_query = service.query_knowledge_base
+
+        def recording_query(task_id, *args, **kwargs):
+            queried_task_ids.append(task_id)
+            return original_query(task_id, *args, **kwargs)
+
+        with mock.patch.dict(os.environ, {"PAPERSTORM_CHAT_LLM": "0"}), mock.patch.object(
+            service, "query_knowledge_base", side_effect=recording_query
+        ):
             reply = service.send_chat_message(session["chat_id"], "PIM 是什么？")
 
         self.assertTrue(reply["retrieval_triggered"])
@@ -207,6 +216,9 @@ class PaperStormChatAgentTest(unittest.TestCase):
         self.assertEqual(
             reply["research_answer"]["decision"]["action"],
             "retrieve_then_answer",
+        )
+        self.assertEqual(
+            [stale_task["task_id"], reply["used_task_id"]], queried_task_ids
         )
         self.assertIn("passive intermodulation", reply["assistant_message"]["content"])
 

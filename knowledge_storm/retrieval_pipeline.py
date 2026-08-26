@@ -1,11 +1,13 @@
 """Single retrieval contract shared by PaperStorm product and benchmarks."""
 
+import math
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Mapping, Optional, Tuple
 
 from .retrieval import reciprocal_rank_fusion
-from .search_planning import SearchPlan, SearchPlanner
+from .search_planning import SearchPlan, SearchPlanner, normalize_filter_mapping
 
 
 class RetrievalCapabilityError(RuntimeError):
@@ -65,6 +67,9 @@ class RetrievalPipeline:
             raise RetrievalCapabilityError(
                 "index does not support parent context expansion"
             )
+        request_filters = dict(
+            normalize_filter_mapping(request.metadata_filters, "metadata_filters")
+        )
         queries = _planned_queries(plan)
         stages = [
             _stage(
@@ -131,15 +136,19 @@ class RetrievalPipeline:
             rerank_started = time.perf_counter()
             rerank_input = len(results)
             if hasattr(self.reranker, "rerank"):
-                results = list(
+                reranked = list(
                     self.reranker.rerank(
                         plan.standalone_query, results, top_k=candidate_k
                     )
                 )
+                results = _normalize_reranker_results(
+                    reranked, candidate_k=candidate_k, accept_score=False
+                )
             else:
-                results = list(self.reranker(plan.standalone_query, results))[
-                    :candidate_k
-                ]
+                reranked = list(self.reranker(plan.standalone_query, results))
+                results = _normalize_reranker_results(
+                    reranked, candidate_k=candidate_k, accept_score=True
+                )
             stages.append(
                 _stage(
                     "rerank",
@@ -154,7 +163,7 @@ class RetrievalPipeline:
         gate_started = time.perf_counter()
         gate_input = len(results)
         results = _metadata_filter(
-            results, dict(plan.filters), dict(request.metadata_filters)
+            results, dict(plan.filters), request_filters
         )
         if self.relevance_gate is not None:
             results = list(self.relevance_gate(results, plan.standalone_query))
@@ -185,7 +194,9 @@ class RetrievalPipeline:
             ]
         results = results[: max(1, int(request.top_k))]
         results = _rewrite_final_ranking(
-            results, score_key="rerank_score" if rerank_enabled else "rrf_score"
+            results,
+            score_key="rerank_score" if rerank_enabled else "rrf_score",
+            retrieval_mode=mode,
         )
         filters_active = bool(
             self.relevance_gate
@@ -197,12 +208,18 @@ class RetrievalPipeline:
         )
         gate_stage = _stage(
             "gate",
-            "completed" if filters_active else "skipped",
+            "completed",
             _elapsed_ms(gate_started),
             gate_input,
             len(results),
-            "metadata, must, expected, negative and forbidden evidence gates",
+            "top_k selection and final rank rewrite"
+            + (
+                "; metadata, must, expected, negative or forbidden filters applied"
+                if filters_active
+                else ""
+            ),
         )
+        stages.append(gate_stage)
 
         parent_started = time.perf_counter()
         parent_input = len(results)
@@ -212,7 +229,7 @@ class RetrievalPipeline:
         stages.append(
             _stage(
                 "parent_expand",
-                "completed" if parent_budget > 0 else "skipped",
+                "completed" if parent_budget > 0 and parent_input > 0 else "skipped",
                 _elapsed_ms(parent_started),
                 parent_input,
                 len(results),
@@ -221,7 +238,6 @@ class RetrievalPipeline:
                 ),
             )
         )
-        stages.append(gate_stage)
         provider = getattr(self.index, "embedding_provider", None)
         return {
             "schema": "paperstorm-retrieval-result",
@@ -258,25 +274,114 @@ def _metadata_filter(results, plan_filters, request_filters):
     return [
         item
         for item in results
-        if _metadata_matches(item.get("metadata") or {}, filters)
+        if _item_matches_filters(item, filters)
     ]
 
 
-def _metadata_matches(metadata, filters):
+_FILTER_PATHS = {
+    "authors": (("authors",), ("metadata", "authors")),
+    "document_id": (("document_id",), ("metadata", "document_id")),
+    "domain": (("domain",), ("metadata", "domain")),
+    "published": (("published",), ("metadata", "published")),
+    "query": (("query",), ("metadata", "query")),
+    "section": (("section",), ("metadata", "section")),
+    "source": (
+        ("source",),
+        ("source_type",),
+        ("metadata", "source"),
+        ("metadata", "source_type"),
+    ),
+    "source_type": (("source_type",), ("metadata", "source_type")),
+    "tags": (("tags",), ("metadata", "tags")),
+    "venue": (("venue",), ("metadata", "venue")),
+}
+_YEAR_PATHS = (
+    ("year",),
+    ("published",),
+    ("metadata", "year"),
+    ("metadata", "published"),
+)
+
+
+def _item_matches_filters(item, filters):
+    year_filters = {
+        key: filters[key]
+        for key in ("year", "year_from", "year_to")
+        if key in filters
+    }
+    if year_filters:
+        years = _item_years(item)
+        if not any(_year_matches(year, year_filters) for year in years):
+            return False
     for key, expected in filters.items():
-        actual = metadata.get(key)
-        if isinstance(actual, (list, tuple, set)):
-            if isinstance(expected, (list, tuple, set)):
-                if not any(value in actual for value in expected):
-                    return False
-            elif expected not in actual:
-                return False
-        elif isinstance(expected, (list, tuple, set)):
-            if actual not in expected:
-                return False
-        elif actual != expected:
+        if key in {"year", "year_from", "year_to"}:
+            continue
+        actual = _path_values(item, _FILTER_PATHS[key])
+        if not _matches_any(actual, expected):
             return False
     return True
+
+
+def _year_matches(year, filters):
+    return (
+        ("year" not in filters or _matches_any((year,), filters["year"]))
+        and ("year_from" not in filters or year >= filters["year_from"])
+        and ("year_to" not in filters or year <= filters["year_to"])
+    )
+
+
+_MISSING = object()
+
+
+def _path_values(item, paths):
+    output = []
+    for path in paths:
+        value = item
+        for part in path:
+            if not isinstance(value, Mapping) or part not in value:
+                value = _MISSING
+                break
+            value = value[part]
+        if value is _MISSING:
+            continue
+        if isinstance(value, (list, tuple, set, frozenset)):
+            output.extend(value)
+        else:
+            output.append(value)
+    return output
+
+
+def _item_years(item):
+    years = []
+    for value in _path_values(item, _YEAR_PATHS):
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            years.append(value)
+            continue
+        match = re.match(r"^\s*(\d{4})", str(value))
+        if match:
+            years.append(int(match.group(1)))
+    return years
+
+
+def _matches_any(actual_values, expected):
+    expected_values = (
+        tuple(expected)
+        if isinstance(expected, (list, tuple, set, frozenset))
+        else (expected,)
+    )
+    return any(
+        _filter_scalar_equal(actual, wanted)
+        for actual in actual_values
+        for wanted in expected_values
+    )
+
+
+def _filter_scalar_equal(actual, expected):
+    if isinstance(actual, str) and isinstance(expected, str):
+        return actual.casefold() == expected.casefold()
+    return actual == expected
 
 
 def _normalized_terms(values):
@@ -321,7 +426,28 @@ def _searchable_metadata_values(value):
     return ["" if value is None else str(value)]
 
 
-def _rewrite_final_ranking(results, score_key):
+def _normalize_reranker_results(results, *, candidate_k, accept_score):
+    output = []
+    for item in results:
+        enriched = dict(item)
+        value = enriched.get("rerank_score")
+        if value is None and accept_score:
+            value = enriched.get("score")
+        try:
+            score = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("reranker result requires a numeric score") from exc
+        if not math.isfinite(score):
+            raise ValueError("reranker score must be finite")
+        enriched["rerank_score"] = round(score, 8)
+        output.append(enriched)
+    output.sort(
+        key=lambda item: (-item["rerank_score"], str(item.get("chunk_id") or ""))
+    )
+    return output[:candidate_k]
+
+
+def _rewrite_final_ranking(results, score_key, retrieval_mode):
     output = []
     for rank, item in enumerate(results, start=1):
         enriched = dict(item)
@@ -334,5 +460,6 @@ def _rewrite_final_ranking(results, score_key):
         enriched["final_rank"] = rank
         enriched["final_score"] = round(score, 8)
         enriched["score"] = round(score, 8)
+        enriched["retrieval_mode"] = retrieval_mode
         output.append(enriched)
     return output

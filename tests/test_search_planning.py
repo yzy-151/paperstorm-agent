@@ -327,7 +327,7 @@ class SearchPlanTest(unittest.TestCase):
             standalone_query="a",
             filters={
                 "year": 2024,
-                "open": True,
+                "source": "arxiv",
                 "venue": None,
                 "tags": ["rf", "pim"],
             },
@@ -352,6 +352,14 @@ class SearchPlanTest(unittest.TestCase):
                         standalone_query="a",
                         filters=filters,
                     )
+
+    def test_filters_reject_unknown_keys_and_wrong_typed_values(self):
+        from knowledge_storm.search_planning import SearchPlan
+
+        with self.assertRaisesRegex(ValueError, "unknown filter"):
+            SearchPlan("q", "q", filters={"unexecutable_field": "value"})
+        with self.assertRaisesRegex((TypeError, ValueError), "year_from"):
+            SearchPlan("q", "q", filters={"year_from": "recent"})
 
     def test_history_budget_keeps_recent_messages_and_marks_them_untrusted(self):
         from knowledge_storm.search_planning import (

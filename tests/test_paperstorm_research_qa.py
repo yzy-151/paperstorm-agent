@@ -42,6 +42,47 @@ class PaperStormResearchQATest(unittest.TestCase):
         self.assertIn("passive intermodulation", answer["answer"])
         self.assertTrue(answer["trace"])
 
+    def test_new_task_plans_followup_once_before_submit_and_reuses_plan_for_kb(self):
+        from knowledge_storm.search_planning import SearchPlanner
+
+        service = self.make_service()
+        history = [
+            {"role": "user", "content": "射频无源互调会造成什么影响？"},
+            {"role": "assistant", "content": "这里讨论的是 passive intermodulation。"},
+        ]
+        planner_calls = []
+        submitted_topics = []
+        original_plan = SearchPlanner.plan
+        original_submit = service.submit_research_task
+
+        def recording_plan(planner, query, *, history=None):
+            planner_calls.append((query, tuple(history or ())))
+            return original_plan(planner, query, history=history)
+
+        def recording_submit(*args, **kwargs):
+            submitted_topics.append(kwargs.get("topic", args[0] if args else ""))
+            return original_submit(*args, **kwargs)
+
+        with mock.patch.object(
+            SearchPlanner, "plan", autospec=True, side_effect=recording_plan
+        ), mock.patch.object(
+            service, "submit_research_task", side_effect=recording_submit
+        ):
+            answer = service.ask_research_agent(
+                question="那它如何抑制？",
+                topic="legacy session topic",
+                history=history,
+                run_mode="fake",
+                expected_keywords=["passive intermodulation"],
+            )
+
+        plan = answer["retrieval_metadata"]["search_plan"]
+        self.assertEqual(1, len(planner_calls))
+        self.assertEqual(tuple(history), planner_calls[0][1])
+        self.assertEqual("那它如何抑制？", plan["original_query"])
+        self.assertIn("passive intermodulation", plan["standalone_query"].lower())
+        self.assertEqual(plan["standalone_query"], submitted_topics[0])
+
     def test_ask_with_finished_task_reuses_existing_knowledge_base(self):
         service = self.make_service()
         task = service.submit_research_task(
