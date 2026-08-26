@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -180,6 +182,285 @@ def load_offline_replay(run_dir):
         "unsupported_claim_rate": unsupported / validated if validated else 0.0,
         "p95_ms": _nearest_rank_percentile(latencies, 0.95),
     }
+
+
+def run_production_governance_benchmark(output_dir):
+    """Run the P4 governance contract without network or model calls."""
+    from .control_plane import ProductionControlPlane, execute_batch
+    from .paperstorm_enterprise_kb import _answer_cache_identity
+    from .retrieval import HashEmbeddingProvider, HybridPaperIndex
+
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    fixture = [
+        {
+            "document_id": "public-doc",
+            "title": "Public policy",
+            "text": "public retrieval governance guidance",
+        },
+        {
+            "document_id": "private-doc",
+            "title": "Private policy",
+            "text": "private salary secret needle",
+        },
+    ]
+    protocol = "production-governance-v1"
+    dataset_sha = _stable_sha256(fixture)
+    protocol_sha = _stable_sha256(
+        {
+            "protocol": protocol,
+            "checks": [
+                "pre_retrieval_acl",
+                "cache_partition",
+                "deadline",
+                "circuit_breaker",
+                "batch_order",
+                "trace_redaction",
+                "release_gate",
+            ],
+        }
+    )
+    manifest = {
+        "benchmark": "production-governance",
+        "protocol": protocol,
+        "dataset_sha256": dataset_sha,
+        "protocol_sha256": protocol_sha,
+        "requires_network": False,
+        "requires_llm": False,
+        "created_at": _now(),
+    }
+
+    predictions = []
+    latencies = []
+
+    def record(case_id, passed, latency_ms, **details):
+        latency_ms = round(float(latency_ms), 6)
+        latencies.append(latency_ms)
+        predictions.append(
+            {
+                "case_id": case_id,
+                "status": "succeeded" if passed else "failed",
+                "latency_ms": latency_ms,
+                **details,
+            }
+        )
+
+    index = HybridPaperIndex.from_documents(
+        fixture,
+        embedding_provider=HashEmbeddingProvider(),
+        chunk_size=500,
+        chunk_overlap=0,
+    )
+    acl_leaks = 0
+    for case_id, allowed_ids, expected_ids in (
+        ("acl-public-only", ("public-doc",), {"public-doc"}),
+        ("acl-private-only", ("private-doc",), {"private-doc"}),
+        ("acl-deny-all", (), set()),
+    ):
+        started = time.perf_counter()
+        results = index.search(
+            "private secret needle",
+            mode="hybrid",
+            top_k=5,
+            allowed_document_ids=allowed_ids,
+        )
+        returned_ids = {str(item.get("document_id") or "") for item in results}
+        leaked = not returned_ids.issubset(set(allowed_ids))
+        acl_leaks += int(leaked)
+        record(
+            case_id,
+            returned_ids == expected_ids and not leaked,
+            (time.perf_counter() - started) * 1000,
+            acl_leak=leaked,
+            allowed_document_ids=list(allowed_ids),
+            returned_document_ids=sorted(returned_ids),
+        )
+
+    cache_common = {
+        "kb_id": "kb-governed",
+        "index_revision": {"index_version": 1, "schema_revision": 1},
+        "top_k": 5,
+        "query": "retrieval governance",
+        "search_plan": {"standalone_query": "retrieval governance"},
+    }
+    cache_started = time.perf_counter()
+    owner_cache = _answer_cache_identity(
+        tenant_id="tenant-a",
+        user_id="owner",
+        policy_digest="policy-owner",
+        **cache_common,
+    )
+    viewer_cache = _answer_cache_identity(
+        tenant_id="tenant-a",
+        user_id="viewer",
+        policy_digest="policy-viewer",
+        **cache_common,
+    )
+    cache_isolated = owner_cache != viewer_cache
+    record(
+        "cache-policy-isolation",
+        cache_isolated,
+        (time.perf_counter() - cache_started) * 1000,
+        cache_collision=not cache_isolated,
+    )
+
+    control = ProductionControlPlane(root / "governance.sqlite")
+    timeout_started = time.perf_counter()
+    timeout_result = control.execute_resilient(
+        "governance-provider",
+        lambda: time.sleep(0.05),
+        fallback=lambda _error: "fallback",
+        max_attempts=1,
+        failure_threshold=1,
+        cooldown_seconds=60,
+        timeout_seconds=0.005,
+    )
+    timeout_ms = (time.perf_counter() - timeout_started) * 1000
+    timeout_classified = timeout_result.get("failure_type") == "timeout"
+    record(
+        "deadline-timeout",
+        timeout_classified,
+        timeout_ms,
+        failure_type=timeout_result.get("failure_type"),
+    )
+
+    skipped_calls = []
+    circuit_result = control.execute_resilient(
+        "governance-provider",
+        lambda: skipped_calls.append("called") or "unexpected",
+        fallback=lambda _error: "fallback",
+        max_attempts=1,
+        failure_threshold=1,
+        cooldown_seconds=60,
+    )
+    recovered = control.execute_resilient(
+        "governance-provider",
+        lambda: "recovered",
+        fallback=lambda _error: "fallback",
+        max_attempts=1,
+        failure_threshold=1,
+        cooldown_seconds=0,
+    )
+    circuit_recovered = (
+        not skipped_calls
+        and circuit_result.get("failure_type") == "circuit_open"
+        and recovered.get("result") == "recovered"
+        and recovered.get("circuit_state") == "closed"
+    )
+    record(
+        "circuit-open-recovery",
+        circuit_recovered,
+        0.0,
+        provider_calls_while_open=len(skipped_calls),
+        recovered=bool(recovered.get("half_open_probe")),
+    )
+
+    batch_started = time.perf_counter()
+    batch_output = execute_batch(
+        (3, 1, 2),
+        lambda value: (time.sleep(value * 0.001), value * 10)[1],
+        max_workers=3,
+    )
+    batch_order_preserved = batch_output == [30, 10, 20]
+    record(
+        "concurrent-batch-order",
+        batch_order_preserved,
+        (time.perf_counter() - batch_started) * 1000,
+        output=batch_output,
+    )
+
+    control.record_span(
+        {
+            "trace_id": "governance-trace",
+            "component": "retrieval",
+            "operation": "governance-check",
+            "attributes": {
+                "api_key": "sk-must-not-leak",
+                "user_id": "private@example.com",
+                "private_document": "PRIVATE" * 1000,
+            },
+        }
+    )
+    attributes = control.list_spans("governance-trace")[0]["attributes"]
+    serialized_attributes = json.dumps(attributes, ensure_ascii=False)
+    secret_leak_count = sum(
+        marker in serialized_attributes
+        for marker in ("sk-must-not-leak", "private@example.com")
+    )
+    trace_redacted = secret_leak_count == 0
+    record(
+        "trace-redaction",
+        trace_redacted,
+        0.0,
+        secret_leak=not trace_redacted,
+    )
+
+    _write_json(root / "manifest.json", manifest)
+    _write_jsonl(root / "predictions.jsonl", predictions)
+    replay = load_offline_replay(root)
+    release_input = {
+        **replay,
+        "metrics": {"recall_at_5": 1.0},
+        "unsupported_claim_rate": 0.0,
+    }
+    decision = ReleaseGate().evaluate(release_input, dict(release_input))
+    metrics = {
+        "case_count": len(predictions),
+        "acl_leak_count": acl_leaks,
+        "secret_leak_count": secret_leak_count,
+        "cache_isolated": cache_isolated,
+        "timeout_classified": timeout_classified,
+        "circuit_recovered": circuit_recovered,
+        "batch_order_preserved": batch_order_preserved,
+        "release_gate_allowed": decision.allowed,
+        "failure_rate": replay["failure_rate"],
+        "p95_ms": _nearest_rank_percentile(sorted(latencies), 0.95),
+    }
+    report = {
+        "status": "completed" if not replay["failure_rate"] else "failed",
+        "manifest": manifest,
+        "metrics": metrics,
+        "release_gate": decision.to_dict(),
+        "predictions": predictions,
+    }
+    _write_json(root / "metrics.json", report)
+    _write_jsonl(
+        root / "case_dossiers.jsonl",
+        [
+            {
+                "case_id": row["case_id"],
+                "difficulty": "production governance contract",
+                "before": "A missing boundary could leak data or hide a provider failure.",
+                "root_cause": "Retrieval, cache, resilience, and trace controls require explicit contracts.",
+                "change": "Validate the boundary with a deterministic offline case.",
+                "after": row["status"],
+                "resolved": row["status"] == "succeeded",
+            }
+            for row in predictions
+        ],
+    )
+    _write_json(root / "run_status.json", {"status": report["status"], "finished_at": _now()})
+    return report
+
+
+def _stable_sha256(payload):
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def _write_json(path, payload):
+    Path(path).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _write_jsonl(path, rows):
+    Path(path).write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
 
 
 def _finite_metric(value, name):

@@ -38,11 +38,13 @@ from knowledge_storm.evaluation.public_benchmarks.runner import (
 )
 from knowledge_storm.evaluation.public_benchmarks.report import write_benchmark_artifacts
 from knowledge_storm.retrieval import CrossEncoderReranker, SentenceTransformerProvider
+from knowledge_storm.paperstorm_benchmarks import run_production_governance_benchmark
 
 
 AFFECTED_BY_MILESTONE = {
     "P1": ("pim", "scifact", "qasper-retrieval"),
     "P1+P2": ("scifact", "qasper-retrieval", "evidence-governance"),
+    "P1+P2+P3+P4": ("production-governance",),
 }
 BENCHMARKS = tuple(dict.fromkeys(sum(AFFECTED_BY_MILESTONE.values(), ())))
 BASELINE_REFERENCE = "docs/benchmarks/paperstorm_public_v55_summary.json"
@@ -151,6 +153,16 @@ def main(argv=None):
 
 
 def _run_one(args, benchmark, output_root):
+    if benchmark == "production-governance":
+        run_dir = output_root / benchmark
+        report = run_production_governance_benchmark(run_dir)
+        return {
+            "status": report["status"],
+            "benchmark": benchmark,
+            "output_dir": str(run_dir),
+            "case_count": report["metrics"]["case_count"],
+            "metrics": report["metrics"],
+        }
     if benchmark == "evidence-governance":
         return _run_evidence_governance(output_root)
     if args.milestone == "P1+P2" and benchmark != "evidence-governance":
