@@ -29,6 +29,11 @@ class RetrievalRequest:
     parent_budget_tokens: int = 0
     metadata_filters: Mapping = field(default_factory=dict)
     governance_features: Mapping = field(default_factory=dict)
+    tenant_id: str = ""
+    user_id: str = ""
+    policy_digest: str = ""
+    allowed_document_ids: Optional[Tuple[str, ...]] = None
+    allowed_chunk_ids: Optional[Tuple[str, ...]] = None
 
 
 class RetrievalPipeline:
@@ -103,16 +108,22 @@ class RetrievalPipeline:
         candidate_k = max(int(request.candidate_k), int(request.top_k), 1)
         rankings = []
         for planned_query in queries:
+            search_kwargs = {
+                "mode": cheap_mode,
+                "top_k": candidate_k,
+                "candidate_k": candidate_k,
+                "reranker": None,
+                "parent_budget_tokens": 0,
+            }
+            # Keep third-party/legacy index adapters compatible until a scope is
+            # explicitly requested; scoped callers must receive pre-retrieval ACL.
+            if request.allowed_document_ids is not None:
+                search_kwargs["allowed_document_ids"] = request.allowed_document_ids
+            if request.allowed_chunk_ids is not None:
+                search_kwargs["allowed_chunk_ids"] = request.allowed_chunk_ids
             rankings.append(
                 list(
-                    self.index.search(
-                        planned_query,
-                        mode=cheap_mode,
-                        top_k=candidate_k,
-                        candidate_k=candidate_k,
-                        reranker=None,
-                        parent_budget_tokens=0,
-                    )
+                    self.index.search(planned_query, **search_kwargs)
                 )
             )
         retrieved_count = sum(len(ranking) for ranking in rankings)
@@ -346,6 +357,19 @@ class RetrievalPipeline:
             },
             "mode": mode,
             "latency_ms": _elapsed_ms(started),
+            "policy_digest": str(request.policy_digest or ""),
+            "candidate_scope": {
+                "allowed_document_count": (
+                    None
+                    if request.allowed_document_ids is None
+                    else len(request.allowed_document_ids)
+                ),
+                "allowed_chunk_count": (
+                    None
+                    if request.allowed_chunk_ids is None
+                    else len(request.allowed_chunk_ids)
+                ),
+            },
         }
         if rerank_decision is not None:
             output["rerank_decision"] = rerank_decision.to_dict()

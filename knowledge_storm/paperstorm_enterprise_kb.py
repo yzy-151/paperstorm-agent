@@ -177,24 +177,34 @@ class EnterpriseKnowledgeBaseService:
             tenant_id, user_id, "knowledge_base", kb_id, "read"
         )
         manifest = self._read_manifest(kb_id)
-        cache_namespace = "{0}/knowledge_base/{1}/answers".format(tenant_id, kb_id)
-        cache_key = hashlib.sha256(
-            json.dumps(
-                {
-                    "question": question,
-                    "top_k": int(top_k),
-                    "index_version": manifest.get("index_version", 1),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ).encode("utf-8")
-        ).hexdigest()
-        cached = self.control.get_cache(cache_namespace, cache_key)
-        if cached["hit"]:
-            return dict(cached["value"], cache_hit=True)
         index = self._load_index(kb_id, manifest)
         pipeline = RetrievalPipeline(index)
         retrieval_query = _expand_query(question)
+        search_plan = pipeline.search_planner.plan(retrieval_query)
+        allowed_document_ids, policy_digest = _accessible_document_scope(
+            self.control,
+            kb_id=kb_id,
+            manifest=manifest,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+        cache_namespace, cache_key = _answer_cache_identity(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            kb_id=kb_id,
+            index_revision={
+                "index_version": manifest.get("index_version", 1),
+                "schema_revision": manifest.get("schema_revision", 0),
+                "index_schema_revision": index.manifest.get("schema_revision", 0),
+            },
+            top_k=top_k,
+            query=retrieval_query,
+            search_plan=search_plan.to_dict(),
+            policy_digest=policy_digest,
+        )
+        cached = self.control.get_cache(cache_namespace, cache_key)
+        if cached["hit"]:
+            return dict(cached["value"], cache_hit=True)
         retrieved = pipeline.search(
             RetrievalRequest(
                 query=retrieval_query,
@@ -203,6 +213,11 @@ class EnterpriseKnowledgeBaseService:
                 mode=manifest.get("retrieval_mode") or "hybrid",
                 expected_keywords=tuple(manifest.get("expected_keywords") or []),
                 forbidden_keywords=tuple(manifest.get("forbidden_keywords") or []),
+                search_plan=search_plan,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                policy_digest=policy_digest,
+                allowed_document_ids=allowed_document_ids,
             )
         )
         evidence = [_rag_chunk_to_doc(chunk) for chunk in retrieved.get("results") or []]
@@ -396,6 +411,94 @@ def _provider_from_manifest(manifest: Dict):
     prefix = "sentence-transformers:"
     model_name = name[len(prefix) :] if name.startswith(prefix) else None
     return build_embedding_provider("sentence-transformer", model_name=model_name)
+
+
+def _accessible_document_scope(control, kb_id, manifest, tenant_id, user_id):
+    """Return a fail-closed document scope plus its stable policy fingerprint."""
+    known_document_ids = {
+        str(item.get("document_id") or "")
+        for item in manifest.get("documents") or []
+        if str(item.get("document_id") or "")
+    }
+    prefix = "{0}:".format(kb_id)
+    resources = []
+    document_ids = []
+    for resource in control.list_accessible_resources(
+        tenant_id, user_id, "document"
+    ):
+        resource_id = str(resource.get("resource_id") or "")
+        if not resource_id.startswith(prefix):
+            continue
+        document_id = resource_id[len(prefix) :]
+        if document_id not in known_document_ids:
+            continue
+        document_ids.append(document_id)
+        resources.append(
+            {
+                "resource_id": resource_id,
+                "version": resource.get("version"),
+                "owner_user_id": resource.get("owner_user_id"),
+                "allowed_user_ids": sorted(resource.get("allowed_user_ids") or []),
+            }
+        )
+    document_ids = tuple(sorted(set(document_ids)))
+    digest_payload = {
+        "tenant_id": str(tenant_id),
+        "user_id": str(user_id),
+        "kb_id": str(kb_id),
+        "allowed_document_ids": document_ids,
+        "resources": sorted(resources, key=lambda item: item["resource_id"]),
+    }
+    policy_digest = hashlib.sha256(
+        json.dumps(digest_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return document_ids, policy_digest
+
+
+def _answer_cache_identity(
+    *,
+    tenant_id,
+    user_id,
+    kb_id,
+    index_revision,
+    top_k,
+    query,
+    search_plan,
+    policy_digest,
+):
+    query_digest = hashlib.sha256(
+        json.dumps(
+            {"query": str(query), "search_plan": search_plan},
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    namespace = (
+        "tenant/{0}/user/{1}/policy/{2}/knowledge_base/{3}/index/{4}/answers"
+    ).format(
+        tenant_id,
+        user_id,
+        policy_digest,
+        kb_id,
+        hashlib.sha256(
+            json.dumps(index_revision, sort_keys=True).encode("utf-8")
+        ).hexdigest()[:16],
+    )
+    key = hashlib.sha256(
+        json.dumps(
+            {
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "policy_digest": policy_digest,
+                "index_revision": index_revision,
+                "query_digest": query_digest,
+                "top_k": int(top_k),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    return namespace, key
 
 
 def _documents_from_records(

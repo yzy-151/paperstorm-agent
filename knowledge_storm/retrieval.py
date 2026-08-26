@@ -457,6 +457,8 @@ class HybridPaperIndex:
         reranker=None,
         rank_constant: int = 60,
         parent_budget_tokens: int = 0,
+        allowed_document_ids: Optional[Sequence[str]] = None,
+        allowed_chunk_ids: Optional[Sequence[str]] = None,
     ) -> List[Dict]:
         if mode not in {"bm25", "dense", "hybrid", "hybrid_rerank"}:
             raise ValueError("unsupported retrieval mode: {0}".format(mode))
@@ -464,14 +466,22 @@ class HybridPaperIndex:
             raise ValueError("parent_budget_tokens must not be negative")
         if not self.chunks:
             return []
-        candidate_k = min(len(self.chunks), candidate_k or max(top_k * 4, 20))
+        candidate_indices = self._candidate_indices(
+            allowed_document_ids=allowed_document_ids,
+            allowed_chunk_ids=allowed_chunk_ids,
+        )
+        if not candidate_indices:
+            return []
+        candidate_k = min(
+            len(candidate_indices), candidate_k or max(top_k * 4, 20)
+        )
         if mode == "bm25":
-            selected = self._bm25_search(query, candidate_k)
+            selected = self._bm25_search(query, candidate_k, candidate_indices)
         elif mode == "dense":
-            selected = self._dense_search(query, candidate_k)
+            selected = self._dense_search(query, candidate_k, candidate_indices)
         else:
-            bm25 = self._bm25_search(query, candidate_k)
-            dense = self._dense_search(query, candidate_k)
+            bm25 = self._bm25_search(query, candidate_k, candidate_indices)
+            dense = self._dense_search(query, candidate_k, candidate_indices)
             selected = reciprocal_rank_fusion(
                 [bm25, dense], rank_constant=rank_constant
             )
@@ -639,31 +649,73 @@ class HybridPaperIndex:
             chunk_overlap=chunk_overlap,
         )
 
-    def _bm25_search(self, query: str, top_k: int):
-        scores = self._bm25.get_scores(retrieval_query_tokens(query))
+    def _candidate_indices(self, allowed_document_ids=None, allowed_chunk_ids=None):
+        """Resolve authorization scope before either retrieval scorer executes."""
+        document_scope = (
+            None
+            if allowed_document_ids is None
+            else {str(value) for value in allowed_document_ids}
+        )
+        chunk_scope = (
+            None
+            if allowed_chunk_ids is None
+            else {str(value) for value in allowed_chunk_ids}
+        )
+        return [
+            index
+            for index, chunk in enumerate(self.chunks)
+            if (document_scope is None or str(chunk.get("document_id") or "") in document_scope)
+            and (chunk_scope is None or str(chunk.get("chunk_id") or "") in chunk_scope)
+        ]
+
+    def _bm25_search(self, query: str, top_k: int, candidate_indices=None):
+        indices = (
+            list(range(len(self.chunks)))
+            if candidate_indices is None
+            else list(candidate_indices)
+        )
+        if not indices:
+            return []
+        if len(indices) == len(self.chunks):
+            scores = self._bm25.get_scores(retrieval_query_tokens(query))
+        else:
+            from rank_bm25 import BM25Okapi
+
+            scores = BM25Okapi([self._tokens[index] for index in indices]).get_scores(
+                retrieval_query_tokens(query)
+            )
         ranked = []
-        for index in sorted(
-            range(len(scores)), key=lambda value: (-scores[value], value)
+        for position in sorted(
+            range(len(scores)), key=lambda value: (-scores[value], indices[value])
         )[:top_k]:
+            index = indices[position]
             item = dict(self.chunks[index])
-            item["bm25_score"] = round(float(scores[index]), 8)
+            item["bm25_score"] = round(float(scores[position]), 8)
             ranked.append(item)
         return ranked
 
-    def _dense_search(self, query: str, top_k: int):
+    def _dense_search(self, query: str, top_k: int, candidate_indices=None):
+        indices = (
+            list(range(len(self.chunks)))
+            if candidate_indices is None
+            else list(candidate_indices)
+        )
+        if not indices:
+            return []
         query_vector = np.asarray(
             self.embedding_provider.embed_query(query), dtype=np.float32
         )
         query_norm = float(np.linalg.norm(query_vector))
         if query_norm:
             query_vector = query_vector / query_norm
-        scores = self._normalized_embedding_matrix @ query_vector
+        scores = self._normalized_embedding_matrix[indices] @ query_vector
         ranked = []
-        for index in sorted(
-            range(len(scores)), key=lambda value: (-scores[value], value)
+        for position in sorted(
+            range(len(scores)), key=lambda value: (-scores[value], indices[value])
         )[:top_k]:
+            index = indices[position]
             item = dict(self.chunks[index])
-            item["dense_score"] = round(float(scores[index]), 8)
+            item["dense_score"] = round(float(scores[position]), 8)
             ranked.append(item)
         return ranked
 
