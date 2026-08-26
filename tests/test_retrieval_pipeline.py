@@ -42,6 +42,14 @@ class RecordingIndex:
 
 
 class RetrievalPipelineTest(unittest.TestCase):
+    def test_rrf_margin_is_relative_to_top_score(self):
+        from knowledge_storm.retrieval_pipeline import _rrf_margin
+
+        self.assertAlmostEqual(
+            0.1,
+            _rrf_margin([{"rrf_score": 0.03}, {"rrf_score": 0.027}]),
+        )
+
     def test_parent_expansion_runs_once_after_gate_for_final_candidates(self):
         from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
         from knowledge_storm.search_planning import SearchPlan

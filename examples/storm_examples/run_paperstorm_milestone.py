@@ -15,9 +15,15 @@ from pathlib import Path
 from knowledge_storm.badcase_reporting import (
     CaseDossier,
     build_milestone_manifest,
+    paired_bootstrap_ci,
     sanitize_json_payload,
     write_case_dossiers,
     write_milestone_manifest,
+)
+from knowledge_storm.evidence_governance import (
+    EvidenceAssessor,
+    RerankPolicy,
+    select_evidence,
 )
 from knowledge_storm.evaluation.public_benchmarks.base import (
     BenchmarkCase,
@@ -31,10 +37,14 @@ from knowledge_storm.evaluation.public_benchmarks.runner import (
     run_retrieval_benchmark,
 )
 from knowledge_storm.evaluation.public_benchmarks.report import write_benchmark_artifacts
-from knowledge_storm.retrieval import SentenceTransformerProvider
+from knowledge_storm.retrieval import CrossEncoderReranker, SentenceTransformerProvider
 
 
-AFFECTED_P1 = ("pim", "scifact", "qasper-retrieval")
+AFFECTED_BY_MILESTONE = {
+    "P1": ("pim", "scifact", "qasper-retrieval"),
+    "P1+P2": ("scifact", "qasper-retrieval", "evidence-governance"),
+}
+BENCHMARKS = tuple(dict.fromkeys(sum(AFFECTED_BY_MILESTONE.values(), ())))
 BASELINE_REFERENCE = "docs/benchmarks/paperstorm_public_v55_summary.json"
 
 
@@ -48,10 +58,11 @@ class BenchmarkPreflightError(RuntimeError):
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Run a PaperStorm cumulative milestone")
-    parser.add_argument("--milestone", choices=("P1",), default="P1")
-    parser.add_argument("--benchmark", nargs="+", choices=AFFECTED_P1)
+    parser.add_argument("--milestone", choices=tuple(AFFECTED_BY_MILESTONE), default="P1")
+    parser.add_argument("--benchmark", nargs="+", choices=BENCHMARKS)
     parser.add_argument("--benchmark-root", required=True)
     parser.add_argument("--model-cache")
+    parser.add_argument("--baseline-dir")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--embedding", choices=("hash", "real"), default="real")
     parser.add_argument(
@@ -61,6 +72,11 @@ def build_parser():
         "--model",
         default="sentence-transformers/all-MiniLM-L6-v2",
     )
+    parser.add_argument(
+        "--reranker-model",
+        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+    )
+    parser.add_argument("--rerank-latency-budget-ms", type=int, default=2000)
     parser.add_argument("--top-k", type=int)
     parser.add_argument("--seed", type=int, default=55)
     parser.add_argument("--smoke-limit", type=int)
@@ -68,7 +84,7 @@ def build_parser():
 
 
 def resolve_benchmarks(args):
-    return tuple(args.benchmark or AFFECTED_P1)
+    return tuple(args.benchmark or AFFECTED_BY_MILESTONE[args.milestone])
 
 
 def main(argv=None):
@@ -135,38 +151,72 @@ def main(argv=None):
 
 
 def _run_one(args, benchmark, output_root):
+    if benchmark == "evidence-governance":
+        return _run_evidence_governance(output_root)
+    if args.milestone == "P1+P2" and benchmark != "evidence-governance":
+        baseline_dir = Path(args.baseline_dir) if args.baseline_dir else None
+        if baseline_dir is None or not (baseline_dir / benchmark / "manifest.json").is_file():
+            raise BenchmarkPreflightError(
+                "baseline_missing",
+                "P1+P2 requires --baseline-dir containing the matching P1 benchmark",
+            )
     started_at = _now()
     split, top_k = _protocol_for(benchmark, args.evaluation_phase, args.top_k)
     dataset, dataset_path, scope_field = _load_dataset(args, benchmark, split)
     dataset = _subset(dataset, args.smoke_limit, scope_field)
     provider = _embedding_provider(args)
+    is_p2 = args.milestone == "P1+P2"
+    reranker = _reranker(args) if is_p2 else None
     run_dir = output_root / benchmark
     run_dir.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(run_dir / "run_status.json", {"status": "running", "started_at": started_at})
     report = run_retrieval_benchmark(
         dataset,
         embedding_provider=provider,
-        modes=("hybrid",),
+        modes=(("hybrid_governed",) if is_p2 else ("hybrid",)),
+        reranker=reranker,
+        rerank_policy=(
+            RerankPolicy(
+                model=args.reranker_model,
+                max_p95_ms=args.rerank_latency_budget_ms,
+            )
+            if is_p2 else None
+        ),
+        evidence_assessor=EvidenceAssessor() if is_p2 else None,
+        governance_features=(
+            {
+                "answer_risk": 0.9,
+                "observed_p95_ms": 0.0,
+                "latency_budget_ms": args.rerank_latency_budget_ms,
+            }
+            if is_p2 else None
+        ),
         top_k=top_k,
         seed=args.seed,
         bootstrap_samples=100 if args.smoke_limit else 2000,
         output_dir=None,
         scope_field=scope_field,
         milestone_metadata={
-            "milestone": "P1",
-            "baseline_reference": BASELINE_REFERENCE,
+            "milestone": args.milestone,
+            "baseline_reference": (
+                str(args.baseline_dir) if is_p2 else BASELINE_REFERENCE
+            ),
         },
         structured_nodes=benchmark in {"scifact", "qasper-retrieval"},
         parent_budget_tokens=512 if benchmark == "qasper-retrieval" else (256 if benchmark == "scifact" else 0),
     )
-    comparison = _comparison_metadata(
-        benchmark=benchmark,
-        split=split,
-        top_k=top_k,
-        model=args.model,
-        embedding_kind=args.embedding,
-        smoke_limit=args.smoke_limit,
-        actual_manifest=report["manifest"],
+    comparison = (
+        _p2_comparison(Path(args.baseline_dir), benchmark, report, top_k)
+        if is_p2
+        else _comparison_metadata(
+            benchmark=benchmark,
+            split=split,
+            top_k=top_k,
+            model=args.model,
+            embedding_kind=args.embedding,
+            smoke_limit=args.smoke_limit,
+            actual_manifest=report["manifest"],
+        )
     )
     report["manifest"]["comparison"] = comparison
     report.setdefault("milestone", {})["comparison"] = comparison
@@ -179,11 +229,14 @@ def _run_one(args, benchmark, output_root):
         run_dir, report["manifest"], report, report["predictions"], bad_cases
     )
     manifest = build_milestone_manifest(
-        milestone="P1",
+        milestone=args.milestone,
         git_sha=_git_sha(),
         dataset_path=dataset_path,
         split=split,
-        models={"embedding": getattr(provider, "name", args.model)},
+        models={
+            "embedding": getattr(provider, "name", args.model),
+            **({"reranker": args.reranker_model} if is_p2 else {}),
+        },
         top_k=top_k,
         seed=args.seed,
         command=args.command,
@@ -195,7 +248,9 @@ def _run_one(args, benchmark, output_root):
             "python": platform.python_version(),
         },
     )
-    manifest["baseline_reference"] = BASELINE_REFERENCE
+    manifest["baseline_reference"] = (
+        str(args.baseline_dir) if is_p2 else BASELINE_REFERENCE
+    )
     manifest["comparison"] = comparison
     manifest["benchmark"] = benchmark
     write_milestone_manifest(run_dir / "milestone_manifest.json", manifest)
@@ -206,7 +261,10 @@ def _run_one(args, benchmark, output_root):
             run_dir / "case_dossiers.jsonl", dossiers
         )
     elif benchmark == "qasper-retrieval":
-        dossiers = _qasper_dossiers(dataset, report)
+        dossiers = _qasper_dossiers(
+            dataset, report, milestone=args.milestone,
+            baseline_dir=Path(args.baseline_dir) if is_p2 else None,
+        )
         write_case_dossiers(run_dir / "case_dossiers.jsonl", dossiers)
     result = {
         "status": "completed",
@@ -219,6 +277,152 @@ def _run_one(args, benchmark, output_root):
     }
     _atomic_write_json(run_dir / "run_status.json", {"status": "completed", "finished_at": _now()})
     return result
+
+
+def _p2_comparison(baseline_dir, benchmark, candidate, top_k):
+    baseline_run = Path(baseline_dir) / benchmark
+    baseline_manifest = json.loads(
+        (baseline_run / "manifest.json").read_text(encoding="utf-8")
+    )
+    candidate_manifest = candidate["manifest"]
+    fields = (
+        "benchmark", "dataset_version", "split", "case_count", "document_count",
+        "corpus_sha256", "query_gold_sha256", "embedding_model", "top_k", "seed",
+    )
+    mismatches = [
+        field for field in fields
+        if baseline_manifest.get(field) != candidate_manifest.get(field)
+    ]
+    if mismatches:
+        return {
+            "status": "incomparable",
+            "reasons": ["{0}_mismatch".format(field) for field in mismatches],
+            "paired_case_count": 0,
+        }
+    baseline_report = json.loads(
+        (baseline_run / "metrics.json").read_text(encoding="utf-8")
+    )
+    baseline_metrics = baseline_report["modes"]["hybrid"]
+    candidate_metrics = candidate["modes"]["hybrid_governed"]
+    metric_names = (
+        "recall_at_{0}".format(top_k),
+        "mrr_at_{0}".format(top_k),
+        "ndcg_at_{0}".format(top_k),
+    )
+    baseline_predictions = {
+        row["case_id"]: row
+        for row in _read_jsonl(baseline_run / "predictions.jsonl")
+    }
+    candidate_predictions = {
+        row["case_id"]: row for row in candidate["predictions"]
+    }
+    shared = sorted(set(baseline_predictions) & set(candidate_predictions))
+    if len(shared) != int(candidate_manifest["case_count"]):
+        return {
+            "status": "incomparable",
+            "reasons": ["prediction_case_set_mismatch"],
+            "paired_case_count": len(shared),
+        }
+    confidence_intervals = {}
+    for metric in metric_names:
+        confidence_intervals[metric] = paired_bootstrap_ci(
+            [baseline_predictions[item]["metrics"][metric] for item in shared],
+            [candidate_predictions[item]["metrics"][metric] for item in shared],
+            samples=2000,
+            seed=int(candidate_manifest["seed"]),
+        )
+    delta = {
+        metric: round(candidate_metrics[metric] - baseline_metrics[metric], 6)
+        for metric in metric_names
+    }
+    delta["p95_latency_ms"] = round(
+        candidate_metrics["p95_latency_ms"] - baseline_metrics["p95_latency_ms"],
+        4,
+    )
+    return {
+        "status": "comparable",
+        "reasons": [],
+        "baseline_milestone": "P1",
+        "candidate_milestone": "P1+P2",
+        "paired_case_count": len(shared),
+        "delta": delta,
+        "paired_bootstrap_ci": confidence_intervals,
+    }
+
+
+def _run_evidence_governance(output_root):
+    run_dir = Path(output_root) / "evidence-governance"
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "tests" / "fixtures" / "evidence_governance_badcases.json"
+    )
+    payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+    assessor = EvidenceAssessor()
+    selected = select_evidence(payload["coverage_candidates"], top_k=3)
+    coverage_passed = len({_source_id(item) for item in selected}) >= 2
+    conflict = assessor.assess(
+        "Does the treatment improve survival?", payload["conflict_evidence"]
+    )
+    no_answer = assessor.assess("What dose cures the disease?", payload["no_answer_evidence"])
+    outcomes = {
+        "coverage": coverage_passed,
+        "conflict": conflict.next_action == "present_conflict",
+        "no-answer": no_answer.next_action == "abstain",
+    }
+    dossiers = [
+        CaseDossier(
+            case_id="coverage", milestone="P1+P2",
+            question="Select relevant evidence without source collapse",
+            before={"failure": "top-score selection repeats one source"},
+            root_cause="Top-K relevance alone ignores provenance coverage",
+            change="normalized MMR plus parent/source diversity",
+            after={"selected_ids": [item["chunk_id"] for item in selected], "coverage_score": selected.coverage_score, "resolved": coverage_passed},
+        ),
+        CaseDossier(
+            case_id="conflict", milestone="P1+P2",
+            question="Does the treatment improve survival?",
+            before={"failure": "one source may be presented as settled truth"},
+            root_cause="Contradictory claims lacked condition-aware grouping",
+            change="claim condition compatibility and explicit conflict action",
+            after={"next_action": conflict.next_action, "conflict_count": len(conflict.conflicts), "resolved": outcomes["conflict"]},
+        ),
+        CaseDossier(
+            case_id="no-answer", milestone="P1+P2",
+            question="What dose cures the disease?",
+            before={"failure": "empty evidence could reach answer generation"},
+            root_cause="No answerability gate after retrieval",
+            change="EvidenceAssessment abstention contract",
+            after={"next_action": no_answer.next_action, "failure_type": no_answer.failure_type, "resolved": outcomes["no-answer"]},
+        ),
+    ]
+    run_dir.mkdir(parents=True, exist_ok=True)
+    metrics = {
+        "benchmark": "paperstorm-evidence-governance-fixed-v1",
+        "case_count": len(outcomes),
+        "passed": sum(outcomes.values()),
+        "pass_rate": round(sum(outcomes.values()) / len(outcomes), 6),
+        "outcomes": outcomes,
+    }
+    _atomic_write_json(run_dir / "metrics.json", metrics)
+    write_case_dossiers(run_dir / "case_dossiers.jsonl", dossiers)
+    _atomic_write_json(run_dir / "run_status.json", {"status": "completed", "finished_at": _now()})
+    return {
+        "status": "completed", "benchmark": "evidence-governance",
+        "output_dir": str(run_dir), "case_count": len(outcomes),
+        "dossier_count": len(dossiers), "dossier_status": "written",
+    }
+
+
+def _source_id(item):
+    metadata = item.get("metadata") or {}
+    return str(item.get("source") or metadata.get("source") or item.get("chunk_id") or "")
+
+
+def _read_jsonl(path):
+    return [
+        json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def _load_dataset(args, benchmark, split):
@@ -290,6 +494,26 @@ def _embedding_provider(args):
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     return SentenceTransformerProvider(model_name=args.model, cache_folder=str(cache))
+
+
+def _reranker(args):
+    if not args.model_cache:
+        raise BenchmarkPreflightError(
+            "reranker_model_missing",
+            "P1+P2 requires --model-cache containing the reranker",
+        )
+    cache = Path(args.model_cache)
+    model_dir = cache / ("models--" + args.reranker_model.replace("/", "--"))
+    if not model_dir.exists():
+        raise BenchmarkPreflightError(
+            "reranker_model_missing",
+            "reranker model is not present in local cache: {0}".format(model_dir),
+        )
+    os.environ["PAPERSTORM_OFFLINE_TESTS"] = "1"
+    return CrossEncoderReranker(
+        model_name=args.reranker_model,
+        cache_folder=str(cache),
+    )
 
 
 def _subset(dataset, limit, scope_field):
@@ -387,10 +611,16 @@ def _pim_dossiers(fixture_path, report):
     return dossiers
 
 
-def _qasper_dossiers(dataset, report):
+def _qasper_dossiers(dataset, report, milestone="P1", baseline_dir=None):
     """Create auditable current-run evidence without inventing a case baseline."""
     predictions = {row["case_id"]: row for row in report.get("predictions", [])}
     document_map = dataset.document_map()
+    baseline_predictions = {}
+    if baseline_dir is not None:
+        baseline_predictions = {
+            row["case_id"]: row
+            for row in _read_jsonl(Path(baseline_dir) / "qasper-retrieval" / "predictions.jsonl")
+        }
     candidates = []
     for case in dataset.cases:
         prediction = predictions.get(case.case_id)
@@ -404,34 +634,54 @@ def _qasper_dossiers(dataset, report):
         ranked_ids = list(prediction.get("ranked_document_ids") or [])
         top1_relevant = bool(ranked_ids and ranked_ids[0] in relevant_ids)
         recalled = bool(set(ranked_ids).intersection(relevant_ids))
-        candidates.append((not recalled, overlap, case, prediction, top1_relevant))
+        baseline = baseline_predictions.get(case.case_id)
+        rank_gain = 0
+        if baseline is not None:
+            rank_gain = _first_relevant_rank(
+                baseline.get("ranked_document_ids"), relevant_ids
+            ) - _first_relevant_rank(ranked_ids, relevant_ids)
+        candidates.append((rank_gain, not recalled, overlap, case, prediction, top1_relevant, baseline))
     if not candidates:
         return []
-    _, overlap, case, prediction, top1_relevant = sorted(
-        candidates, key=lambda item: (not item[0], item[1], str(item[2].case_id))
+    _, _, overlap, case, prediction, top1_relevant, baseline = sorted(
+        candidates,
+        key=lambda item: (-item[0], not item[1], item[2], str(item[3].case_id)),
     )[0]
     ranked_ids = list(prediction.get("ranked_document_ids") or [])
     relevant_ids = list(case.relevant_document_ids)
-    before = {
-        "source": "archived_aggregate",
-        "case_level_before_available": False,
-        "baseline_reference": BASELINE_REFERENCE,
-        "baseline_sha256": _sha256_file(_baseline_path()),
-        "paired_comparison_allowed": False,
-        "benchmark": "qasper_test",
-        "aggregate": _archived_qasper_aggregate(),
-        "note": "Archived aggregate only; no case-level baseline was recorded.",
-    }
+    if baseline is not None:
+        before = {
+            "source": "P1_prediction",
+            "case_level_before_available": True,
+            "baseline_reference": str(baseline_dir),
+            "paired_comparison_allowed": True,
+            "ranked_document_ids": baseline.get("ranked_document_ids", []),
+            "metrics": baseline.get("metrics", {}),
+        }
+    else:
+        before = {
+            "source": "archived_aggregate",
+            "case_level_before_available": False,
+            "baseline_reference": BASELINE_REFERENCE,
+            "baseline_sha256": _sha256_file(_baseline_path()),
+            "paired_comparison_allowed": False,
+            "benchmark": "qasper_test",
+            "aggregate": _archived_qasper_aggregate(),
+            "note": "Archived aggregate only; no case-level baseline was recorded.",
+        }
     return [
         CaseDossier(
             case_id=str(case.case_id),
-            milestone="P1",
+            milestone=milestone,
             question=case.query,
             before=before,
             root_cause=(
                 "Low query-to-gold lexical overlap and/or failure to retrieve gold evidence"
             ),
-            change=_actual_change(prediction),
+            change=(
+                "selective CrossEncoder rerank; normalized MMR coverage; EvidenceAssessment"
+                if milestone == "P1+P2" else _actual_change(prediction)
+            ),
             after={
                 "ranked_document_ids": ranked_ids,
                 "relevant_document_ids": relevant_ids,
@@ -440,14 +690,28 @@ def _qasper_dossiers(dataset, report):
                 "resolved": top1_relevant,
                 "search_plan": prediction.get("search_plan", {}),
                 "retrieval_stages": prediction.get("retrieval_stages", []),
+                "rerank_decision": prediction.get("rerank_decision"),
+                "evidence_assessment": prediction.get("evidence_assessment"),
             },
             residual_risk=(
                 "Current run does not place gold evidence at rank 1; the case remains unresolved."
                 if not top1_relevant
-                else "Case-level improvement cannot be paired because the archived baseline is aggregate-only."
+                else (
+                    ""
+                    if baseline is not None
+                    else "Case-level improvement cannot be paired because the archived baseline is aggregate-only."
+                )
             ),
         )
     ]
+
+
+def _first_relevant_rank(ranked_ids, relevant_ids):
+    relevant = set(relevant_ids or ())
+    for rank, item in enumerate(ranked_ids or (), start=1):
+        if item in relevant:
+            return rank
+    return 10 ** 6
 
 
 def _lexical_overlap(left, right):

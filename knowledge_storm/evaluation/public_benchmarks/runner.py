@@ -43,6 +43,9 @@ def run_retrieval_benchmark(
     modes=("bm25", "dense", "hybrid"),
     top_k=10,
     reranker=None,
+    rerank_policy=None,
+    evidence_assessor=None,
+    governance_features=None,
     bootstrap_samples=2000,
     seed=55,
     output_dir=None,
@@ -82,17 +85,30 @@ def run_retrieval_benchmark(
                     )
                 case_index = scoped_indices[scope_value]
             started = time.perf_counter()
+            governed = mode == "hybrid_governed"
+            if governed and (rerank_policy is None or evidence_assessor is None):
+                raise ValueError(
+                    "hybrid_governed requires rerank_policy and evidence_assessor"
+                )
+            case_features = (
+                governance_features(case)
+                if callable(governance_features)
+                else dict(governance_features or {})
+            )
             outcome = RetrievalPipeline(
                 case_index,
-                reranker=reranker if mode == "hybrid_rerank" else None,
+                reranker=reranker if mode in {"hybrid_rerank", "hybrid_governed"} else None,
+                rerank_policy=rerank_policy if governed else None,
+                evidence_assessor=evidence_assessor if governed else None,
             ).search(
                 RetrievalRequest(
                     query=case.query,
-                    mode=mode,
+                    mode="hybrid" if governed else mode,
                     top_k=top_k,
                     candidate_k=max(top_k * 4, 20),
                     enable_reranker=mode == "hybrid_rerank",
                     parent_budget_tokens=int(parent_budget_tokens),
+                    governance_features=case_features if governed else {},
                 )
             )
             ranked = outcome["results"]
@@ -112,6 +128,9 @@ def run_retrieval_benchmark(
                 "retrieval_stages": outcome["stages"],
                 "search_plan": outcome["search_plan"],
             }
+            if governed:
+                row["rerank_decision"] = outcome["rerank_decision"]
+                row["evidence_assessment"] = outcome["evidence_assessment"]
             if prediction_milestone is not None:
                 row["milestone"] = prediction_milestone
             predictions.append(row)

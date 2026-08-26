@@ -132,6 +132,46 @@ class PublicBenchmarkContractTest(unittest.TestCase):
         self.assertNotIn("must-not-leak", json.dumps(report))
         self.assertNotIn("milestone", plain["predictions"][0])
 
+    def test_governed_mode_records_policy_and_assessment(self):
+        from knowledge_storm.evaluation.public_benchmarks.base import BenchmarkCase, BenchmarkDataset, BenchmarkDocument
+        from knowledge_storm.evaluation.public_benchmarks.runner import HashEmbeddingProvider, run_retrieval_benchmark
+        from knowledge_storm.evidence_governance import EvidenceAssessor, RerankPolicy
+        from knowledge_storm.retrieval import CrossEncoderReranker
+
+        dataset = BenchmarkDataset(
+            "fixture",
+            "1",
+            (
+                BenchmarkDocument("doc-1", "RF", "passive intermodulation cancellation"),
+                BenchmarkDocument("doc-2", "Memory", "processing in memory hardware"),
+            ),
+            (BenchmarkCase("case", "PIM cancellation", ("doc-1",), "test"),),
+        )
+        reranker = CrossEncoderReranker(score_fn=lambda pairs: [1.0 - index for index, _ in enumerate(pairs)])
+
+        report = run_retrieval_benchmark(
+            dataset,
+            HashEmbeddingProvider(),
+            modes=("hybrid_governed",),
+            top_k=1,
+            reranker=reranker,
+            rerank_policy=RerankPolicy(),
+            evidence_assessor=EvidenceAssessor(),
+            governance_features={
+                "answer_risk": 0.9,
+                "bm25_dense_overlap": 0.1,
+                "observed_p95_ms": 10,
+                "latency_budget_ms": 800,
+            },
+            bootstrap_samples=5,
+        )
+
+        prediction = report["predictions"][0]
+        self.assertTrue(prediction["rerank_decision"]["enabled"])
+        self.assertIn("next_action", prediction["evidence_assessment"])
+        self.assertEqual("hybrid_governed", prediction["mode"])
+        self.assertEqual("hybrid_governed", report["manifest"]["modes"][0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -492,7 +492,9 @@ def _rrf_margin(results):
         return 1.0
     first = float(results[0].get("rrf_score", results[0].get("score", 0.0)))
     second = float(results[1].get("rrf_score", results[1].get("score", 0.0)))
-    return abs(first - second)
+    if not math.isfinite(first) or not math.isfinite(second):
+        return 0.0
+    return min(1.0, abs(first - second) / max(abs(first), 1e-12))
 
 
 def _search_text(item):

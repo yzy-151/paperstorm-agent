@@ -59,11 +59,134 @@ class PaperStormMilestoneTest(unittest.TestCase):
         self.assertFalse(metadata["aggregate_comparison_allowed"])
         self.assertIn("baseline_query_gold_fingerprint_missing", metadata["reasons"])
 
-    def test_cli_rejects_non_p1_milestones(self):
-        from examples.storm_examples.run_paperstorm_milestone import build_parser
+    def test_p2_defaults_to_only_affected_benchmarks(self):
+        from examples.storm_examples.run_paperstorm_milestone import build_parser, resolve_benchmarks
 
-        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            build_parser().parse_args(["--milestone", "P1+P2", "--output-dir", "out", "--benchmark-root", "data"])
+        args = build_parser().parse_args([
+            "--milestone", "P1+P2",
+            "--output-dir", "out",
+            "--benchmark-root", "data",
+            "--baseline-dir", "p1",
+        ])
+
+        self.assertEqual(
+            ("scifact", "qasper-retrieval", "evidence-governance"),
+            resolve_benchmarks(args),
+        )
+        self.assertEqual("cross-encoder/ms-marco-MiniLM-L-6-v2", args.reranker_model)
+
+    def test_p2_requires_previous_milestone_directory(self):
+        from examples.storm_examples.run_paperstorm_milestone import main
+
+        with tempfile.TemporaryDirectory() as temp_dir, redirect_stdout(io.StringIO()):
+            summary = main([
+                "--milestone", "P1+P2",
+                "--benchmark", "scifact",
+                "--benchmark-root", temp_dir,
+                "--output-dir", str(Path(temp_dir) / "out"),
+                "--embedding", "hash",
+            ])
+
+        self.assertEqual("baseline_missing", summary["benchmarks"]["scifact"]["reason_code"])
+
+    def test_p2_comparison_uses_matching_p1_predictions(self):
+        from examples.storm_examples.run_paperstorm_milestone import _p2_comparison
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir) / "scifact"
+            run_dir.mkdir()
+            manifest = {
+                "benchmark": "fixture", "dataset_version": "1", "split": "test",
+                "case_count": 1, "document_count": 2, "corpus_sha256": "corpus",
+                "query_gold_sha256": "qrels", "embedding_model": "embed",
+                "top_k": 5, "seed": 55,
+            }
+            (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            (run_dir / "metrics.json").write_text(json.dumps({
+                "modes": {"hybrid": {"recall_at_5": 0.0, "mrr_at_5": 0.0, "ndcg_at_5": 0.0, "p95_latency_ms": 10.0}}
+            }), encoding="utf-8")
+            (run_dir / "predictions.jsonl").write_text(json.dumps({
+                "case_id": "c1", "metrics": {"recall_at_5": 0.0, "mrr_at_5": 0.0, "ndcg_at_5": 0.0}
+            }) + "\n", encoding="utf-8")
+            candidate = {
+                "manifest": dict(manifest),
+                "modes": {"hybrid_governed": {"recall_at_5": 1.0, "mrr_at_5": 1.0, "ndcg_at_5": 1.0, "p95_latency_ms": 20.0}},
+                "predictions": [{"case_id": "c1", "metrics": {"recall_at_5": 1.0, "mrr_at_5": 1.0, "ndcg_at_5": 1.0}}],
+            }
+
+            comparison = _p2_comparison(Path(temp_dir), "scifact", candidate, 5)
+
+        self.assertEqual("comparable", comparison["status"])
+        self.assertEqual(1.0, comparison["delta"]["recall_at_5"])
+        self.assertEqual(10.0, comparison["delta"]["p95_latency_ms"])
+        self.assertEqual(1, comparison["paired_case_count"])
+
+    def test_evidence_governance_benchmark_writes_fixed_case_dossiers(self):
+        from examples.storm_examples.run_paperstorm_milestone import _run_evidence_governance
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = _run_evidence_governance(Path(temp_dir))
+            run_dir = Path(result["output_dir"])
+            dossiers = [
+                json.loads(line)
+                for line in (run_dir / "case_dossiers.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+
+        self.assertEqual("completed", result["status"])
+        self.assertEqual({"coverage", "conflict", "no-answer"}, {item["case_id"] for item in dossiers})
+        self.assertEqual(1.0, metrics["pass_rate"])
+
+    def test_p2_qasper_smoke_runs_governed_pipeline_against_p1(self):
+        from examples.storm_examples import run_paperstorm_milestone as module
+        from knowledge_storm.retrieval import CrossEncoderReranker
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            qasper = root / "qasper"
+            qasper.mkdir()
+            payload = {
+                "paper-1": {
+                    "title": "Optimization study",
+                    "full_text": [{"section_name": "Method", "paragraphs": [
+                        "We minimize a contrastive loss objective.",
+                        "Training uses hard negative examples.",
+                    ]}],
+                    "qas": [{
+                        "question": "Which training criterion is optimized?",
+                        "question_id": "q-1",
+                        "answers": [{"answer": {
+                            "extractive_spans": ["contrastive loss"],
+                            "free_form_answer": "", "yes_no": None,
+                            "unanswerable": False,
+                            "evidence": ["We minimize a contrastive loss objective."],
+                        }}],
+                    }],
+                }
+            }
+            (qasper / "qasper-test-v0.3.json").write_text(json.dumps(payload), encoding="utf-8")
+            common = [
+                "--benchmark", "qasper-retrieval", "--benchmark-root", str(root),
+                "--embedding", "hash", "--evaluation-phase", "final", "--smoke-limit", "1",
+            ]
+            with redirect_stdout(io.StringIO()):
+                p1 = module.main(common + ["--output-dir", str(root / "p1")])
+            fake = CrossEncoderReranker(score_fn=lambda pairs: [1.0 - index for index, _ in enumerate(pairs)])
+            with mock.patch.object(module, "_reranker", return_value=fake), redirect_stdout(io.StringIO()):
+                p2 = module.main(common + [
+                    "--milestone", "P1+P2", "--baseline-dir", str(root / "p1"),
+                    "--output-dir", str(root / "p2"),
+                ])
+
+            report = json.loads((root / "p2" / "qasper-retrieval" / "metrics.json").read_text(encoding="utf-8"))
+            dossier = json.loads((root / "p2" / "qasper-retrieval" / "case_dossiers.jsonl").read_text(encoding="utf-8").splitlines()[0])
+
+        self.assertEqual("completed", p1["status"])
+        self.assertEqual("completed", p2["status"])
+        self.assertIn("hybrid_governed", report["modes"])
+        self.assertEqual("comparable", report["manifest"]["comparison"]["status"])
+        self.assertEqual("P1+P2", dossier["milestone"])
+        self.assertTrue(dossier["before"]["case_level_before_available"])
 
     def test_missing_dataset_returns_machine_readable_blocked_and_continues(self):
         from examples.storm_examples.run_paperstorm_milestone import main
