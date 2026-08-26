@@ -48,12 +48,20 @@ class PublicBenchmarkContractTest(unittest.TestCase):
         dataset = BenchmarkDataset(
             "qasper",
             "fixture",
-            (BenchmarkDocument(
-                paragraph_id,
-                "Paper",
-                "Method\ncontrastive loss is optimized",
-                {"paper_id": "paper-1", "section": "Method", "section_index": 0, "paragraph_index": 0, "raw_text": "contrastive loss is optimized"},
-            ),),
+            (
+                BenchmarkDocument(
+                    paragraph_id,
+                    "Paper",
+                    "Method\ncontrastive loss is optimized",
+                    {"paper_id": "paper-1", "section": "Method", "section_index": 0, "paragraph_index": 0, "raw_text": "contrastive loss is optimized"},
+                ),
+                BenchmarkDocument(
+                    "paper-1::section-0::paragraph-1",
+                    "Paper",
+                    "Method\ntraining uses hard negatives",
+                    {"paper_id": "paper-1", "section": "Method", "section_index": 0, "paragraph_index": 1, "raw_text": "training uses hard negatives"},
+                ),
+            ),
             (BenchmarkCase("q1", "Which loss?", (paragraph_id,), "validation", metadata={"paper_id": "paper-1"}),),
         )
         report = run_retrieval_benchmark(
@@ -72,6 +80,7 @@ class PublicBenchmarkContractTest(unittest.TestCase):
         parent = next(stage for stage in prediction["retrieval_stages"] if stage["name"] == "parent_expand")
         self.assertEqual("completed", parent["status"])
         self.assertEqual("structured-parent-child-v1", report["manifest"]["node_schema"])
+        self.assertTrue(report["manifest"]["query_gold_sha256"])
 
     def test_qasper_parent_expansion_does_not_repeat_child_raw_text(self):
         from knowledge_storm.evaluation.public_benchmarks.base import BenchmarkDataset, BenchmarkDocument
@@ -89,6 +98,20 @@ class PublicBenchmarkContractTest(unittest.TestCase):
         index = HybridPaperIndex(_benchmark_nodes(dataset, structured=True), HashEmbeddingProvider())
         result = index.search("contrastive loss", mode="hybrid", top_k=1, parent_budget_tokens=64)[0]
         self.assertEqual(1, result["expanded_content"].count(raw))
+
+    def test_parent_stage_is_not_completed_when_no_context_was_added(self):
+        from knowledge_storm.evaluation.public_benchmarks.base import BenchmarkCase, BenchmarkDataset, BenchmarkDocument
+        from knowledge_storm.evaluation.public_benchmarks.runner import HashEmbeddingProvider, run_retrieval_benchmark
+
+        doc_id = "paper-1::section-0::paragraph-0"
+        dataset = BenchmarkDataset(
+            "qasper", "fixture",
+            (BenchmarkDocument(doc_id, "Paper", "Method\nonly paragraph", {"paper_id": "paper-1", "section": "Method", "section_index": 0, "raw_text": "only paragraph"}),),
+            (BenchmarkCase("q", "only paragraph", (doc_id,), "validation", evidence_ids=(doc_id,), metadata={"paper_id": "paper-1"}),),
+        )
+        report = run_retrieval_benchmark(dataset, HashEmbeddingProvider(), modes=("hybrid",), top_k=1, bootstrap_samples=5, scope_field="paper_id", structured_nodes=True, parent_budget_tokens=64)
+        parent = next(stage for stage in report["predictions"][0]["retrieval_stages"] if stage["name"] == "parent_expand")
+        self.assertEqual("skipped", parent["status"])
 
     def test_prediction_includes_sanitized_explicit_milestone_only(self):
         from knowledge_storm.evaluation.public_benchmarks.base import BenchmarkCase, BenchmarkDataset, BenchmarkDocument

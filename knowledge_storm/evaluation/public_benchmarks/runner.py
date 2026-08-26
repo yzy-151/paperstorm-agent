@@ -129,6 +129,7 @@ def run_retrieval_benchmark(
         "case_count": len(cases),
         "document_count": len(dataset.documents),
         "corpus_sha256": _corpus_hash(dataset.documents),
+        "query_gold_sha256": _query_gold_hash(cases),
         "git_commit": git_commit,
         "working_tree_dirty": working_tree_dirty,
         "embedding_model": str(getattr(embedding_provider, "name", "unknown")),
@@ -292,6 +293,23 @@ def _corpus_hash(documents):
     payload = [
         {"document_id": item.document_id, "title": item.title, "text": item.text}
         for item in documents
+    ]
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def _query_gold_hash(cases):
+    payload = [
+        {
+            "case_id": case.case_id,
+            "query": case.query,
+            "relevance": sorted(
+                (str(document_id), int(score))
+                for document_id, score in case.relevance.items()
+            ),
+        }
+        for case in cases
     ]
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")

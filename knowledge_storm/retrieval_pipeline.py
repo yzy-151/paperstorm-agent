@@ -229,7 +229,7 @@ class RetrievalPipeline:
         stages.append(
             _stage(
                 "parent_expand",
-                "completed" if parent_budget > 0 and parent_input > 0 else "skipped",
+                "completed" if expanded_count > 0 else "skipped",
                 _elapsed_ms(parent_started),
                 parent_input,
                 len(results),

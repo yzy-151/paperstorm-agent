@@ -530,6 +530,11 @@ def _comparison_metadata(
             reasons.append("case_count_mismatch")
         if int(actual_manifest.get("document_count") or 0) != expected_document_count:
             reasons.append("document_count_mismatch")
+        baseline_query_gold = str(expected.get("query_gold_sha256") or "")
+        if not baseline_query_gold:
+            reasons.append("baseline_query_gold_fingerprint_missing")
+        elif str(actual_manifest.get("query_gold_sha256") or "") != baseline_query_gold:
+            reasons.append("query_gold_fingerprint_mismatch")
     return {
         "status": "incomparable" if reasons else "comparable_aggregate_only",
         "reasons": reasons,

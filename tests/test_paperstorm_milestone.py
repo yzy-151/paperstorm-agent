@@ -42,7 +42,7 @@ class PaperStormMilestoneTest(unittest.TestCase):
         self.assertNotIn("delta", metadata)
         self.assertTrue(metadata["baseline_sha256"])
 
-    def test_matching_protocol_requires_dataset_fingerprint_and_size(self):
+    def test_matching_legacy_protocol_stays_incomparable_without_query_gold_hash(self):
         from examples.storm_examples.run_paperstorm_milestone import _comparison_metadata
 
         metadata = _comparison_metadata(
@@ -55,8 +55,9 @@ class PaperStormMilestoneTest(unittest.TestCase):
                 "document_count": 5183,
             },
         )
-        self.assertEqual("comparable_aggregate_only", metadata["status"])
-        self.assertTrue(metadata["aggregate_comparison_allowed"])
+        self.assertEqual("incomparable", metadata["status"])
+        self.assertFalse(metadata["aggregate_comparison_allowed"])
+        self.assertIn("baseline_query_gold_fingerprint_missing", metadata["reasons"])
 
     def test_cli_rejects_non_p1_milestones(self):
         from examples.storm_examples.run_paperstorm_milestone import build_parser
