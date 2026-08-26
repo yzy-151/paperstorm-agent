@@ -129,6 +129,48 @@ class EvidenceGovernanceTest(unittest.TestCase):
         self.assertEqual(20, reranker.input_count)
         self.assertEqual(40, next(stage for stage in result["stages"] if stage["name"] == "fuse")["output_count"])
 
+    def test_coverage_reordering_preserves_top_k_membership_when_rerank_is_skipped(self):
+        from knowledge_storm.evidence_governance import EvidenceAssessor, RerankPolicy
+        from knowledge_storm.retrieval_pipeline import RetrievalPipeline, RetrievalRequest
+
+        class Index:
+            def search(self, _query, **_kwargs):
+                return [
+                    {
+                        "chunk_id": "top-{0}".format(index),
+                        "parent_id": "shared-parent",
+                        "source": "shared-source",
+                        "content": "same relevant evidence",
+                        "rrf_score": 1.0 - index * 0.1,
+                    }
+                    for index in range(5)
+                ] + [{
+                    "chunk_id": "outside-top-k",
+                    "parent_id": "other-parent",
+                    "source": "other-source",
+                    "content": "unrelated diverse evidence",
+                    "rrf_score": 0.01,
+                }]
+
+        result = RetrievalPipeline(
+            Index(),
+            reranker=object(),
+            rerank_policy=RerankPolicy(),
+            evidence_assessor=EvidenceAssessor(),
+        ).search(RetrievalRequest(
+            query="relevant evidence", top_k=5, candidate_k=6,
+            governance_features={
+                "answer_risk": 0.9,
+                "bm25_dense_overlap": 1.0,
+                "rrf_margin": 0.2,
+            },
+        ))
+
+        self.assertEqual(
+            {"top-0", "top-1", "top-2", "top-3", "top-4"},
+            {item["chunk_id"] for item in result["results"]},
+        )
+
     def test_mmr_selects_diverse_parents_and_reports_coverage(self):
         from knowledge_storm.evidence_governance import select_evidence
 

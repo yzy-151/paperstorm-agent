@@ -252,7 +252,8 @@ class RetrievalPipeline:
         coverage_score = None
         if governance_enabled:
             coverage_started = time.perf_counter()
-            selected = select_evidence(results, top_k=max(1, int(request.top_k)))
+            top_k = max(1, int(request.top_k))
+            selected = select_evidence(results[:top_k], top_k=top_k)
             coverage_score = selected.coverage_score
             results = list(selected)
             stages.append(
@@ -262,7 +263,7 @@ class RetrievalPipeline:
                     _elapsed_ms(coverage_started),
                     gate_input,
                     len(results),
-                    "mmr diversity selection; coverage_score={0:.6f}".format(
+                    "recall-safe MMR within top-k; coverage_score={0:.6f}".format(
                         coverage_score
                     ),
                 )
