@@ -76,6 +76,8 @@ class EmbeddingProfileRegistryTests(unittest.TestCase):
         self.assertEqual("query", qwen.query.prompt_name)
         self.assertEqual("", qwen.document.prompt)
         self.assertIsNone(qwen.document.prompt_name)
+        self.assertEqual({"batch_size": 1}, dict(qwen.query.encode_options))
+        self.assertEqual({"batch_size": 2}, dict(qwen.document.encode_options))
 
     def test_known_model_overrides_resolve_back_to_frozen_profiles(self):
         from knowledge_storm.retrieval_profiles import (
@@ -126,10 +128,18 @@ class SentenceTransformerProfileProviderTests(unittest.TestCase):
         self.assertEqual(1024, len(provider.embed(["legacy document"])[0]))
         self.assertEqual(
             [
-                (["passage"], {"normalize_embeddings": True, "show_progress_bar": False}),
+                (
+                    ["passage"],
+                    {
+                        "batch_size": 2,
+                        "normalize_embeddings": True,
+                        "show_progress_bar": False,
+                    },
+                ),
                 (
                     ["question"],
                     {
+                        "batch_size": 1,
                         "normalize_embeddings": True,
                         "prompt_name": "query",
                         "show_progress_bar": False,
@@ -137,7 +147,11 @@ class SentenceTransformerProfileProviderTests(unittest.TestCase):
                 ),
                 (
                     ["legacy document"],
-                    {"normalize_embeddings": True, "show_progress_bar": False},
+                    {
+                        "batch_size": 2,
+                        "normalize_embeddings": True,
+                        "show_progress_bar": False,
+                    },
                 ),
             ],
             model.calls,

@@ -89,13 +89,14 @@ class RerankerProfile:
         }
 
 
-def _role(role, intended_role, prompt="", prompt_name=None):
+def _role(role, intended_role, prompt="", prompt_name=None, encode_options=()):
     return EmbeddingEncoding(
         role=role,
         intended_role=intended_role,
         prompt=prompt,
         prompt_name=prompt_name,
         normalize=True,
+        encode_options=tuple(encode_options),
     )
 
 
@@ -147,8 +148,13 @@ EMBEDDING_PROFILES = MappingProxyType({
             "query",
             "instruction-aware multilingual retrieval query",
             prompt_name="query",
+            encode_options=(("batch_size", 1),),
         ),
-        document=_role("document", "multilingual retrieval passage"),
+        document=_role(
+            "document",
+            "multilingual retrieval passage",
+            encode_options=(("batch_size", 2),),
+        ),
         trust_remote_code=False,
         intended_role="quality-oriented multilingual retrieval",
     ),
