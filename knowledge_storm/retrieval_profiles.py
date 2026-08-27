@@ -67,6 +67,28 @@ class EmbeddingProfile:
         }
 
 
+@dataclass(frozen=True)
+class RerankerProfile:
+    name: str
+    model_name: str
+    revision: Optional[str]
+    device: str
+    batch_size: int
+    max_candidates: int
+    intended_role: str
+
+    def manifest_contract(self):
+        return {
+            "name": self.name,
+            "model_name": self.model_name,
+            "revision": self.revision,
+            "device": self.device,
+            "batch_size": self.batch_size,
+            "max_candidates": self.max_candidates,
+            "intended_role": self.intended_role,
+        }
+
+
 def _role(role, intended_role, prompt="", prompt_name=None):
     return EmbeddingEncoding(
         role=role,
@@ -131,6 +153,62 @@ EMBEDDING_PROFILES = MappingProxyType({
         intended_role="quality-oriented multilingual retrieval",
     ),
 })
+
+
+RERANKER_PROFILES = MappingProxyType({
+    "cpu-balanced": RerankerProfile(
+        name="cpu-balanced",
+        model_name="cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+        revision="1427fd652930e4ba29e8149678df786c240d8825",
+        device="cpu",
+        batch_size=16,
+        max_candidates=20,
+        intended_role="bounded multilingual cross-encoder reranking on CPU",
+    ),
+    "quality-gpu": RerankerProfile(
+        name="quality-gpu",
+        model_name="BAAI/bge-reranker-v2-m3",
+        revision="953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+        device="cuda",
+        batch_size=8,
+        max_candidates=20,
+        intended_role="quality-oriented multilingual reranking on CUDA",
+    ),
+})
+
+
+def get_reranker_profile(name=None):
+    key = str(
+        name or os.getenv("PAPERSTORM_RERANKER_PROFILE") or "cpu-balanced"
+    ).strip().lower()
+    try:
+        return RERANKER_PROFILES[key]
+    except KeyError as exc:
+        raise ValueError(
+            "unsupported reranker profile: {0}; expected one of {1}".format(
+                key, ", ".join(sorted(RERANKER_PROFILES))
+            )
+        ) from exc
+
+
+def resolve_reranker_profile(profile_name=None, model_name=None, device=None):
+    if profile_name:
+        return get_reranker_profile(profile_name)
+    requested_model = str(model_name or "").strip()
+    if not requested_model:
+        return get_reranker_profile()
+    for profile in RERANKER_PROFILES.values():
+        if profile.model_name == requested_model:
+            return profile
+    return RerankerProfile(
+        name="custom",
+        model_name=requested_model,
+        revision=None,
+        device=str(device or "cpu"),
+        batch_size=16,
+        max_candidates=20,
+        intended_role="explicit custom reranker override",
+    )
 
 
 def get_embedding_profile(name=None):

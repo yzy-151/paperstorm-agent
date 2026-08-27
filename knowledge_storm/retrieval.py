@@ -318,15 +318,27 @@ class CrossEncoderReranker:
 
     def __init__(
         self,
-        model_name: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+        model_name: Optional[str] = None,
         score_fn: Optional[Callable[[List], Iterable[float]]] = None,
         cache_folder: Optional[str] = None,
         device: Optional[str] = None,
+        profile=None,
+        batch_size: Optional[int] = None,
+        allow_cpu_fallback: bool = False,
     ):
-        self.model_name = model_name
+        from .retrieval_profiles import resolve_reranker_profile
+
+        self.profile = resolve_reranker_profile(
+            profile_name=profile, model_name=model_name, device=device
+        )
+        self.model_name = self.profile.model_name
         self.score_fn = score_fn
         self.cache_folder = cache_folder or os.getenv("PAPERSTORM_MODEL_CACHE")
-        self.device = device
+        self.device = str(device or self.profile.device)
+        self.batch_size = int(batch_size or self.profile.batch_size)
+        self.max_candidates = int(self.profile.max_candidates)
+        self.allow_cpu_fallback = bool(allow_cpu_fallback)
+        self.actual_device = self.device if score_fn is not None else "unloaded"
         self._model = None
 
     def _scores(self, pairs):
@@ -335,21 +347,40 @@ class CrossEncoderReranker:
         if self._model is None:
             from sentence_transformers import CrossEncoder
 
+            if self.device.startswith("cuda"):
+                import torch
+
+                if not torch.cuda.is_available():
+                    if not self.allow_cpu_fallback:
+                        raise RuntimeError(
+                            "reranker profile {0} requires CUDA; choose cpu-balanced "
+                            "or set allow_cpu_fallback=True".format(self.profile.name)
+                        )
+                    self.device = "cpu"
+
             offline = str(os.getenv("PAPERSTORM_OFFLINE_TESTS", "0")).lower() in {
                 "1",
                 "true",
                 "yes",
                 "on",
             }
-            self._model = CrossEncoder(
-                self.model_name,
-                cache_folder=self.cache_folder,
-                device=self.device,
-                local_files_only=offline,
-            )
+            options = {
+                "cache_folder": self.cache_folder,
+                "device": self.device,
+                "local_files_only": offline,
+            }
+            if self.profile.revision:
+                options["revision"] = self.profile.revision
+            self._model = CrossEncoder(self.model_name, **options)
+            model_device = getattr(getattr(self._model, "model", None), "device", None)
+            self.actual_device = str(model_device or self.device)
         return [
             float(value)
-            for value in self._model.predict(pairs, show_progress_bar=False)
+            for value in self._model.predict(
+                pairs,
+                batch_size=self.batch_size,
+                show_progress_bar=False,
+            )
         ]
 
     def rerank(

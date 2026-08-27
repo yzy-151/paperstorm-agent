@@ -163,6 +163,8 @@ class RetrievalPipeline:
 
         rerank_decision = None
         rerank_enabled = requested_rerank
+        rerank_limit = 0
+        rerank_elapsed_ms = 0.0
         if self.rerank_policy is not None:
             policy_started = time.perf_counter()
             policy_features = dict(request.governance_features)
@@ -193,11 +195,13 @@ class RetrievalPipeline:
         if rerank_enabled:
             rerank_started = time.perf_counter()
             rerank_input = len(results)
-            rerank_limit = (
+            policy_limit = (
                 min(len(results), int(self.rerank_policy.max_candidates))
                 if self.rerank_policy is not None
                 else len(results)
             )
+            profile_limit = int(getattr(self.reranker, "max_candidates", 20) or 20)
+            rerank_limit = min(policy_limit, profile_limit)
             rerank_candidates = results[:rerank_limit]
             if hasattr(self.reranker, "rerank"):
                 reranked = list(
@@ -217,11 +221,12 @@ class RetrievalPipeline:
                 results = _normalize_reranker_results(
                     reranked, candidate_k=candidate_k, accept_score=True
                 )
+            rerank_elapsed_ms = _elapsed_ms(rerank_started)
             stages.append(
                 _stage(
                     "rerank",
                     "completed",
-                    _elapsed_ms(rerank_started),
+                    rerank_elapsed_ms,
                     rerank_input,
                     len(results),
                     "one cross-encoder pass over fused candidates",
@@ -365,6 +370,12 @@ class RetrievalPipeline:
             "models": {
                 "embedding": str(getattr(provider, "name", "unknown")),
                 "reranker": str(getattr(self.reranker, "model_name", "")),
+                "reranker_profile": str(
+                    getattr(getattr(self.reranker, "profile", None), "name", "")
+                ),
+                "reranker_device": str(
+                    getattr(self.reranker, "actual_device", "")
+                ),
             },
             "mode": mode,
             "parent_context": {
@@ -386,6 +397,17 @@ class RetrievalPipeline:
                     if request.allowed_chunk_ids is None
                     else len(request.allowed_chunk_ids)
                 ),
+            },
+            "rerank_runtime": {
+                "enabled": bool(rerank_enabled),
+                "candidate_count": int(rerank_limit if rerank_enabled else 0),
+                "candidate_limit": int(
+                    getattr(self.reranker, "max_candidates", 0) or 0
+                ),
+                "batch_size": int(
+                    getattr(self.reranker, "batch_size", 0) or 0
+                ),
+                "elapsed_ms": rerank_elapsed_ms,
             },
         }
         if rerank_decision is not None:
