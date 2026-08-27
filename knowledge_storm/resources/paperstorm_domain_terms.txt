@@ -1,0 +1,31 @@
+# RF, signal-processing, retrieval, and agent terms. One term per line.
+无源互调
+无源互调抑制
+神经网络抑制
+数字预失真
+射频前端
+功率放大器
+互调产物
+三阶互调
+载波聚合
+非线性失真
+物理信息神经网络
+检索增强生成
+混合检索
+向量检索
+交叉编码器
+证据门控
+上下文压缩
+长期记忆
+多智能体
+工具调用
+passive intermodulation
+digital predistortion
+retrieval augmented generation
+cross encoder
+PIM
+DPD
+RAG
+HNSW
+BM25
+RRF

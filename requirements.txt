@@ -22,6 +22,7 @@ pypdf
 Markdown>=3.6,<4.0
 latex2mathml>=3.77,<4.0
 rank-bm25
+jieba>=0.42,<1.0
 usearch>=2.16,<3.0
 cryptography
 fastapi>=0.110,<1.0

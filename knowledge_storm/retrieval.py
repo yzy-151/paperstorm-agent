@@ -404,6 +404,7 @@ class HybridPaperIndex:
         dense_backend_mode="auto",
         ann_threshold=20_000,
         hnsw_ef_search=100,
+        text_analyzer=None,
     ):
         self.max_nodes = int(max_nodes)
         self.max_node_chars = int(max_node_chars)
@@ -443,9 +444,19 @@ class HybridPaperIndex:
         ]
         self._validate_node_payloads(list(self.parents.values()) + self.chunks)
         self.embedding_provider = embedding_provider
+        if text_analyzer is None:
+            from .text_analyzers import build_text_analyzer
+
+            text_analyzer = build_text_analyzer()
+        self.text_analyzer = text_analyzer
         self._tokens = [
-            multilingual_tokenize(self._search_text(item)) for item in self.chunks
+            self.text_analyzer.tokenize(self._search_text(item)) for item in self.chunks
         ]
+        self._query_stop_tokens = set(
+            self.text_analyzer.tokenize(
+                "相关研究中 作用 关系 是什么 哪些论文 场景 解决问题 同时讨论 请问 介绍 的 与 和"
+            )
+        )
         self._bm25 = None
         if self.chunks:
             try:
@@ -510,6 +521,10 @@ class HybridPaperIndex:
         self.manifest.setdefault("dense_backend_mode", str(dense_backend_mode))
         self.manifest.setdefault("ann_threshold", int(ann_threshold))
         self.manifest.setdefault("hnsw_ef_search", int(hnsw_ef_search))
+        self.manifest.setdefault("text_analyzer", str(self.text_analyzer.name))
+        self.manifest.setdefault(
+            "text_analyzer_revision", str(self.text_analyzer.revision)
+        )
         self._refresh_manifest_integrity()
 
     def search(
@@ -743,12 +758,12 @@ class HybridPaperIndex:
         if not indices:
             return []
         if len(indices) == len(self.chunks):
-            scores = self._bm25.get_scores(retrieval_query_tokens(query))
+            scores = self._bm25.get_scores(self._analyze_query(query))
         else:
             from rank_bm25 import BM25Okapi
 
             scores = BM25Okapi([self._tokens[index] for index in indices]).get_scores(
-                retrieval_query_tokens(query)
+                self._analyze_query(query)
             )
         ranked = []
         for position in sorted(
@@ -779,6 +794,13 @@ class HybridPaperIndex:
             item["dense_backend_reason"] = result.reason
             ranked.append(item)
         return ranked
+
+    def _analyze_query(self, query):
+        return [
+            token
+            for token in self.text_analyzer.tokenize(query)
+            if token not in self._query_stop_tokens
+        ]
 
     def save(
         self,
@@ -844,6 +866,7 @@ class HybridPaperIndex:
         path,
         embedding_provider,
         token_codec=None,
+        text_analyzer=None,
         max_nodes=default_max_nodes,
         max_node_chars=default_max_node_chars,
         max_node_bytes=default_max_node_bytes,
@@ -937,6 +960,16 @@ class HybridPaperIndex:
             embedding_provider
         ):
             raise ValueError("embedding role contract mismatch")
+        if text_analyzer is None:
+            from .text_analyzers import build_text_analyzer
+
+            text_analyzer = build_text_analyzer(manifest.get("text_analyzer"))
+        if manifest.get("text_analyzer_revision") and str(
+            manifest["text_analyzer_revision"]
+        ) != str(text_analyzer.revision):
+            raise IndexMigrationRequiredError(
+                "text analyzer revision changed; rebuild the knowledge base index"
+            )
         return cls(
             chunks,
             embedding_provider=embedding_provider,
@@ -951,6 +984,7 @@ class HybridPaperIndex:
             dense_backend_mode=manifest.get("dense_backend_mode", "auto"),
             ann_threshold=int(manifest.get("ann_threshold", 20_000)),
             hnsw_ef_search=int(manifest.get("hnsw_ef_search", 100)),
+            text_analyzer=text_analyzer,
         )
 
     def _refresh_manifest_integrity(self):
