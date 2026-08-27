@@ -19,6 +19,12 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
+def runtime_embedding_profile(override: Optional[str] = None):
+    from .retrieval_profiles import resolve_embedding_profile
+
+    return resolve_embedding_profile(profile_name=override)
+
+
 def runtime_stack(override: Optional[str] = None) -> str:
     value = str(override or "unified").strip().lower()
     if value not in {"unified", "hybrid"}:
@@ -141,15 +147,25 @@ def _dense_provider(embedding: str):
         from .retrieval import HashEmbeddingProvider
 
         return HashEmbeddingProvider(dim=64)
-    if _REAL_EMBEDDING_PROVIDER is None:
+    profile = runtime_embedding_profile()
+    if (
+        _REAL_EMBEDDING_PROVIDER is None
+        or _REAL_EMBEDDING_PROVIDER.manifest_identity() != profile.manifest_contract()
+    ):
         from .retrieval import SentenceTransformerProvider
 
         _REAL_EMBEDDING_PROVIDER = SentenceTransformerProvider(
-            model_name=os.getenv("PAPERSTORM_EMBEDDING_MODEL")
-            or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            profile=profile,
             cache_folder=os.getenv("PAPERSTORM_MODEL_CACHE") or os.getenv("HF_HOME"),
         )
     return _REAL_EMBEDDING_PROVIDER
+
+
+def _embedding_cache_identity(embedding):
+    if embedding == "hash":
+        return ("hash",)
+    profile = runtime_embedding_profile()
+    return ("real", json.dumps(profile.manifest_contract(), sort_keys=True))
 
 
 def build_runtime_index(
@@ -166,7 +182,7 @@ def build_runtime_index(
     cache_key = (
         str(Path(run_dir).resolve()),
         stack,
-        embedding,
+        _embedding_cache_identity(embedding),
         int(chunk_size),
         int(chunk_overlap),
         signature,

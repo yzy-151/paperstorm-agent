@@ -542,7 +542,11 @@ class LongTermMemoryService:
         name = str(getattr(provider, "name", None) or type(provider).__name__)
         model = str(getattr(provider, "model_name", None) or "")
         dim = int(getattr(provider, "dim", 0) or 0)
-        return "{0}|{1}|{2}".format(name, model, dim)
+        identity = getattr(provider, "manifest_identity", None)
+        contract = identity() if callable(identity) else {}
+        return "{0}|{1}|{2}|{3}".format(
+            name, model, dim, json.dumps(contract, sort_keys=True)
+        )
 
     def _embed_text(self, text):
         vector = self.embedding_provider.embed([str(text or "")])[0]
@@ -623,18 +627,19 @@ class LongTermMemoryService:
 
 
 @functools.lru_cache(maxsize=4)
-def build_memory_embedding_provider(model_name=None, cache_folder=None):
+def build_memory_embedding_provider(model_name=None, cache_folder=None, profile_name=None):
     """Load the real local semantic model used by opt-in memory retrieval."""
     from .retrieval import SentenceTransformerProvider
+    from .retrieval_profiles import resolve_embedding_profile
 
     model = (
         model_name
         or os.getenv("PAPERSTORM_MEMORY_EMBEDDING_MODEL")
         or os.getenv("PAPERSTORM_EMBEDDING_MODEL")
-        or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     )
     cache = cache_folder or os.getenv("PAPERSTORM_MODEL_CACHE") or os.getenv("HF_HOME")
-    return SentenceTransformerProvider(model_name=model, cache_folder=cache)
+    profile = resolve_embedding_profile(profile_name=profile_name, model_name=model)
+    return SentenceTransformerProvider(profile=profile, cache_folder=cache)
 
 
 def _is_hash_provider(provider):

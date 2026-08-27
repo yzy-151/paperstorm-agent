@@ -89,6 +89,18 @@ def _hash_embedding(text: str, dim: int):
     return [value / norm for value in vector] if norm else vector
 
 
+def _embedding_role_contract(provider):
+    getter = getattr(provider, "manifest_identity", None)
+    if callable(getter):
+        return getter()
+    return {
+        "name": str(getattr(provider, "name", "unknown")),
+        "normalize": bool(getattr(provider, "normalize", False)),
+        "query": "embed_query",
+        "document": "embed",
+    }
+
+
 def multilingual_tokenize(text: str) -> List[str]:
     """Tokenize exact Latin terms and add CJK unigrams/bigrams for BM25."""
     text = str(text or "").lower()
@@ -153,17 +165,28 @@ class SentenceTransformerProvider:
 
     def __init__(
         self,
-        model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        model_name: Optional[str] = None,
         cache_folder: Optional[str] = None,
         device: Optional[str] = None,
+        profile=None,
+        model=None,
     ):
-        self.model_name = model_name
-        self.name = "sentence-transformers:{0}".format(model_name)
+        from .retrieval_profiles import EmbeddingProfile, resolve_embedding_profile
+
+        if isinstance(profile, EmbeddingProfile):
+            if model_name and model_name != profile.model_name:
+                raise ValueError("model_name conflicts with the selected embedding profile")
+            self.profile = profile
+        else:
+            self.profile = resolve_embedding_profile(profile_name=profile, model_name=model_name)
+        self.model_name = self.profile.model_name
+        self.name = "sentence-transformers:{0}".format(self.model_name)
         self.cache_folder = cache_folder or os.getenv("PAPERSTORM_MODEL_CACHE")
         self.device = device
-        self.model = None
+        self.model = model
         self.dim = 0
         self.token_codec = None
+        self.normalize = bool(self.profile.document.normalize)
 
     def _ensure_model(self):
         if self.model is None:
@@ -180,7 +203,9 @@ class SentenceTransformerProvider:
                 cache_folder=self.cache_folder,
                 device=self.device,
                 local_files_only=offline,
+                trust_remote_code=self.profile.trust_remote_code,
             )
+        if not self.dim:
             dimension_getter = getattr(
                 self.model,
                 "get_embedding_dimension",
@@ -192,16 +217,25 @@ class SentenceTransformerProvider:
             self.token_codec = HuggingFaceTokenizerCodec(tokenizer)
         return self.model
 
-    def embed(self, texts: Iterable[str]):
-        vectors = self._ensure_model().encode(
-            list(texts),
-            normalize_embeddings=self.normalize,
-            show_progress_bar=False,
-        )
+    def _encode(self, texts: Iterable[str], role):
+        encoded_texts = ["{0}{1}".format(role.prompt, str(text or "")) for text in texts]
+        options = role.encode_kwargs()
+        options["show_progress_bar"] = False
+        vectors = self._ensure_model().encode(encoded_texts, **options)
         return [[float(value) for value in vector] for vector in vectors]
 
+    def embed_documents(self, texts: Iterable[str]):
+        return self._encode(texts, self.profile.document)
+
+    def embed(self, texts: Iterable[str]):
+        """Back-compatible alias for document/passages encoding."""
+        return self.embed_documents(texts)
+
     def embed_query(self, text: str):
-        return self.embed([text])[0]
+        return self._encode([text], self.profile.query)[0]
+
+    def manifest_identity(self):
+        return self.profile.manifest_contract()
 
     def get_token_codec(self):
         """Lazily expose the model tokenizer under the provider's offline policy."""
@@ -260,9 +294,7 @@ def build_embedding_provider(
         return HashEmbeddingProvider()
     if selected in {"real", "sentence-transformer", "sentence-transformers"}:
         return SentenceTransformerProvider(
-            model_name=model_name
-            or os.getenv("PAPERSTORM_EMBEDDING_MODEL")
-            or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            model_name=model_name,
             cache_folder=cache_folder,
         )
     raise ValueError("unsupported embedding provider: {0}".format(selected))
@@ -445,6 +477,14 @@ class HybridPaperIndex:
         self.manifest.setdefault("embedding_dimension", dimension)
         self.manifest.setdefault(
             "normalized", bool(getattr(embedding_provider, "normalize", False))
+        )
+        self.manifest.setdefault(
+            "embedding_profile", str(
+                getattr(getattr(embedding_provider, "profile", None), "name", "unknown")
+            ),
+        )
+        self.manifest.setdefault(
+            "embedding_role_contract", _embedding_role_contract(embedding_provider)
         )
         self._refresh_manifest_integrity()
 
@@ -859,6 +899,19 @@ class HybridPaperIndex:
             getattr(embedding_provider, "normalize", False)
         ):
             raise ValueError("embedding normalization mismatch")
+        actual_profile = str(
+            getattr(getattr(embedding_provider, "profile", None), "name", "unknown")
+        )
+        if manifest.get("embedding_profile", "unknown") != actual_profile:
+            raise ValueError(
+                "embedding profile mismatch: index={0}, provider={1}".format(
+                    manifest.get("embedding_profile", "unknown"), actual_profile
+                )
+            )
+        if manifest.get("embedding_role_contract") != _embedding_role_contract(
+            embedding_provider
+        ):
+            raise ValueError("embedding role contract mismatch")
         return cls(
             chunks,
             embedding_provider=embedding_provider,
