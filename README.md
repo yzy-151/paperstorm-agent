@@ -14,7 +14,7 @@ PaperStorm Agent 是基于 Stanford STORM 扩展的论文调研与知识问答�
 | --- | --- | --- |
 | 深度调研 | Persona Generator、Conv Simulator、Query Planner、Retriever、Outline、Section Writer、Polisher、Evaluator | 保留 Stanford STORM 的多视角调研与两阶段写作流程 |
 | 知识问答 | 普通对话、会话召回、证据检索、证据充分性判断、按需升级深度调研 | 外部论文证据不写入用户长期记忆 |
-| RAG | BM25、SentenceTransformer Dense、RRF、可选 Cross-Encoder Rerank、来源过滤、引用映射 | 产品入口和公开 Benchmark 统一使用 `RetrievalPipeline` |
+| RAG | 领域 BM25、冻结 Embedding Profile、Exact/HNSW Dense、RRF、选择性 Cross-Encoder、来源过滤与引用映射 | 产品入口和公开 Benchmark 统一使用 `RetrievalPipeline`；ACL scoped 请求使用授权子集 Exact |
 | Memory | SQLite WAL、事实与 episode、provenance、时间有效性、BM25/真实向量、RRF、MMR | 只保存稳定用户事实、偏好、决策和可复用流程 |
 | Context | Pinned、Active、Summary、Memory、Evidence、Artifact 分层预算 | 支持结构化递归摘要、压缩 lineage 和恢复 |
 | Runtime | LangGraph、SQLite checkpoint、节点重试、幂等、ACL、缓存、熔断与 trace | 对话状态、调研任务和控制面持久化 |
@@ -85,6 +85,19 @@ Source ingestion
 真实服务默认使用 SentenceTransformer。`HashEmbeddingProvider` 仅用于单元测试和 smoke profile，
 不能作为公开质量结果。旧 JSON hash 索引不会被静默读取；系统会明确要求重建，避免检索行为悄然降级。
 
+### 检索运行档
+
+| Profile | 模型 | 维度 | 定位 |
+| --- | --- | ---: | --- |
+| `legacy-multilingual` | `paraphrase-multilingual-MiniLM-L12-v2` | 384 | 历史兼容与回归基线 |
+| `cpu-zh` | `BAAI/bge-small-zh-v1.5` | 512 | 中文 CPU 检索 |
+| `cpu-multilingual` | `Alibaba-NLP/gte-multilingual-base` | 768 | 默认多语种 CPU 档 |
+| `quality-multilingual` | `Qwen/Qwen3-Embedding-0.6B` | 1024 | GPU 或离线质量优先档 |
+
+Profile 冻结模型 revision、最大序列长度、query/document 编码角色、归一化和必要批次。
+语料达到 20,000 个向量时可自动构建 USearch HNSW；小库保留 Exact oracle。带 ACL 的请求
+不会先从全库 ANN 取候选再过滤，而是 fail-closed 到授权子集 Exact，避免敏感候选进入后续链路。
+
 RAG 的已知 bad case、工业方案对照和后续路线见
 [RAG_BAD_CASES_AND_ROADMAP.md](docs/RAG_BAD_CASES_AND_ROADMAP.md)。
 
@@ -135,6 +148,28 @@ RAG 的已知 bad case、工业方案对照和后续路线见
 | P1+P2+P3：Claim-Citation | QASPER Answer | 1451 条 test：Answer F1 `0.5083`、Evidence F1 `0.5500`、Claim support `0.9592`、unsupported claim `0.0214`、失败 `0` | 相对 v5.5 的跨指纹方向性对比为 Answer F1 `-0.0358`；可信度可观测性增强，但传统答案覆盖仍需优化 |
 | P1+P2+P3+P4：生产治理 | Production Governance 8-case | ACL/Trace 泄漏 `0`；失败率 `0`；缓存隔离、超时、熔断恢复、Release Gate 全部通过 | 完全离线、不调用 LLM；不重复运行未受影响的质量数据集 |
 | LongMemEval-S Memory | LongMemEval-S | Recall@5 `0.8003`，P95 `359.3 ms` | 仅代表 evidence-session retrieval，不等同端到端回答准确率 |
+
+### Embedding 与规模诊断
+
+以下模型对比固定为 BM25 + Dense + RRF、关闭 Reranker 并使用 Exact oracle。只采样 10%
+query；SciFact 搜索完整 5,183 篇摘要，QASPER 保留抽中问题所属论文的全部 5,265 个段落和
+hard negatives。该小样本用于工程选型，不替代完整 test 与置信区间。
+
+| 数据集 | Profile | Recall@5 | nDCG@5 | Build | Query P95 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| SciFact, 30 query | Legacy | 0.6583 | 0.5398 | 119.3 s | 84.3 ms |
+| SciFact, 30 query | BGE small zh | 0.6167 | 0.5099 | 279.1 s | 179.6 ms |
+| SciFact, 30 query | GTE multilingual | 0.6750 | 0.5738 | 2326.8 s | 328.1 ms |
+| SciFact, 30 query | Qwen3 Embedding 0.6B | **0.7250** | **0.5973** | 8457.8 s | 1769.7 ms |
+| QASPER, 131 query | Legacy | 0.4673 | 0.3626 | 133.3 s | 68.0 ms |
+| QASPER, 131 query | BGE small zh | 0.3746 | 0.3012 | 154.6 s | 34.5 ms |
+| QASPER, 131 query | GTE multilingual | **0.5457** | **0.4351** | 927.2 s | 201.9 ms |
+| QASPER, 131 query | Qwen3 Embedding 0.6B | 0.5468 | 0.4348 | 2869.7 s | 345.0 ms |
+
+100,000 个 384 维随机向量的本机微基准中，USearch HNSW 的 P95 为 `21.591 ms`，Exact
+为 `198.504 ms`，HNSW Recall@10 为 `0.9055`。这是规模行为诊断，不是论文检索质量结论；
+2,000,000 向量只报告原始 float32 容量估算，不外推延迟。完整协议、具体改善/退化案例与边界见
+[PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md](docs/PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md)。
 
 详细协议、样本量、split、模型和证据等级见
 [PAPERSTORM_V55_PUBLIC_BENCHMARKS.md](docs/PAPERSTORM_V55_PUBLIC_BENCHMARKS.md) 与
@@ -244,6 +279,8 @@ $env:LANGFUSE_BASE_URL="https://cloud.langfuse.com"
 | --- | --- |
 | `PAPERSTORM_RETRIEVAL_EMBEDDING` | `auto` / `real` / `hash`；生产默认 real，hash 仅供测试 |
 | `PAPERSTORM_RETRIEVAL_MODE` | `hybrid` / `bm25` / `dense` / `hybrid_rerank` |
+| `PAPERSTORM_EMBEDDING_PROFILE` | `legacy-multilingual` / `cpu-zh` / `cpu-multilingual` / `quality-multilingual` |
+| `PAPERSTORM_RERANKER_PROFILE` | `cpu-balanced` / `quality-gpu` |
 | `PAPERSTORM_RETRIEVAL_INDEX_CACHE_SIZE` | 运行时索引 LRU 容量 |
 | `PAPERSTORM_MODEL_CACHE` | SentenceTransformer/Cross-Encoder 模型缓存目录 |
 | `PAPERSTORM_BENCHMARK_ROOT` | SciFact、QASPER、LongMemEval 等数据集根目录 |
@@ -256,7 +293,10 @@ $env:LANGFUSE_BASE_URL="https://cloud.langfuse.com"
 ```text
 knowledge_storm/
   document_ingestion.py            # PDF 与结构化 chunk
-  retrieval.py                     # BM25 / Dense / RRF / Cross-Encoder
+  retrieval.py                     # 领域 BM25 / Dense / RRF / Cross-Encoder
+  retrieval_profiles.py            # Embedding 与 Reranker 冻结合同
+  dense_index.py                   # Exact / USearch HNSW 后端
+  text_analyzers.py                # Jieba 领域词典与 CJK fallback
   retrieval_pipeline.py            # 产品与 Benchmark 的统一检索契约
   retrieval_runtime.py             # 调研产物索引与缓存
   context_engine.py                # 分层上下文预算、压缩与恢复
@@ -274,9 +314,10 @@ docs/                               # 架构、评测协议、路线图与开发
 
 ## 质量边界与路线图
 
-当前系统已经完成查询规划、结构化召回、选择性 Rerank、证据冲突治理、Claim-Citation 校验、
-检索前 ACL、运行韧性与离线发布门禁。剩余重点是优化 QASPER 抽象回答覆盖和 Cross-Encoder
-CPU 尾延迟，并把离线 Release Gate 接入 CI 与预发布 canary。相关案例和验收指标见
+当前系统已经完成查询规划、结构化召回、Embedding Profile、Exact/HNSW、领域分词、
+选择性 Rerank、Parent Context 公平预算、证据冲突治理、Claim-Citation 校验、检索前 ACL、
+运行韧性与离线发布门禁。剩余重点是优化 QASPER 抽象回答覆盖、GPU 质量档、真实论文向量的
+HNSW Pareto，并把离线 Release Gate 接入 CI 与预发布 canary。相关案例和验收指标见
 [RAG_BAD_CASES_AND_ROADMAP.md](docs/RAG_BAD_CASES_AND_ROADMAP.md)。
 
 ## License

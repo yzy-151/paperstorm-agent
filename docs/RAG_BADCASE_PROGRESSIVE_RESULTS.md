@@ -144,3 +144,26 @@ smoke 仅用于验证真实 LLM、结构化解析、引用校验和成本采集�
 | 相同问题跨用户复用答案 | 只按 query/KB 缓存会把高权限答案返回低权限用户 | 缓存 key 缺少身份与策略版本 | namespace/key 加入 tenant、user、policy digest、index revision 和 SearchPlan digest | owner/viewer 缓存身份不同，collision=0 | 权限变更必须可靠更新 policy digest |
 | Provider 卡死或连续失败 | 请求长时间挂起，失败后继续打满下游 | 缺少 deadline、熔断状态和恢复探针 | deadline + explicit timeout；open 时快速降级；cooldown 后 half-open | timeout 分类正确；open 期间 provider 调用 0；探针后 closed | 线程超时不能强杀底层系统调用，线上应配合客户端级 timeout/取消 |
 | 发布只看平均质量 | ACL 泄漏或 P95/失败率恶化仍可能上线 | 缺少多维自动门禁 | 冻结 manifest/predictions 离线 replay；联合质量 CI、P95、unsupported claim、failure、ACL | 正向候选 allowed；注入 1 条 ACL 泄漏和 50% P95 回归的负向候选被拒绝 | 仍需接入 CI artifact 与真实预发布 canary，离线报告不能冒充线上结果 |
+
+## 检索基础设施升级：模型、ANN、分词、重排与 Parent Context
+
+本阶段没有重跑 P1-P4 冻结基线，而是针对新增基础设施运行受影响的独立诊断：SciFact 与
+QASPER 各抽取 10% query 对比四个 Embedding Profile；100,000 个随机向量对比 Exact 与
+USearch HNSW。模型对比关闭 Cross-Encoder 并固定 Exact oracle，避免把 ANN 或 Rerank 的变化
+混入 Embedding 结论。
+
+| 改进 | 旧风险 | 实现 | 验收结果 |
+| --- | --- | --- | --- |
+| Embedding Profile | MiniLM 较旧；入口编码合同可能漂移 | 冻结 Legacy/BGE/GTE/Qwen 的 revision、维度、长度和 query/document 规则 | SciFact Qwen Recall@5 `0.7250` 最高；QASPER GTE 与 Qwen Recall 近似，但 GTE 更快 |
+| ANN | 线性扫描无法扩展 | Exact/USearch HNSW 双后端；20k 门限；ACL scoped 请求 Exact 回退 | 100k 向量 HNSW P95 `21.591 ms`、Exact `198.504 ms`、Recall@10 `0.9055` |
+| 中文 analyzer | CJK 字符切分破坏领域词 | Jieba 私有 tokenizer、领域词典、CJK bigram fallback | PIM/RAM 固定用例保持 RF 文档优先；analyzer revision 写入索引 |
+| Reranker Profile | CPU/GPU 与候选上限边界不清 | CPU balanced / CUDA quality、批次、设备、最多 20 候选、Trace | CPU 真实模型 smoke 通过；无 CUDA 时 quality 档显式失败或按配置降级 |
+| Parent Context | 前序 parent 耗尽全局预算 | 唯一 parent 最低配额、分数加权余量、child 邻域展开 | allocation/used/truncated/reason 可追踪，高相关 parent 不再完全饿死 |
+
+Qwen 首次 CPU 构建被系统直接终止，根因是默认编码批次没有冻结；改为 document batch=2、
+query batch=1 后 SciFact 与 QASPER 均完整结束。代价是 SciFact 构建约 `8457.8 s`，说明其
+不适合作为当前 CPU 环境的默认模型。QASPER 中 Qwen Recall@5 `0.5468`、GTE `0.5457`，
+但 Qwen 构建时间是 GTE 的约 `3.10x`，因此默认多语种 CPU Profile 选择 GTE。
+
+完整协议、模型表、具体改善与退化案例、HNSW 参数和面试表达见
+[PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md](PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md)。
