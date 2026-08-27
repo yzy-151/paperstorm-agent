@@ -315,6 +315,34 @@ class QasperGenerationRunnerTest(unittest.TestCase):
         self.assertEqual(first["usage"]["prompt_tokens"], 21)
         self.assertEqual(rows[1]["answer"], "Unanswerable")
 
+    def test_resume_keeps_billed_usage_from_failed_attempts(self):
+        from knowledge_storm.evaluation.public_benchmarks.base import (
+            BenchmarkCase, BenchmarkDataset, BenchmarkDocument,
+        )
+        from knowledge_storm.evaluation.public_benchmarks.qasper_generation import (
+            run_qasper_generation,
+        )
+
+        document = BenchmarkDocument("p1", "Paper", "answer evidence")
+        case = BenchmarkCase("q1", "What?", ("p1",), "test", answers=("answer",))
+        dataset = BenchmarkDataset("qasper", "fixture", (document,), (case,))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            failed = run_qasper_generation(
+                dataset, {"q1": ["p1"]},
+                lambda _prompt: {"text": "not-json", "usage": {"total_tokens": 5, "cost_usd": 0.1}},
+                temp_dir, "fake/model", parse_attempts=1,
+            )
+            resumed = run_qasper_generation(
+                dataset, {"q1": ["p1"]},
+                lambda _prompt: {"text": '{"answer":"answer","abstained":false,"evidence_ids":["p1"]}', "usage": {"total_tokens": 7, "cost_usd": 0.2}},
+                temp_dir, "fake/model", parse_attempts=1,
+            )
+
+        self.assertEqual(5, failed["usage"]["total_tokens"])
+        self.assertEqual(12, resumed["usage"]["total_tokens"])
+        self.assertEqual(7, resumed["latest_prediction_usage"]["total_tokens"])
+        self.assertAlmostEqual(0.3, resumed["usage"]["cost_usd"])
+
     def test_ranking_completion_only_searches_missing_cases_in_same_paper(self):
         from knowledge_storm.evaluation.public_benchmarks.base import (
             BenchmarkCase,

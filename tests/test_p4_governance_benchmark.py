@@ -22,6 +22,9 @@ class P4GovernanceBenchmarkTest(unittest.TestCase):
             self.assertTrue(report["metrics"]["circuit_recovered"])
             self.assertTrue(report["metrics"]["batch_order_preserved"])
             self.assertTrue(report["metrics"]["release_gate_allowed"])
+            self.assertTrue(report["metrics"]["release_gate_blocks_bad_candidate"])
+            self.assertIn("acl_leak", report["negative_release_gate"]["reasons"])
+            self.assertIn("p95_regression", report["negative_release_gate"]["reasons"])
             self.assertGreaterEqual(report["metrics"]["p95_ms"], 0.0)
 
             for name in (

@@ -404,6 +404,17 @@ def run_production_governance_benchmark(output_dir):
         "unsupported_claim_rate": 0.0,
     }
     decision = ReleaseGate().evaluate(release_input, dict(release_input))
+    bad_candidate = {
+        **release_input,
+        "p95_ms": max(1.0, float(release_input["p95_ms"])) * 1.5,
+        "acl_leak_count": 1,
+    }
+    negative_decision = ReleaseGate().evaluate(release_input, bad_candidate)
+    release_gate_blocks_bad_candidate = (
+        not negative_decision.allowed
+        and "acl_leak" in negative_decision.reasons
+        and "p95_regression" in negative_decision.reasons
+    )
     metrics = {
         "case_count": len(predictions),
         "acl_leak_count": acl_leaks,
@@ -413,6 +424,7 @@ def run_production_governance_benchmark(output_dir):
         "circuit_recovered": circuit_recovered,
         "batch_order_preserved": batch_order_preserved,
         "release_gate_allowed": decision.allowed,
+        "release_gate_blocks_bad_candidate": release_gate_blocks_bad_candidate,
         "failure_rate": replay["failure_rate"],
         "p95_ms": _nearest_rank_percentile(sorted(latencies), 0.95),
     }
@@ -421,6 +433,7 @@ def run_production_governance_benchmark(output_dir):
         "manifest": manifest,
         "metrics": metrics,
         "release_gate": decision.to_dict(),
+        "negative_release_gate": negative_decision.to_dict(),
         "predictions": predictions,
     }
     _write_json(root / "metrics.json", report)

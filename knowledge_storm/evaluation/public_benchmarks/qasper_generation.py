@@ -360,7 +360,8 @@ def run_qasper_generation(
         if case.case_id in existing
     }
     metrics = official_qasper_metrics(dataset.cases, ordered)
-    usage = _sum_usage(ordered.values())
+    latest_prediction_usage = _sum_usage(ordered.values())
+    usage = _sum_usage(_read_prediction_attempts(checkpoint_path))
     successful = sum(row.get("status") == "succeeded" for row in ordered.values())
     report = {
         "benchmark": "qasper-answer-generation",
@@ -376,6 +377,7 @@ def run_qasper_generation(
         "failed_predictions": len(dataset.cases) - successful,
         "metrics": metrics,
         "usage": usage,
+        "latest_prediction_usage": latest_prediction_usage,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     write_official_qasper_predictions(
@@ -417,6 +419,8 @@ def build_qasper_prompt(question, documents, structured_claims=False):
             "claims, uncertainty, refusal, abstain_reason. Each claims item must "
             "contain exactly claim_id, text, citation_ids. citation_ids may only "
             "use evidence_id values shown below. uncertainty is a number in [0,1]. "
+            "abstain_reason must be null when refusal is false; never use an empty "
+            "string. "
             "For insufficient evidence set answer_type to refusal, refusal to true, "
             "claims to [], and provide abstain_reason."
         )
@@ -438,7 +442,9 @@ def _schema_repair_prompt(original_prompt, previous_response, error):
     return (
         "{0}\n\nThe previous response violated the required JSON contract. "
         "Correct only the schema/type errors and return the complete JSON object again. "
-        "Do not add markdown.\nValidation error: {1}\nPrevious response:\n{2}"
+        "Never return an empty string for abstain_reason: use null when refusal is "
+        "false, or a non-empty reason when refusal is true. Do not add markdown.\n"
+        "Validation error: {1}\nPrevious response:\n{2}"
     ).format(original_prompt, error, previous_response)
 
 
@@ -862,6 +868,16 @@ def _read_predictions(path):
             row = json.loads(line)
             rows[str(row["case_id"])] = row
     return rows
+
+
+def _read_prediction_attempts(path):
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def _append_jsonl(path, row):

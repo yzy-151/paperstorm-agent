@@ -110,6 +110,8 @@ class QasperGroundedGenerationTest(unittest.TestCase):
         self.assertEqual(row["generation_attempts"], 2)
         self.assertEqual(row["usage"]["total_tokens"], 10)
         self.assertIn("previous response violated", prompts[1])
+        self.assertIn("must be null when refusal is false", prompts[0])
+        self.assertIn("Never return an empty string", prompts[1])
 
     def test_batch_verifier_builds_one_grounded_request(self):
         from knowledge_storm.answer_validation import AnswerDraft, Citation, Claim
