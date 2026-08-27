@@ -38,6 +38,7 @@ from knowledge_storm.evaluation.public_benchmarks.runner import (
 )
 from knowledge_storm.evaluation.public_benchmarks.report import write_benchmark_artifacts
 from knowledge_storm.retrieval import CrossEncoderReranker, SentenceTransformerProvider
+from knowledge_storm.retrieval_profiles import EMBEDDING_PROFILES, get_embedding_profile
 from knowledge_storm.paperstorm_benchmarks import run_production_governance_benchmark
 
 
@@ -67,6 +68,11 @@ def build_parser():
     parser.add_argument("--baseline-dir")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--embedding", choices=("hash", "real"), default="real")
+    parser.add_argument(
+        "--embedding-profile",
+        choices=tuple(EMBEDDING_PROFILES),
+        help="Frozen embedding contract; overrides --model when provided.",
+    )
     parser.add_argument(
         "--evaluation-phase", choices=("development", "final"), default="development"
     )
@@ -224,7 +230,7 @@ def _run_one(args, benchmark, output_root):
             benchmark=benchmark,
             split=split,
             top_k=top_k,
-            model=args.model,
+            model=getattr(provider, "model_name", args.model),
             embedding_kind=args.embedding,
             smoke_limit=args.smoke_limit,
             actual_manifest=report["manifest"],
@@ -496,7 +502,9 @@ def _embedding_provider(args):
             "real embedding requires --model-cache; implicit download is disabled"
         )
     cache = Path(args.model_cache)
-    model_dir = cache / ("models--" + args.model.replace("/", "--"))
+    profile = get_embedding_profile(args.embedding_profile) if args.embedding_profile else None
+    model_name = profile.model_name if profile is not None else args.model
+    model_dir = cache / ("models--" + model_name.replace("/", "--"))
     if not cache.is_dir() or not model_dir.exists():
         raise BenchmarkPreflightError(
             "model_missing",
@@ -505,7 +513,11 @@ def _embedding_provider(args):
     os.environ["PAPERSTORM_OFFLINE_TESTS"] = "1"
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
-    return SentenceTransformerProvider(model_name=args.model, cache_folder=str(cache))
+    return SentenceTransformerProvider(
+        profile=profile,
+        model_name=None if profile is not None else model_name,
+        cache_folder=str(cache),
+    )
 
 
 def _reranker(args):

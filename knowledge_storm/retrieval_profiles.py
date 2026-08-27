@@ -81,7 +81,7 @@ EMBEDDING_PROFILES = MappingProxyType({
     "legacy-multilingual": EmbeddingProfile(
         name="legacy-multilingual",
         model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-        revision="b8ef00830037f9868450f778081ea683e900fe39",
+        revision="e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
         dimension=384,
         max_seq_length=128,
         query=_role("query", "multilingual semantic-similarity query"),
@@ -92,7 +92,7 @@ EMBEDDING_PROFILES = MappingProxyType({
     "cpu-zh": EmbeddingProfile(
         name="cpu-zh",
         model_name="BAAI/bge-small-zh-v1.5",
-        revision="4bf3c54884c552e68da7eb27f3e9bdc5a32e32d4",
+        revision="7999e1d3359715c523056ef9478215996d62a620",
         dimension=512,
         max_seq_length=512,
         query=_role(
@@ -107,7 +107,7 @@ EMBEDDING_PROFILES = MappingProxyType({
     "cpu-multilingual": EmbeddingProfile(
         name="cpu-multilingual",
         model_name="Alibaba-NLP/gte-multilingual-base",
-        revision="11922d38fb7620aeb9530b2a12f2cc5a29b3d3f6",
+        revision="9bbca17d9273fd0d03d5725c7a4b0f6b45142062",
         dimension=768,
         max_seq_length=8192,
         query=_role("query", "multilingual retrieval query"),
@@ -118,7 +118,7 @@ EMBEDDING_PROFILES = MappingProxyType({
     "quality-multilingual": EmbeddingProfile(
         name="quality-multilingual",
         model_name="Qwen/Qwen3-Embedding-0.6B",
-        revision="3d106eabb5535a84de3ae88f45887a78259b52de",
+        revision="97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
         dimension=1024,
         max_seq_length=32768,
         query=_role(

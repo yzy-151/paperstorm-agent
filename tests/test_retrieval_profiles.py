@@ -27,18 +27,18 @@ class EmbeddingProfileRegistryTests(unittest.TestCase):
 
         expected = {
             "legacy-multilingual": (
-                "b8ef00830037f9868450f778081ea683e900fe39",
+                "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
                 384,
                 128,
             ),
-            "cpu-zh": ("4bf3c54884c552e68da7eb27f3e9bdc5a32e32d4", 512, 512),
+            "cpu-zh": ("7999e1d3359715c523056ef9478215996d62a620", 512, 512),
             "cpu-multilingual": (
-                "11922d38fb7620aeb9530b2a12f2cc5a29b3d3f6",
+                "9bbca17d9273fd0d03d5725c7a4b0f6b45142062",
                 768,
                 8192,
             ),
             "quality-multilingual": (
-                "3d106eabb5535a84de3ae88f45887a78259b52de",
+                "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
                 1024,
                 32768,
             ),
@@ -179,7 +179,7 @@ class SentenceTransformerProfileProviderTests(unittest.TestCase):
 
         args, kwargs, model = loaded[0]
         self.assertEqual(("BAAI/bge-small-zh-v1.5",), args)
-        self.assertEqual("4bf3c54884c552e68da7eb27f3e9bdc5a32e32d4", kwargs["revision"])
+        self.assertEqual("7999e1d3359715c523056ef9478215996d62a620", kwargs["revision"])
         self.assertFalse(kwargs["trust_remote_code"])
         self.assertEqual(512, provider.dim)
         self.assertEqual(512, model.max_seq_length)
