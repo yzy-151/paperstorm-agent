@@ -158,6 +158,9 @@ def run_profile_benchmark(
     _write_json(manifest_path, manifest)
     rows_by_id = {row["case_id"]: row for row in _read_jsonl(predictions_path)}
 
+    selected_documents, index_scope = _documents_for_selected_cases(
+        dataset, selected_cases
+    )
     indexed_documents = [
         {
             "chunk_id": document.document_id,
@@ -167,7 +170,7 @@ def run_profile_benchmark(
             "retrieval_content": document.text,
             "metadata": dict(document.metadata),
         }
-        for document in dataset.documents
+        for document in selected_documents
     ]
     build_started = time.perf_counter()
     index = HybridPaperIndex(
@@ -177,6 +180,8 @@ def run_profile_benchmark(
     )
     manifest["build_seconds"] = round(time.perf_counter() - build_started, 6)
     manifest["dense_backend_mode"] = "exact"
+    manifest["indexed_document_count"] = len(selected_documents)
+    manifest["index_scope"] = index_scope
     manifest["embedding_dimension"] = int(index.manifest.get("embedding_dimension", 0))
     manifest["index_bytes"] = _embedding_payload_bytes(index.embeddings)
     manifest["rss_peak_bytes"] = _rss_bytes()
@@ -412,6 +417,12 @@ def _rss_bytes():
         if ctypes.windll.psapi.GetProcessMemoryInfo(handle, counters, size):
             return int(ctypes.cast(counters, ctypes.POINTER(ctypes.c_size_t))[2])
         return 0
+    try:
+        import resource
+
+        return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
+    except (ImportError, AttributeError):
+        return 0
 
 
 def _embedding_payload_bytes(embeddings):
@@ -432,14 +443,26 @@ def _case_scope_document_ids(dataset, case):
         for document in dataset.documents
         if str(document.metadata.get("paper_id") or "") == paper_id
     ]
-    try:
-        import resource
-
-        return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
-    except (ImportError, AttributeError):
-        return 0
 
 
+def _documents_for_selected_cases(dataset, cases):
+    """Keep the complete legal candidate set for every selected query."""
+    selected_ids = set()
+    for case in cases:
+        allowed_ids = _case_scope_document_ids(dataset, case)
+        if allowed_ids is None:
+            return tuple(dataset.documents), "full_corpus"
+        selected_ids.update(allowed_ids)
+    if not selected_ids:
+        return tuple(dataset.documents), "full_corpus"
+    return (
+        tuple(
+            document
+            for document in dataset.documents
+            if document.document_id in selected_ids
+        ),
+        "selected_papers_complete",
+    )
 def _read_json(path):
     path = Path(path)
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None

@@ -176,6 +176,54 @@ class BenchmarkReportTests(unittest.TestCase):
                 first["report"]["manifest"]["dense_backend_mode"],
             )
 
+    def test_paper_scoped_run_indexes_every_legal_candidate_only(self):
+        from examples.storm_examples.benchmark_embedding_profiles import (
+            run_profile_benchmark,
+        )
+        from knowledge_storm.retrieval import HashEmbeddingProvider
+
+        dataset = BenchmarkDataset(
+            "qasper-fixture",
+            "v1",
+            (
+                BenchmarkDocument(
+                    "paper-a::p1", "A", "gold evidence", {"paper_id": "paper-a"}
+                ),
+                BenchmarkDocument(
+                    "paper-a::p2", "A", "hard negative", {"paper_id": "paper-a"}
+                ),
+                BenchmarkDocument(
+                    "paper-b::p1", "B", "unreachable", {"paper_id": "paper-b"}
+                ),
+            ),
+            (
+                BenchmarkCase(
+                    "q1",
+                    "gold",
+                    ("paper-a::p1",),
+                    "test",
+                    metadata={"paper_id": "paper-a"},
+                ),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_profile_benchmark(
+                dataset,
+                profile_name="hash-fixture",
+                embedding_provider=HashEmbeddingProvider(dim=16),
+                output_dir=temp_dir,
+                sample_ratio=1.0,
+                top_k=2,
+            )
+
+        manifest = result["report"]["manifest"]
+        prediction = result["report"]["predictions"][0]
+        self.assertEqual(3, manifest["document_count"])
+        self.assertEqual(2, manifest["indexed_document_count"])
+        self.assertEqual("selected_papers_complete", manifest["index_scope"])
+        self.assertEqual(2, prediction["candidate_count"])
+        self.assertNotIn("paper-b::p1", prediction["ranked_document_ids"])
+
 
 if __name__ == "__main__":
     unittest.main()
