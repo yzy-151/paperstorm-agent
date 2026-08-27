@@ -210,11 +210,14 @@ class SentenceTransformerProvider:
         if self.profile.max_seq_length:
             self.model.max_seq_length = int(self.profile.max_seq_length)
         dimension_getter = getattr(
-            self.model,
-            "get_embedding_dimension",
-            self.model.get_sentence_embedding_dimension,
-        )
-        loaded_dimension = int(dimension_getter())
+            self.model, "get_sentence_embedding_dimension", None
+        ) or getattr(self.model, "get_embedding_dimension", None)
+        if callable(dimension_getter):
+            loaded_dimension = int(dimension_getter())
+        elif self.profile.dimension:
+            loaded_dimension = int(self.profile.dimension)
+        else:
+            raise ValueError("embedding model does not expose its output dimension")
         if self.profile.dimension and loaded_dimension != self.profile.dimension:
             raise ValueError(
                 "embedding dimension mismatch: profile={0}, model={1}".format(
@@ -496,11 +499,15 @@ class HybridPaperIndex:
         )
         from .dense_index import AutoDenseBackend
 
-        self._dense_backend = AutoDenseBackend(
-            self._normalized_embedding_matrix,
-            mode=dense_backend_mode,
-            ann_threshold=ann_threshold,
-            ef_search=hnsw_ef_search,
+        self._dense_backend = (
+            AutoDenseBackend(
+                self._normalized_embedding_matrix,
+                mode=dense_backend_mode,
+                ann_threshold=ann_threshold,
+                ef_search=hnsw_ef_search,
+            )
+            if self.chunks
+            else None
         )
         self.manifest = dict(manifest or {})
         self.manifest.setdefault(
@@ -596,42 +603,120 @@ class HybridPaperIndex:
     def expand_parent_context(
         self, results: Iterable[Dict], parent_budget_tokens: int
     ) -> List[Dict]:
-        """Attach bounded parent text without mutating ranked child results."""
+        """Attach fair, bounded section context without changing child ranking."""
         budget = int(parent_budget_tokens)
         if budget < 0:
             raise ValueError("parent_budget_tokens must not be negative")
         expanded = copy.deepcopy(list(results or []))
         if budget == 0:
             return expanded
-        remaining_budget = budget
-        expanded_parent_ids = set()
-        for item in expanded:
+        eligible = []
+        first_index_by_parent = {}
+        for index, item in enumerate(expanded):
+            parent_id = str(item.get("parent_id") or "")
+            parent = self.parents.get(parent_id)
+            if parent and parent_id not in first_index_by_parent:
+                first_index_by_parent[parent_id] = index
+                score = float(
+                    item.get(
+                        "final_score",
+                        item.get(
+                            "rerank_score",
+                            item.get("score", item.get("rrf_score", 0.0)),
+                        ),
+                    )
+                    or 0.0
+                )
+                eligible.append((index, parent_id, max(0.0, score)))
+        allocations = self._allocate_parent_budget(eligible, budget)
+        for index, item in enumerate(expanded):
             parent_id = str(item.get("parent_id") or "")
             parent = self.parents.get(parent_id)
             child_content = str(item.get("content") or "")
-            parent_content = str(parent.get("content", "") if parent else "")
-            if child_content:
-                parent_content = parent_content.replace(child_content, "")
             raw_child = str((item.get("metadata") or {}).get("raw_text") or "")
-            if raw_child:
-                parent_content = parent_content.replace(raw_child, "")
-            if not parent_id or parent_id in expanded_parent_ids:
-                parent_content = ""
-            elif parent:
-                expanded_parent_ids.add(parent_id)
-            parent_context = self._truncate_to_budget(
-                parent_content, remaining_budget
+            allocation = int(allocations.get(index, 0))
+            parent_content = str(parent.get("content", "") if parent else "")
+            requested = self._token_count(
+                parent_content.replace(raw_child or child_content, "")
+            ) if parent else 0
+            parent_context = self._parent_window(
+                parent_content,
+                raw_child or child_content,
+                allocation,
             )
-            remaining_budget = max(
-                0, remaining_budget - self._token_count(parent_context)
-            )
+            used = self._token_count(parent_context)
             item["parent_context"] = parent_context
             item["expanded_content"] = (
                 child_content + "\n\n" + parent_context
                 if parent_context
                 else child_content
             )
+            item["parent_allocation"] = {
+                "parent_id": parent_id,
+                "parent_type": str(parent.get("node_type") or "section") if parent else "missing",
+                "requested_tokens": requested,
+                "allocated_tokens": allocation,
+                "used_tokens": used,
+                "truncated": used < requested,
+                "reason": (
+                    "allocated"
+                    if allocation
+                    else "missing_parent"
+                    if not parent
+                    else "duplicate_parent"
+                    if first_index_by_parent.get(parent_id) != index
+                    else "budget_exhausted"
+                ),
+            }
         return expanded
+
+    @staticmethod
+    def _allocate_parent_budget(eligible, budget):
+        if not eligible or budget <= 0:
+            return {}
+        count = len(eligible)
+        minimum = min(64, budget // count)
+        allocations = {index: minimum for index, _, _ in eligible}
+        remaining = budget - minimum * count
+        if remaining <= 0:
+            return allocations
+        weights = [score for _, _, score in eligible]
+        if not any(weights):
+            weights = [1.0 / (position + 1) for position in range(count)]
+        total = sum(weights)
+        raw = [remaining * weight / total for weight in weights]
+        shares = [int(value) for value in raw]
+        leftovers = remaining - sum(shares)
+        order = sorted(
+            range(count),
+            key=lambda position: (-(raw[position] - shares[position]), position),
+        )
+        for position in order[:leftovers]:
+            shares[position] += 1
+        for (index, _, _), share in zip(eligible, shares):
+            allocations[index] += share
+        return allocations
+
+    def _parent_window(self, parent_content, child_content, token_budget):
+        parent_content = str(parent_content or "")
+        child_content = str(child_content or "")
+        if token_budget <= 0 or not parent_content:
+            return ""
+        position = parent_content.find(child_content) if child_content else -1
+        if position < 0:
+            cleaned = parent_content.replace(child_content, "") if child_content else parent_content
+            return self._truncate_to_budget(cleaned, token_budget)
+        left = parent_content[:position]
+        right = parent_content[position + len(child_content) :]
+        left_budget = token_budget // 2
+        right_budget = token_budget - left_budget
+        left_context = self._truncate_tail_to_budget(left, left_budget)
+        right_context = self._truncate_to_budget(right, right_budget)
+        used = self._token_count(left_context) + self._token_count(right_context)
+        if used < token_budget:
+            extra_left = self._truncate_tail_to_budget(left, token_budget - self._token_count(right_context))
+            left_context = extra_left
+        return " ".join(value.strip() for value in (left_context, right_context) if value.strip())
 
     @classmethod
     def from_documents(
@@ -1027,6 +1112,19 @@ class HybridPaperIndex:
 
         units = _token_units(text)[:token_budget]
         return _join_units(units).strip()[: token_budget * 4]
+
+    def _truncate_tail_to_budget(self, text, token_budget):
+        if token_budget <= 0:
+            return ""
+        text = str(text or "")
+        self._refresh_token_codec()
+        if self.token_codec is not None:
+            encoded = self.token_codec.encode(text)
+            return str(self.token_codec.decode(encoded[-token_budget:]))
+        from .document_ingestion import _join_units, _token_units
+
+        units = _token_units(text)[-token_budget:]
+        return _join_units(units).strip()[-token_budget * 4 :]
 
     def _token_count(self, text):
         text = str(text or "")

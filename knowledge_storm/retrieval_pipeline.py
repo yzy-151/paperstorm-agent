@@ -331,6 +331,17 @@ class RetrievalPipeline:
         if parent_budget > 0 and results:
             results = list(expand_parent(results, parent_budget))
         expanded_count = sum(bool(item.get("parent_context")) for item in results)
+        parent_allocations = [
+            item.get("parent_allocation") or {}
+            for item in results
+            if item.get("parent_allocation")
+        ]
+        parent_allocated_tokens = sum(
+            int(item.get("allocated_tokens") or 0) for item in parent_allocations
+        )
+        parent_used_tokens = sum(
+            int(item.get("used_tokens") or 0) for item in parent_allocations
+        )
         stages.append(
             _stage(
                 "parent_expand",
@@ -356,6 +367,12 @@ class RetrievalPipeline:
                 "reranker": str(getattr(self.reranker, "model_name", "")),
             },
             "mode": mode,
+            "parent_context": {
+                "budget_tokens": parent_budget,
+                "allocated_tokens": parent_allocated_tokens,
+                "used_tokens": parent_used_tokens,
+                "expanded_parent_count": expanded_count,
+            },
             "latency_ms": _elapsed_ms(started),
             "policy_digest": str(request.policy_digest or ""),
             "candidate_scope": {
