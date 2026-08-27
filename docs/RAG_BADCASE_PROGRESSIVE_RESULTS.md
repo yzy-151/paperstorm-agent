@@ -74,3 +74,73 @@ Case 级统计：SciFact Recall 改善 9、退化 1；QASPER Recall 改善 151�
 - recall-safe MMR 保留 Top K 成员，只优化覆盖顺序与来源多样性。
 - `EvidenceAssessment` 输出 relevance、coverage、answerability、conflict、confidence、failure type 与下一动作；纠错最多一轮。
 - P2 只运行受影响的 SciFact Retrieval、QASPER Retrieval 和固定证据治理集；未重复运行 QASPER Answer、LongMemEval-S 或 P0 基线。
+
+## P3：Claim-Citation 闭环与 Grounded Answer
+
+全量目录：`C:\Users\yzy\Desktop\codex\paperstorm-benchmarks\p3\runs\2026-08-27-full`（QASPER test 1451/1451 完成）
+
+真实 API smoke 目录：`C:\Users\yzy\Desktop\codex\paperstorm-benchmarks\p3\runs\2026-08-27-smoke-3-retry`
+
+| 评测 | 样本 | Answer F1 | EM | Evidence F1 | Citation P/R | Claim support | Unsupported claim | Token | 成本 |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| 严格 JSON smoke | 3 | 0.7200 | 0.6667 | 0.5556 | 0.6667 / 0.5000 | 1.0000 | 0 | 10469 | $0.00238856 |
+| QASPER test 全量 | 1451 | 0.5083 | 0.3039 | 0.5500 | 0.5844 / 0.5776 | 0.9592 | 0.0214 | 4616659 | $1.43615524 |
+
+smoke 仅用于验证真实 LLM、结构化解析、引用校验和成本采集链路，不代表公开数据集总体水平。
+
+### 用户授权的跨指纹方向性对比
+
+归档 v5.5 与 P3 都是 QASPER test、1451 条、DeepSeek Chat、Top K=5，但 dataset loader/fingerprint、prompt 与输出合同不同。按用户授权可做方向性比较并认可新增能力，不能把差值解释为严格配对因果提升。
+
+| 指标 | v5.5 | P3 | 方向性变化 | 结论 |
+| --- | ---: | ---: | ---: | --- |
+| Answer F1 | 0.5441 | 0.5083 | -0.0358 | 下降；严格短答案、拒答和 claim 约束损失部分覆盖 |
+| Exact Match | 0.3274 | 0.3039 | -0.0234 | 下降 |
+| Evidence F1 | 0.5814 | 0.5500 | -0.0314 | 下降；P2 冻结排名与旧运行来源不同亦会影响结果 |
+| 生成失败 | 0 | 0 | 0 | 最终断点修复后无失败 |
+| Claim support | 未测 | 0.9592 | 新增 | 可信回答能力可量化 |
+| Unsupported claim | 未测 | 0.0214 | 新增 | 可定位无支持/矛盾 claim |
+| Citation P/R | 未测 | 0.5844 / 0.5776 | 新增 | 引用正确性和覆盖率可分开评估 |
+| Total Token | 1371303 | 4616659 | 约 3.37x | 每条答案增加 verifier 调用，成本显著上升；累计值包含断点前失败尝试 |
+
+因此 P3 的“提升”成立在工程可信度、审计维度和失败治理上，不成立在传统 Answer/Evidence F1 上。下一轮应以质量-成本 Pareto 为目标，而不是继续堆叠 verifier。
+
+### 严格输出 Bad Case
+
+| 难点 | 改进前 | 根因 | 改进 | 改进后 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| 模型返回 `claim_id` 数字、空字符串 `abstain_reason` | 首次 smoke 3/3 解析失败；如果宽松强转会掩盖模型契约违约 | LLM 结构化输出仍可能偏离 schema | 保持严格 schema；把解析失败纳入最多一次、带具体错误的纠正重试；仍失败则记录明确 failure type | 同 3 条输入重跑 3/3 成功；3 条已验证 claim 均有证据支持 | 已解决链路问题；全量稳定性待最终指标 |
+| 引用编号存在但来源不可信 | 模型可能自造 citation metadata | 生成结果与检索证据的信任边界不清 | 模型只返回 citation ID；标题、作者、URL、段落由可信 evidence registry 回填 | Citation precision/recall 与 claim verdict 可独立审计 | 已完成工程闭环 |
+| Claim 无证据支持 | 主题相关引用可能无法推出结论 | “有引用”不等于 entailment | verifier 输出 entailed/partial/contradicted/unsupported；仅局部修复一次，仍不支持则删除、降调或拒答 | 全量 Claim support 0.9592，unsupported claim 0.0214 | 已量化但未完全解决；需分析不支持 claim 分布 |
+| `abstain_reason=""` 合同违约 | 首次全量 1444/1451 成功，7 条失败；失败问题本身已有可用答案 | 主提示词没有明确 non-refusal 必须返回 `null`，纠正提示也未禁止空字符串 | 主提示和 repair prompt 同时加入 `false -> null / true -> 非空原因`；断点只重跑失败项 | 1451/1451 成功，失败 7 -> 0；F1 0.5049 -> 0.5083 | 已解决该错误类型；仍需监控新模型版本的 schema drift |
+
+复现说明：全量报告中的 1444 条首次成功预测沿用原提示，7 条失败预测使用补充 nullability
+约束后的 repair 提示断点重跑。因此该目录是同一输出 schema 下的恢复型最终报告，但不是 1451 条全部
+重新生成的单一提示快照；累计 Token/成本包含失败尝试，`latest_prediction_usage` 另记录最终预测用量。
+
+## P4：生产治理与发布门禁
+
+正式目录：`C:\Users\yzy\Desktop\codex\paperstorm-benchmarks\p4\runs\2026-08-27-final\production-governance`
+
+该阶段没有改变相关性算法，因此没有重跑 SciFact、QASPER Retrieval 或 LongMemEval-S。验收完全离线、不联网、不调用 LLM，覆盖 8 个生产治理合同。
+
+| 指标 | 结果 | 验收结论 |
+| --- | ---: | --- |
+| ACL leak count | 0 | 通过；BM25/Dense 排序前即限定授权候选集 |
+| Secret leak count | 0 | 通过；API Key、用户标识和私有正文进入 Trace 前脱敏/截断 |
+| Cache isolation | true | 通过；tenant/user/policy/index/SearchPlan 共同决定缓存身份 |
+| Timeout classified | true | 通过；超时返回独立 failure type |
+| Circuit recovered | true | 通过；open 状态跳过 provider，cooldown 后 half-open 探针恢复 |
+| Batch order preserved | true | 通过；并发执行保持输入输出对应关系 |
+| Failure rate | 0 | 8/8 合同通过 |
+| 本机 P95 | 27.8796 ms | 仅为离线治理夹具参考，不是线上 SLA |
+| Release Gate | allowed | 指纹、质量、P95、unsupported claim、失败率和 ACL 门禁全部通过 |
+
+### P4 具体案例
+
+| 难点 | 改进前风险 | 根因 | 改进方案 | 改进结果 | 残余风险 |
+| --- | --- | --- | --- | --- | --- |
+| 私有文档可能进入候选集 | 先全库召回再过滤时，敏感 chunk 仍可能进入 rerank、Trace 或缓存 | ACL 边界位于检索之后 | 从 Control Plane 生成 fail-closed scope；BM25 在授权子语料评分，Dense 只计算授权矩阵 | public-only、private-only、deny-all 三例均无越权，leak=0 | 大规模租户需倒排 posting/向量库原生 filter，避免每次构造子集 |
+| 相同问题跨用户复用答案 | 只按 query/KB 缓存会把高权限答案返回低权限用户 | 缓存 key 缺少身份与策略版本 | namespace/key 加入 tenant、user、policy digest、index revision 和 SearchPlan digest | owner/viewer 缓存身份不同，collision=0 | 权限变更必须可靠更新 policy digest |
+| Provider 卡死或连续失败 | 请求长时间挂起，失败后继续打满下游 | 缺少 deadline、熔断状态和恢复探针 | deadline + explicit timeout；open 时快速降级；cooldown 后 half-open | timeout 分类正确；open 期间 provider 调用 0；探针后 closed | 线程超时不能强杀底层系统调用，线上应配合客户端级 timeout/取消 |
+| 发布只看平均质量 | ACL 泄漏或 P95/失败率恶化仍可能上线 | 缺少多维自动门禁 | 冻结 manifest/predictions 离线 replay；联合质量 CI、P95、unsupported claim、failure、ACL | 正向候选 allowed；注入 1 条 ACL 泄漏和 50% P95 回归的负向候选被拒绝 | 仍需接入 CI artifact 与真实预发布 canary，离线报告不能冒充线上结果 |

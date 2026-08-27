@@ -128,18 +128,19 @@ RAG 的已知 bad case、工业方案对照和后续路线见
 
 以下结果来自仓库中的公开数据集报告，延迟为本机 CPU 参考值，不代表线上 SLA。
 
-| 数据集与配置 | 主要结果 | 观察 |
-| --- | --- | --- |
-| SciFact Hybrid | Recall@10 `0.8114` | BM25 与 Dense 互补 |
-| SciFact Hybrid + Rerank | Recall@10 `0.8379`，P95 `2733.5 ms` | 质量提升但 CPU 重排开销显著 |
-| QASPER Hybrid | Recall@5 `0.5057` | 适合作为默认低延迟配置 |
-| QASPER Hybrid + Rerank | Recall@5 `0.6186`，P95 `1316.7 ms` | 适合质量优先或离线任务 |
-| QASPER Reader test | Answer F1 `0.5441`，Evidence F1 `0.5814` | Abstractive F1 仍是主要改进项 |
-| LongMemEval-S Memory | Recall@5 `0.8003`，P95 `359.3 ms` | 指标仅代表 evidence-session retrieval |
+| 累积里程碑 | 受影响评测 | 主要结果 | 结论 |
+| --- | --- | --- | --- |
+| P1：规划与结构化召回 | SciFact / QASPER Retrieval / PIM 固定集 | SciFact Recall@10 `0.8114`；QASPER Recall@5 `0.5057` | 建立可复现基线；PIM/RAM 领域歧义固定案例通过 |
+| P1+P2：选择性重排与证据治理 | SciFact / QASPER Retrieval / Evidence Governance | SciFact Recall@10 `0.8264`；QASPER Recall@5 `0.5526`；相对 P1 配对 CI 均不跨 0 | Cross-Encoder 只在风险/不确定查询触发；Top K 内 recall-safe MMR 不替换已召回成员 |
+| P1+P2+P3：Claim-Citation | QASPER Answer | 1451 条 test：Answer F1 `0.5083`、Evidence F1 `0.5500`、Claim support `0.9592`、unsupported claim `0.0214`、失败 `0` | 相对 v5.5 的跨指纹方向性对比为 Answer F1 `-0.0358`；可信度可观测性增强，但传统答案覆盖仍需优化 |
+| P1+P2+P3+P4：生产治理 | Production Governance 8-case | ACL/Trace 泄漏 `0`；失败率 `0`；缓存隔离、超时、熔断恢复、Release Gate 全部通过 | 完全离线、不调用 LLM；不重复运行未受影响的质量数据集 |
+| LongMemEval-S Memory | LongMemEval-S | Recall@5 `0.8003`，P95 `359.3 ms` | 仅代表 evidence-session retrieval，不等同端到端回答准确率 |
 
 详细协议、样本量、split、模型和证据等级见
 [PAPERSTORM_V55_PUBLIC_BENCHMARKS.md](docs/PAPERSTORM_V55_PUBLIC_BENCHMARKS.md) 与
-[PAPERSTORM_V56_MEMORY_CONTEXT.md](docs/PAPERSTORM_V56_MEMORY_CONTEXT.md)。
+[PAPERSTORM_V56_MEMORY_CONTEXT.md](docs/PAPERSTORM_V56_MEMORY_CONTEXT.md)。P1-P4 的
+配对区间、失败候选与具体 Bad Case 见
+[RAG_BADCASE_PROGRESSIVE_RESULTS.md](docs/RAG_BADCASE_PROGRESSIVE_RESULTS.md)。
 
 ## 快速开始
 
@@ -273,8 +274,9 @@ docs/                               # 架构、评测协议、路线图与开发
 
 ## 质量边界与路线图
 
-当前系统已经统一检索主链并建立公开 Benchmark，但仍需继续处理查询扩展、多跳证据、冲突来源、
-动态 rerank、生成阶段 citation faithfulness 和低置信度纠错。相关优先级、案例和验收指标见
+当前系统已经完成查询规划、结构化召回、选择性 Rerank、证据冲突治理、Claim-Citation 校验、
+检索前 ACL、运行韧性与离线发布门禁。剩余重点是优化 QASPER 抽象回答覆盖和 Cross-Encoder
+CPU 尾延迟，并把离线 Release Gate 接入 CI 与预发布 canary。相关案例和验收指标见
 [RAG_BAD_CASES_AND_ROADMAP.md](docs/RAG_BAD_CASES_AND_ROADMAP.md)。
 
 ## License

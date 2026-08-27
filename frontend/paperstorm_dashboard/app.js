@@ -18,6 +18,41 @@ const state = {
   runFinished: false,
 };
 
+const MILESTONE_PROGRESS = Object.freeze([
+  {
+    id: "p0", label: "P0 baseline", title: "冻结基线", status: "completed",
+    summary: "冻结公开检索、问答和时延基线，后续只做受影响维度的增量对比。",
+    affected_benchmarks: ["SciFact Retrieval", "QASPER Retrieval", "QASPER Answer"],
+    case: {failure_stage: "未提供", trace: "未提供", citation: "未提供"},
+  },
+  {
+    id: "p1", label: "P1", title: "检索相关性", status: "completed",
+    summary: "完成查询规划、结构化 Parent-Child 召回与领域消歧，冻结可复现检索基线。",
+    affected_benchmarks: ["PIM 固定集", "SciFact Retrieval", "QASPER Retrieval"],
+    case: {before_top_k: "未提供", after_top_k: "未提供", failure_stage: "retrieval", trace: "retrieval trace 未提供", citation: "未提供"},
+  },
+  {
+    id: "p12", label: "P1+P2", title: "证据与上下文", status: "completed",
+    summary: "增加选择性 Cross-Encoder、recall-safe MMR、冲突检测与证据充分性门控。",
+    affected_benchmarks: ["SciFact Retrieval", "QASPER Retrieval", "Evidence Governance"],
+    case: {before_top_k: "未提供", after_top_k: "未提供", failure_stage: "context", trace: "context trace 未提供", citation: "未提供"},
+  },
+  {
+    id: "p123", label: "P1+P2+P3", title: "可信回答", status: "completed",
+    summary: "QASPER test 1451 条完成：Answer F1 0.5083，Claim support 0.9592，unsupported claim 0.0214。",
+    affected_benchmarks: ["QASPER Answer", "Claim-Citation Validation"],
+    case: {before_top_k: "P2 冻结 Top 5", after_top_k: "P2 冻结 Top 5", failure_stage: "0 / 1451 generation failures", trace: "predictions.jsonl + claim_validation", citation: "precision 0.5844 / recall 0.5776"},
+  },
+  {
+    id: "p1234", label: "P1+P2+P3+P4", title: "production-governance", status: "completed",
+    summary: "在前述能力上叠加访问范围、超时熔断、脱敏 Trace 与离线 Release Gate。",
+    affected_benchmarks: ["ACL Governance", "Resilience", "Offline Release Gate"],
+    case: {before_top_k: "未提供", after_top_k: "授权范围内候选集", failure_stage: "access control", trace: "policy-scoped trace", citation: "未提供"},
+  },
+]);
+
+let selectedMilestoneId = "p1234";
+
 const pipelineNodes = {
   request: {title: "任务编排", description: "规范化主题、运行模式、检索源和领域约束。", input: "用户主题、语言、检索器", output: "Research Task + 运行配置"},
   persona: {title: "Persona Generator", description: "从不同知识视角生成调研角色，扩大问题覆盖面。", input: "主题与背景资料", output: "多视角研究角色"},
@@ -942,6 +977,34 @@ function renderBenchmarkReadiness(catalog) {
   $("#ready-model-cache").textContent = catalog.model_cache || "模型缓存未配置";
 }
 
+function milestoneValue(value) {
+  return value === null || value === undefined || value === "" ? "未提供" : value;
+}
+
+function renderMilestoneProgress() {
+  const selected = MILESTONE_PROGRESS.find((item) => item.id === selectedMilestoneId) || MILESTONE_PROGRESS.at(-1);
+  $("#milestone-progress").innerHTML = MILESTONE_PROGRESS.map((item, index) => `
+    <button class="milestone-card ${item.id === selected.id ? "selected" : ""} ${item.status}" data-milestone-id="${item.id}" type="button">
+      <span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.status)}</small>
+    </button>
+  `).join("");
+  $("#milestone-progress").querySelectorAll("[data-milestone-id]").forEach((card) => {
+    card.addEventListener("click", () => {
+      selectedMilestoneId = card.dataset.milestoneId;
+      renderMilestoneProgress();
+    });
+  });
+  $("#milestone-detail").querySelector(".milestone-detail-copy").innerHTML = `
+    <span>${escapeHtml(selected.status)}</span><h3>${escapeHtml(selected.title)}</h3><p>${escapeHtml(selected.summary)}</p>
+  `;
+  $("#milestone-benchmarks").innerHTML = selected.affected_benchmarks.map((name) => `<span>${escapeHtml(name)}</span>`).join("");
+  $("#case-before-top-k").textContent = milestoneValue(selected.case.before_top_k);
+  $("#case-after-top-k").textContent = milestoneValue(selected.case.after_top_k);
+  $("#case-failure-stage").textContent = milestoneValue(selected.case.failure_stage);
+  $("#case-trace").textContent = milestoneValue(selected.case.trace);
+  $("#case-citation").textContent = milestoneValue(selected.case.citation);
+}
+
 function renderBenchmarkCatalog(benchmarks) {
   $("#benchmark-catalog").innerHTML = benchmarks.map((item) => `
     <article class="benchmark-card ${item.ready ? "" : "blocked"} ${state.selectedBenchmark?.id === item.id ? "selected" : ""}" data-benchmark-id="${escapeHtml(item.id)}" data-kind="${benchmarkKind(item)}" tabindex="0">
@@ -1194,4 +1257,5 @@ $("#copy-benchmark-command").addEventListener("click", copyBenchmarkCommand);
 $("#refresh-runtime-diagnostics").addEventListener("click", refreshRuntimeDiagnostics);
 
 initializePipelineGraph();
+renderMilestoneProgress();
 loadBenchmarkCatalog();

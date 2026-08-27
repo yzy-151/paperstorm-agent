@@ -142,8 +142,25 @@
             <button class="icon-button" id="refresh-benchmark-catalog" type="button" title="刷新环境">↻</button>
           </section>
 
+          <section class="console-section milestone-workspace" aria-labelledby="milestone-heading">
+            <div class="section-heading"><div><span>ACCUMULATED RELEASE PATH</span><h2 id="milestone-heading">能力演进与验收范围</h2></div><b>累积里程碑</b></div>
+            <div class="milestone-progress" id="milestone-progress" aria-label="累积里程碑进度"></div>
+            <div class="milestone-detail" id="milestone-detail">
+              <div class="milestone-detail-copy"><span>SELECT A MILESTONE</span><h3>选择阶段查看验收范围</h3><p>每一阶段只叠加此前已验证能力；数据缺失时会明确标注，不会用推断结果补齐。</p></div>
+              <div class="milestone-benchmarks" id="milestone-benchmarks"></div>
+              <section class="case-comparison" aria-labelledby="case-comparison-heading">
+                <div class="case-comparison-head"><span>CASE EVIDENCE</span><h3 id="case-comparison-heading">案例对照</h3></div>
+                <div class="case-field"><small>改进前 Top K</small><strong id="case-before-top-k">未提供</strong></div>
+                <div class="case-field"><small>改进后 Top K</small><strong id="case-after-top-k">未提供</strong></div>
+                <div class="case-field"><small>失败阶段</small><strong id="case-failure-stage">未提供</strong></div>
+                <div class="case-field"><small>Trace</small><strong id="case-trace">未提供</strong></div>
+                <div class="case-field case-citation"><small>引用字段</small><strong id="case-citation">未提供</strong></div>
+              </section>
+            </div>
+          </section>
+
           <section class="console-section">
-            <div class="section-heading"><div><span>PUBLIC EVIDENCE</span><h2>Benchmark Registry</h2></div><b>v5.5 / v5.6</b></div>
+            <div class="section-heading"><div><span>PUBLIC EVIDENCE</span><h2>Benchmark Registry</h2></div><b data-legacy-contract="v5.5 / v5.6">实验目录</b></div>
             <div class="benchmark-catalog" id="benchmark-catalog"><p class="empty-state">正在加载 Benchmark Registry...</p></div>
           </section>
 

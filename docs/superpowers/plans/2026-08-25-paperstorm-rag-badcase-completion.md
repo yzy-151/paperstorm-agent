@@ -14,9 +14,9 @@
 | --- | --- | --- |
 | Task 1-4 / P1 | 已完成 | `119 tests OK`；规格、质量评审通过；PIM/SciFact/QASPER Retrieval 已运行 |
 | Task 5-6 / P2 | 已完成 | SciFact/QASPER 配对评测完成；选择性重排、recall-safe Coverage、冲突/拒答治理已验收 |
-| Task 7-8 / P3 | 待执行 | Claim-Citation 与 QASPER Answer |
-| Task 9-11 / P4 | 待执行 | ACL、韧性、可观测性、Release Gate |
-| Task 12-13 | 待执行 | 文档、UI、全量验证、交付 |
+| Task 7-8 / P3 | 已完成 | Claim-Citation 与离线测试完成；QASPER test 1451/1451 成功，Answer F1 0.5083，Claim support 0.9592 |
+| Task 9-11 / P4 | 已完成 | 检索前 ACL、策略缓存、超时/熔断/恢复、Trace 脱敏、离线 Replay 与 Release Gate 已验收 |
+| Task 12-13 | 已完成 | 累积结果、案例面板、全量验证与交付边界已完成 |
 
 P1/P2 结果见 `docs/RAG_BADCASE_PROGRESSIVE_RESULTS.md`。P1 对冻结 v5.5 基线不可比；P2 对指纹一致的 P1 运行做 2000 次配对 Bootstrap 比较。
 
@@ -289,7 +289,7 @@ Commit: `feat: complete P2 evidence governance`
 - Create: `tests/test_answer_validation.py`
 - Modify: `knowledge_storm/paperstorm_qa.py`
 
-- [ ] **Step 1: 写支持、部分支持、矛盾和无支持 claim 测试**
+- [x] **Step 1: 写支持、部分支持、矛盾和无支持 claim 测试**
 
 ```python
 draft = AnswerDraft.from_payload(payload)
@@ -298,17 +298,17 @@ assert verdict.claims[0].status == "entailed"
 assert verdict.claims[1].status == "unsupported"
 ```
 
-- [ ] **Step 2: 实现严格 schema 与 span 对齐**
+- [x] **Step 2: 实现严格 schema 与 span 对齐**
 
 `AnswerDraft` 包含 `answer_type/claims/citation_ids/uncertainty/abstain_reason`；每个 citation 保存
 原始标题、作者、页码/章节、URL、evidence span。LLM 输出解析失败最多重试一次。
 
-- [ ] **Step 3: 实现一次局部修复**
+- [x] **Step 3: 实现一次局部修复**
 
 只把失败 claim 和其候选 evidence 交给修复器。修复后仍 unsupported 时删除 claim、降低措辞或拒答，
 不能整篇无界重写。
 
-- [ ] **Step 4: 运行 P3 离线测试并提交代码**
+- [x] **Step 4: 运行 P3 离线测试并提交代码**
 
 Run: `D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_answer_validation tests.test_paperstorm_research_qa -q`
 
@@ -321,23 +321,23 @@ Commit: `feat: add claim citation validation`
 - Modify: `knowledge_storm/evaluation/public_benchmarks/qasper.py`
 - Create: `tests/test_qasper_answer_validation.py`
 
-- [ ] **Step 1: 扩展指标测试**
+- [x] **Step 1: 扩展指标测试**
 
 新增 citation precision/recall、claim support rate、unsupported-claim rate、abstention precision/recall，
 并按 extractive/abstractive/boolean/list/comparison 分组。
 
-- [ ] **Step 2: API 预检**
+- [x] **Step 2: API 预检**
 
 Run: `D:\SOFTWARE\spyder\envs\storm\python.exe -c "import os; assert os.getenv('DEEPSEEK_API_KEY'), 'DEEPSEEK_API_KEY is required for P3'"`
 
 Key 缺失时停止付费评测并报告，不把历史聊天中的 Key 写入命令或文件。
 
-- [ ] **Step 3: 只运行 QASPER Answer/Evidence**
+- [x] **Step 3: 只运行 QASPER Answer/Evidence（1451/1451 完成）**
 
 不重跑 SciFact 或 LongMemEval-S。保存 raw response、解析失败、usage、cost、latency 和 checkpoint；
 断点续跑不得重复计费已成功 case。
 
-- [ ] **Step 4: 输出引用不支持与无答案 Case Dossier 并提交**
+- [x] **Step 4: 输出引用不支持与无答案 Case Dossier 并提交**
 
 Commit: `feat: complete P3 grounded answering`
 
@@ -349,7 +349,7 @@ Commit: `feat: complete P3 grounded answering`
 - Modify: `knowledge_storm/control_plane.py`
 - Create: `tests/test_retrieval_governance.py`
 
-- [ ] **Step 1: 写检索前 ACL 和跨租户缓存泄漏测试**
+- [x] **Step 1: 写检索前 ACL 和跨租户缓存泄漏测试**
 
 ```python
 result = pipeline.search(request_for_user("tenant-a", "mallory"))
@@ -357,12 +357,12 @@ assert "private-chunk" not in {item["chunk_id"] for item in result["results"]}
 assert cache_key("tenant-a", "q") != cache_key("tenant-b", "q")
 ```
 
-- [ ] **Step 2: 实现 pre-retrieval candidate scope**
+- [x] **Step 2: 实现 pre-retrieval candidate scope**
 
 索引层按 tenant/document/chunk metadata 建立允许集合，BM25 与 Dense 只在允许集合上排名；禁止召回后
 再从最终结果删除。缓存 namespace 必须包含 tenant、user policy digest、index revision 和 SearchPlan digest。
 
-- [ ] **Step 3: 运行 ACL/缓存测试并提交**
+- [x] **Step 3: 运行 ACL/缓存测试并提交**
 
 Run: `D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_retrieval_governance tests.test_control_plane -q`
 
@@ -376,17 +376,17 @@ Commit: `feat: enforce retrieval governance boundaries`
 - Modify: `knowledge_storm/retrieval.py`
 - Create: `tests/test_retrieval_resilience.py`
 
-- [ ] **Step 1: 写 timeout、circuit、batch 和脱敏测试**
+- [x] **Step 1: 写 timeout、circuit、batch 和脱敏测试**
 
 确保 Reranker 超时触发明确 failure type，熔断打开后不继续调用模型，批量输出顺序稳定，Trace 不含
 API Key、完整私有文档或用户 ID 明文。
 
-- [ ] **Step 2: 实现运行治理**
+- [x] **Step 2: 实现运行治理**
 
 模型保持进程内延迟加载单例；Cross-Encoder 批量评分；缓存命中、模型、候选数、policy reason、
 P50/P95、Token 和成本进入本地 JSONL 与 Langfuse span。
 
-- [ ] **Step 3: 运行 resilience/observability 测试并提交**
+- [x] **Step 3: 运行 resilience/observability 测试并提交**
 
 Run: `D:\SOFTWARE\spyder\envs\storm\python.exe -m unittest tests.test_retrieval_resilience tests.test_paperstorm_observability_v58 -q`
 
@@ -400,7 +400,7 @@ Commit: `feat: add retrieval resilience telemetry`
 - Modify: `examples/storm_examples/run_paperstorm_milestone.py`
 - Create: `tests/test_rag_release_gate.py`
 
-- [ ] **Step 1: 写发布门禁测试**
+- [x] **Step 1: 写发布门禁测试**
 
 ```python
 decision = ReleaseGate().evaluate(baseline, candidate, policy)
@@ -408,17 +408,17 @@ assert decision.allowed is False
 assert "p95_regression" in decision.reasons
 ```
 
-- [ ] **Step 2: 实现门禁和 replay**
+- [x] **Step 2: 实现门禁和 replay**
 
 门禁比较受影响指标、Bootstrap CI、P95、unsupported claim、ACL leak 和失败率。离线 replay 使用冻结
 manifest/predictions，不伪装线上 canary。
 
-- [ ] **Step 3: 运行 P4 受影响评测**
+- [x] **Step 3: 运行 P4 受影响评测**
 
 只运行离线 replay、并发/P95、ACL 泄漏、恢复、Langfuse 本地 fallback 和 release gate；质量算法未
 变化，不重跑 SciFact、QASPER 或 LongMemEval-S。
 
-- [ ] **Step 4: 输出 ACL/缓存 Case Dossier 并提交**
+- [x] **Step 4: 输出 ACL/缓存 Case Dossier 并提交**
 
 Commit: `feat: complete P4 production governance`
 
@@ -432,20 +432,20 @@ Commit: `feat: complete P4 production governance`
 - Modify: `frontend/paperstorm_dashboard/app.js`
 - Test: `tests/test_paperstorm_final_packaging.py`
 
-- [ ] **Step 1: 汇总四个累积里程碑**
+- [x] **Step 1: 汇总四个累积里程碑**
 
 表格只展示 `P0 baseline -> P1 -> P1+P2 -> P1+P2+P3 -> P1+P2+P3+P4`，不展示单能力开关。
 每个指标注明是否受影响、是否运行、数据 split、模型、样本量、CI、P95 和 API 成本。
 
-- [ ] **Step 2: 写七类 Case Dossier 中文复盘**
+- [x] **Step 2: 写七类 Case Dossier 中文复盘**
 
 按“难点 → 改进前 → 根因 → 方案 → 改进后 → 是否解决 → 残余风险”展示；至少保留一个未完全解决案例。
 
-- [ ] **Step 3: 更新开发者控制台**
+- [x] **Step 3: 更新开发者控制台**
 
 只展示四个里程碑和受影响 Benchmark；Case 面板可查看 before/after Top K、失败阶段、Trace 和引用。
 
-- [ ] **Step 4: 运行全量离线验证**
+- [x] **Step 4: 运行全量离线验证**
 
 ```powershell
 $env:PAPERSTORM_OFFLINE_TESTS="1"
@@ -455,18 +455,18 @@ D:\SOFTWARE\spyder\envs\storm\python.exe -m compileall -q knowledge_storm exampl
 git diff --check
 ```
 
-- [ ] **Step 5: 独立代码审查，修复 Critical/Important 后提交**
+- [x] **Step 5: 独立代码审查，修复 Critical/Important 后提交**
 
 Commit: `docs: publish progressive RAG bad case results`
 
 ## Task 13: 完成与推送边界
 
-- [ ] **Step 1: 确认工作区仅剩用户原有无关文件**
+- [x] **Step 1: 确认工作区仅剩用户原有无关文件**
 
 Run: `git status --short`
 
 不得暂存 `docs/DESIGN_SOURCES.md`、`.codex-temp/` 或现有 patch/js 临时文件。
 
-- [ ] **Step 2: 报告提交、测试、真实评测和未解决风险**
+- [x] **Step 2: 报告提交、测试、真实评测和未解决风险**
 
 仅在用户明确要求时执行 `git push`；本计划本身不授予推送权限。

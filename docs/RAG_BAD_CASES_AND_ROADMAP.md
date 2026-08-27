@@ -2,27 +2,30 @@
 
 ## 1. 结论
 
-PaperStorm 已完成 BM25、Dense、RRF、可选 Cross-Encoder、公开检索评测和基础引用
-问答，但当前仍属于“可审计的工程原型”，还不是成熟工业 RAG。现阶段最关键的问题不是
-继续更换模型，而是把研究问答、企业知识库和 benchmark 统一到同一条检索与证据治理
-链路，并补齐查询规划、结构化文档解析、证据覆盖、冲突检测、claim 级引用和纠错检索。
+PaperStorm 已把研究问答、企业知识库和 Benchmark 统一到 `RetrievalPipeline`，并完成
+SearchPlan、结构化 Parent-Child 召回、选择性 Cross-Encoder、recall-safe MMR、证据冲突治理、
+Claim-Citation 校验、检索前 ACL、运行韧性和离线 Release Gate。项目已从基础 RAG 原型演进为
+可复现、可审计的工程基线，但仍不能等同于完成线上容量验证和预发布 canary 的成熟商业系统。
 
 当前公开结果说明：
 
-- SciFact test：Hybrid Recall@10 为 `0.811444`；Hybrid+Rerank 为 `0.837889`，
-  但 P95 从 `67.7748 ms` 上升到 `2733.4805 ms`。
-- QASPER test：Hybrid Evidence Recall@5 为 `0.505659`；Hybrid+Rerank 为
-  `0.618648`，但 P95 从 `15.3228 ms` 上升到 `1316.6630 ms`。
-- QASPER 端到端 test：Answer F1 为 `0.544147`，Evidence F1 为 `0.581404`；
-  abstractive 问题 F1 仅 `0.265068`。
+- P1 SciFact test Hybrid Recall@10 为 `0.811444`；P2 选择性重排后为 `0.8264`，
+  配对 95% CI 不跨 0；P95 从 `70.56 ms` 上升到 `1376.54 ms`。
+- P1 QASPER test Evidence Recall@5 为 `0.505659`；P2 为 `0.5526`，配对 95% CI
+  不跨 0；P95 从 `27.83 ms` 上升到 `1029.34 ms`。
+- P3 QASPER test 1451/1451 完成，Answer F1 `0.5083`、Evidence F1 `0.5500`、
+  Claim support `0.9592`、unsupported claim `0.0214`、Citation P/R `0.5844/0.5776`。
+  用户授权的跨指纹方向性比较显示 Answer F1 较 v5.5 `-0.0358`；新增可信度指标成立，
+  传统回答质量并未提升。
+- P4 离线生产治理 8/8 通过，ACL leak 与 Trace secret leak 均为 `0`，Release Gate
+  允许发布；该结果不包含线上 QPS、真实网络抖动或 canary。
 - LongMemEval-S：Recent Recall@5 为 `0.1358`，真实持久化 Memory Recall@5 为
   `0.800333`，但这是 retrieval-only 结果，不能视为端到端回答准确率。
 - QASPER Context：压缩前后 Gold Evidence Recall 都是 `0.618648`，说明当前
   Context 没有进一步丢失已召回证据；它也没有解决检索阶段没有召回的 `38%` 左右证据缺口。
 
-内部 v4 seed 中记录了 `51` 个 retrieval miss 和 `10` 个 generation miss，但该数据是
-synthetic seed，生成器还是 deterministic top-1 chunk，只适合定位阶段性故障，不能作为
-最新版真实 LLM 的质量结论。
+历史 v4 synthetic seed 只保留作阶段定位，不再用于最新版真实 LLM 的质量结论。当前正式结果与
+具体失败候选统一记录在 `RAG_BADCASE_PROGRESSIVE_RESULTS.md`。
 
 ## 2. 证据等级
 
@@ -373,33 +376,28 @@ Evidence。若把旧调研摘要当作权威证据，会出现陈旧信息和错
 [RAG_P0_IMPLEMENTATION_REPORT.md](RAG_P0_IMPLEMENTATION_REPORT.md)。P0 完成表示工程主链完成统一，
 不表示 P1-P4 的公开数据集质量目标已经达成。
 
-### P1：提高第一阶段召回
+### P1：提高第一阶段召回（已完成）
 
-- 实现 `SearchPlan`、query rewrite、subquery 和 metadata filter。
-- 实现结构化 chunk 和 parent-child retrieval。
-- 在 QASPER validation、SciFact dev 和 PIM 人工集做消融。
-- 验收：Recall/nDCG 提升必须有 bootstrap CI，P95 增量可解释。
+- 已实现 `SearchPlan`、query rewrite、subquery、metadata filter、结构化 chunk 和
+  parent-child retrieval。
+- 已冻结 SciFact、QASPER Retrieval 与 PIM 固定集协议；该阶段作为后续累积改进的检索基线。
 
-### P2：选择性重排与证据治理
+### P2：选择性重排与证据治理（已完成）
 
-- 实现 `RerankPolicy`、MMR/coverage selector 和 EvidenceAssessment。
-- 低置信度触发有限纠错循环。
-- 实现 source/temporal/conflict schema。
-- 验收：质量-P95 Pareto 优于“所有请求都 Cross-Encoder”。
+- 已实现 `RerankPolicy`、recall-safe MMR/coverage selector、EvidenceAssessment、
+  source/temporal/conflict schema 和最多一轮有限纠错。
+- SciFact、QASPER Retrieval 的配对 Bootstrap CI 均不跨 0；Cross-Encoder 尾延迟仍是残余问题。
 
-### P3：答案与引用闭环
+### P3：答案与引用闭环（已完成，质量仍需优化）
 
-- 结构化 AnswerDraft、claim-citation validator 和局部修复。
-- 按 extractive、abstractive、boolean、list、comparison 分类型评测。
-- 加入无答案、冲突和跨会话引用测试。
-- 验收：Answer F1、Evidence F1、citation precision/recall、unsupported claim 和 abstention 指标。
+- 已实现结构化 AnswerDraft、claim-citation validator、局部修复和分类型 QASPER 评测。
+- 全量 1451/1451 成功，Claim support `0.9592`；跨指纹方向性对比中 Answer/Evidence F1
+  未提升，因此下一步是优化覆盖率与 verifier 成本，而不是继续增加验证调用。
 
-### P4：生产运行与在线治理
+### P4：生产运行与发布治理（离线验收已完成）
 
-- 模型常驻、批量、缓存、超时、熔断、并发和索引增量更新。
-- 检索前执行 tenant/document/chunk ACL。
-- Langfuse 记录 retrieval policy、模型、token、P95、失败阶段和用户反馈。
-- 建立离线冻结集、发布回归门禁和线上 shadow/canary 对比。
+- 已实现批量、策略缓存、超时、熔断恢复、检索前 ACL、Trace 脱敏和离线 Release Gate。
+- 尚待真实环境完成容量压测、客户端级取消、增量索引与 shadow/canary；离线 8-case 不冒充线上 SLA。
 
 ## 15. 改进记录模板
 
@@ -416,7 +414,7 @@ Evidence。若把旧调研摘要当作权威证据，会出现陈旧信息和错
 残余风险：哪些数据、语言、文档类型或线上条件仍未覆盖。
 ```
 
-## 16. 面试表述边界
+## 16. 对外表述边界
 
 可以陈述：
 
