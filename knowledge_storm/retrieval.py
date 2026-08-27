@@ -210,8 +210,8 @@ class SentenceTransformerProvider:
         if self.profile.max_seq_length:
             self.model.max_seq_length = int(self.profile.max_seq_length)
         dimension_getter = getattr(
-            self.model, "get_sentence_embedding_dimension", None
-        ) or getattr(self.model, "get_embedding_dimension", None)
+            self.model, "get_embedding_dimension", None
+        ) or getattr(self.model, "get_sentence_embedding_dimension", None)
         if callable(dimension_getter):
             loaded_dimension = int(dimension_getter())
         elif self.profile.dimension:
@@ -437,7 +437,9 @@ class HybridPaperIndex:
         max_embedding_values=default_max_embedding_values,
         dense_backend_mode="auto",
         ann_threshold=20_000,
-        hnsw_ef_search=100,
+        hnsw_ef_search=1200,
+        hnsw_ef_construction=400,
+        hnsw_m=32,
         text_analyzer=None,
     ):
         self.max_nodes = int(max_nodes)
@@ -536,6 +538,8 @@ class HybridPaperIndex:
                 mode=dense_backend_mode,
                 ann_threshold=ann_threshold,
                 ef_search=hnsw_ef_search,
+                ef_construction=hnsw_ef_construction,
+                m=hnsw_m,
             )
             if self.chunks
             else None
@@ -559,6 +563,10 @@ class HybridPaperIndex:
         self.manifest.setdefault("dense_backend_mode", str(dense_backend_mode))
         self.manifest.setdefault("ann_threshold", int(ann_threshold))
         self.manifest.setdefault("hnsw_ef_search", int(hnsw_ef_search))
+        self.manifest.setdefault(
+            "hnsw_ef_construction", int(hnsw_ef_construction)
+        )
+        self.manifest.setdefault("hnsw_m", int(hnsw_m))
         self.manifest.setdefault("text_analyzer", str(self.text_analyzer.name))
         self.manifest.setdefault(
             "text_analyzer_revision", str(self.text_analyzer.revision)
@@ -1099,7 +1107,11 @@ class HybridPaperIndex:
             max_embedding_values=max_embedding_values,
             dense_backend_mode=manifest.get("dense_backend_mode", "auto"),
             ann_threshold=int(manifest.get("ann_threshold", 20_000)),
-            hnsw_ef_search=int(manifest.get("hnsw_ef_search", 100)),
+            hnsw_ef_search=int(manifest.get("hnsw_ef_search", 1200)),
+            hnsw_ef_construction=int(
+                manifest.get("hnsw_ef_construction", 400)
+            ),
+            hnsw_m=int(manifest.get("hnsw_m", 32)),
             text_analyzer=text_analyzer,
         )
 

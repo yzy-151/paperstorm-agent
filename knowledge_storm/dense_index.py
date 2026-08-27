@@ -72,7 +72,7 @@ class HnswDenseBackend:
     name = "hnsw"
     implementation = "usearch"
 
-    def __init__(self, vectors, ef_search=100, ef_construction=200, m=16):
+    def __init__(self, vectors, ef_search=1200, ef_construction=400, m=32):
         try:
             from usearch.index import Index
         except ImportError as exc:
@@ -164,9 +164,9 @@ class AutoDenseBackend:
         vectors,
         mode="auto",
         ann_threshold=20_000,
-        ef_search=100,
-        ef_construction=200,
-        m=16,
+        ef_search=1200,
+        ef_construction=400,
+        m=32,
     ):
         mode = str(mode or "auto").lower()
         if mode not in {"auto", "exact", "hnsw"}:
