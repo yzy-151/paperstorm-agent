@@ -171,6 +171,10 @@ class BenchmarkReportTests(unittest.TestCase):
             self.assertTrue((root / "metrics.json").is_file())
             self.assertTrue((root / "comparison.md").is_file())
             self.assertEqual("resumed", second["status"])
+            self.assertEqual(
+                "exact",
+                first["report"]["manifest"]["dense_backend_mode"],
+            )
 
 
 if __name__ == "__main__":

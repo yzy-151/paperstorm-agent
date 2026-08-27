@@ -170,8 +170,13 @@ def run_profile_benchmark(
         for document in dataset.documents
     ]
     build_started = time.perf_counter()
-    index = HybridPaperIndex(indexed_documents, embedding_provider=embedding_provider)
+    index = HybridPaperIndex(
+        indexed_documents,
+        embedding_provider=embedding_provider,
+        dense_backend_mode="exact",
+    )
     manifest["build_seconds"] = round(time.perf_counter() - build_started, 6)
+    manifest["dense_backend_mode"] = "exact"
     manifest["embedding_dimension"] = int(index.manifest.get("embedding_dimension", 0))
     manifest["index_bytes"] = _embedding_payload_bytes(index.embeddings)
     manifest["rss_peak_bytes"] = _rss_bytes()
