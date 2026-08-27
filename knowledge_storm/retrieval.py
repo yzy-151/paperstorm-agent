@@ -401,6 +401,9 @@ class HybridPaperIndex:
         max_node_chars=default_max_node_chars,
         max_node_bytes=default_max_node_bytes,
         max_embedding_values=default_max_embedding_values,
+        dense_backend_mode="auto",
+        ann_threshold=20_000,
+        hnsw_ef_search=100,
     ):
         self.max_nodes = int(max_nodes)
         self.max_node_chars = int(max_node_chars)
@@ -480,6 +483,14 @@ class HybridPaperIndex:
             out=np.zeros_like(embedding_matrix),
             where=norms != 0,
         )
+        from .dense_index import AutoDenseBackend
+
+        self._dense_backend = AutoDenseBackend(
+            self._normalized_embedding_matrix,
+            mode=dense_backend_mode,
+            ann_threshold=ann_threshold,
+            ef_search=hnsw_ef_search,
+        )
         self.manifest = dict(manifest or {})
         self.manifest.setdefault(
             "embedding_model", str(getattr(embedding_provider, "name", "unknown"))
@@ -496,6 +507,9 @@ class HybridPaperIndex:
         self.manifest.setdefault(
             "embedding_profile_contract", _embedding_role_contract(embedding_provider)
         )
+        self.manifest.setdefault("dense_backend_mode", str(dense_backend_mode))
+        self.manifest.setdefault("ann_threshold", int(ann_threshold))
+        self.manifest.setdefault("hnsw_ef_search", int(hnsw_ef_search))
         self._refresh_manifest_integrity()
 
     def search(
@@ -522,16 +536,18 @@ class HybridPaperIndex:
         )
         if not candidate_indices:
             return []
+        scope_applied = allowed_document_ids is not None or allowed_chunk_ids is not None
+        scorer_indices = candidate_indices if scope_applied else None
         candidate_k = min(
             len(candidate_indices), candidate_k or max(top_k * 4, 20)
         )
         if mode == "bm25":
-            selected = self._bm25_search(query, candidate_k, candidate_indices)
+            selected = self._bm25_search(query, candidate_k, scorer_indices)
         elif mode == "dense":
-            selected = self._dense_search(query, candidate_k, candidate_indices)
+            selected = self._dense_search(query, candidate_k, scorer_indices)
         else:
-            bm25 = self._bm25_search(query, candidate_k, candidate_indices)
-            dense = self._dense_search(query, candidate_k, candidate_indices)
+            bm25 = self._bm25_search(query, candidate_k, scorer_indices)
+            dense = self._dense_search(query, candidate_k, scorer_indices)
             selected = reciprocal_rank_fusion(
                 [bm25, dense], rank_constant=rank_constant
             )
@@ -745,27 +761,22 @@ class HybridPaperIndex:
         return ranked
 
     def _dense_search(self, query: str, top_k: int, candidate_indices=None):
-        indices = (
-            list(range(len(self.chunks)))
-            if candidate_indices is None
-            else list(candidate_indices)
-        )
-        if not indices:
+        if candidate_indices is not None and not candidate_indices:
             return []
         query_vector = np.asarray(
             self.embedding_provider.embed_query(query), dtype=np.float32
         )
-        query_norm = float(np.linalg.norm(query_vector))
-        if query_norm:
-            query_vector = query_vector / query_norm
-        scores = self._normalized_embedding_matrix[indices] @ query_vector
+        result = self._dense_backend.search(
+            query_vector,
+            top_k,
+            allowed_indices=candidate_indices,
+        )
         ranked = []
-        for position in sorted(
-            range(len(scores)), key=lambda value: (-scores[value], indices[value])
-        )[:top_k]:
-            index = indices[position]
+        for index, score in zip(result.indices, result.scores):
             item = dict(self.chunks[index])
-            item["dense_score"] = round(float(scores[position]), 8)
+            item["dense_score"] = round(float(score), 8)
+            item["dense_backend"] = result.backend
+            item["dense_backend_reason"] = result.reason
             ranked.append(item)
         return ranked
 
@@ -937,6 +948,9 @@ class HybridPaperIndex:
             max_node_chars=max_node_chars,
             max_node_bytes=max_node_bytes,
             max_embedding_values=max_embedding_values,
+            dense_backend_mode=manifest.get("dense_backend_mode", "auto"),
+            ann_threshold=int(manifest.get("ann_threshold", 20_000)),
+            hnsw_ef_search=int(manifest.get("hnsw_ef_search", 100)),
         )
 
     def _refresh_manifest_integrity(self):

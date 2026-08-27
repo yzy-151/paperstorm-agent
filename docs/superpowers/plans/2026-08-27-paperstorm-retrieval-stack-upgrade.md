@@ -6,7 +6,7 @@
 
 **Architecture:** Keep `RetrievalPipeline` as the public contract. Move model metadata, lexical analysis, and dense search behind focused adapters, then let `HybridPaperIndex` compose them. Exact search remains the correctness oracle; HNSW is an optional acceleration backend and scoped requests fail closed to authorized Exact search when a safe ANN partition is unavailable.
 
-**Tech Stack:** Python 3.10/3.11, NumPy, SentenceTransformers, rank-bm25, hnswlib, Jieba, unittest, SciFact, QASPER.
+**Tech Stack:** Python 3.10/3.11, NumPy, SentenceTransformers, rank-bm25, USearch HNSW, Jieba, unittest, SciFact, QASPER.
 
 ---
 
@@ -171,7 +171,7 @@ class AutoDenseBackend:
         return self.hnsw.search(query, top_k) if self.hnsw else self.exact.search(query, top_k)
 ```
 
-Pin `hnswlib>=0.8,<1.0`; missing dependency is an explicit error only when `hnsw` is requested. `auto` may use Exact below threshold, but must expose that decision.
+Pin `usearch>=2.16,<3.0`; it provides a Windows wheel while retaining an HNSW backend. Missing dependency is an explicit error only when `hnsw` is requested. `auto` may use Exact below threshold, but must expose that decision. The original `hnswlib` choice was rejected after its Windows install required a local MSVC build toolchain.
 
 - [ ] **Step 4: Integrate `HybridPaperIndex` and verify parity**
 
