@@ -184,7 +184,7 @@ class SentenceTransformerProvider:
         self.cache_folder = cache_folder or os.getenv("PAPERSTORM_MODEL_CACHE")
         self.device = device
         self.model = model
-        self.dim = 0
+        self.dim = int(self.profile.dimension or 0)
         self.token_codec = None
         self.normalize = bool(self.profile.document.normalize)
 
@@ -198,20 +198,30 @@ class SentenceTransformerProvider:
                 "yes",
                 "on",
             }
-            self.model = SentenceTransformer(
-                self.model_name,
-                cache_folder=self.cache_folder,
-                device=self.device,
-                local_files_only=offline,
-                trust_remote_code=self.profile.trust_remote_code,
+            options = {
+                "cache_folder": self.cache_folder,
+                "device": self.device,
+                "local_files_only": offline,
+                "trust_remote_code": self.profile.trust_remote_code,
+            }
+            if self.profile.revision is not None:
+                options["revision"] = self.profile.revision
+            self.model = SentenceTransformer(self.model_name, **options)
+        if self.profile.max_seq_length:
+            self.model.max_seq_length = int(self.profile.max_seq_length)
+        dimension_getter = getattr(
+            self.model,
+            "get_embedding_dimension",
+            self.model.get_sentence_embedding_dimension,
+        )
+        loaded_dimension = int(dimension_getter())
+        if self.profile.dimension and loaded_dimension != self.profile.dimension:
+            raise ValueError(
+                "embedding dimension mismatch: profile={0}, model={1}".format(
+                    self.profile.dimension, loaded_dimension
+                )
             )
-        if not self.dim:
-            dimension_getter = getattr(
-                self.model,
-                "get_embedding_dimension",
-                self.model.get_sentence_embedding_dimension,
-            )
-            self.dim = int(dimension_getter())
+        self.dim = int(self.profile.dimension or loaded_dimension)
         tokenizer = getattr(self.model, "tokenizer", None)
         if tokenizer is not None and self.token_codec is None:
             self.token_codec = HuggingFaceTokenizerCodec(tokenizer)
@@ -484,7 +494,7 @@ class HybridPaperIndex:
             ),
         )
         self.manifest.setdefault(
-            "embedding_role_contract", _embedding_role_contract(embedding_provider)
+            "embedding_profile_contract", _embedding_role_contract(embedding_provider)
         )
         self._refresh_manifest_integrity()
 
@@ -908,7 +918,11 @@ class HybridPaperIndex:
                     manifest.get("embedding_profile", "unknown"), actual_profile
                 )
             )
-        if manifest.get("embedding_role_contract") != _embedding_role_contract(
+        if "embedding_profile_contract" not in manifest:
+            raise IndexMigrationRequiredError(
+                "embedding profile contract is missing; rebuild the knowledge base index"
+            )
+        if manifest.get("embedding_profile_contract") != _embedding_role_contract(
             embedding_provider
         ):
             raise ValueError("embedding role contract mismatch")

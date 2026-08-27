@@ -45,6 +45,9 @@ class EmbeddingProfile:
 
     name: str
     model_name: str
+    revision: Optional[str]
+    dimension: int
+    max_seq_length: int
     query: EmbeddingEncoding
     document: EmbeddingEncoding
     trust_remote_code: bool
@@ -54,6 +57,9 @@ class EmbeddingProfile:
         return {
             "name": self.name,
             "model_name": self.model_name,
+            "revision": self.revision,
+            "dimension": self.dimension,
+            "max_seq_length": self.max_seq_length,
             "query": self.query.manifest_contract(),
             "document": self.document.manifest_contract(),
             "trust_remote_code": self.trust_remote_code,
@@ -75,6 +81,9 @@ EMBEDDING_PROFILES = MappingProxyType({
     "legacy-multilingual": EmbeddingProfile(
         name="legacy-multilingual",
         model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        revision="b8ef00830037f9868450f778081ea683e900fe39",
+        dimension=384,
+        max_seq_length=128,
         query=_role("query", "multilingual semantic-similarity query"),
         document=_role("document", "multilingual semantic-similarity document"),
         trust_remote_code=False,
@@ -83,6 +92,9 @@ EMBEDDING_PROFILES = MappingProxyType({
     "cpu-zh": EmbeddingProfile(
         name="cpu-zh",
         model_name="BAAI/bge-small-zh-v1.5",
+        revision="4bf3c54884c552e68da7eb27f3e9bdc5a32e32d4",
+        dimension=512,
+        max_seq_length=512,
         query=_role(
             "query",
             "short Chinese retrieval query",
@@ -95,6 +107,9 @@ EMBEDDING_PROFILES = MappingProxyType({
     "cpu-multilingual": EmbeddingProfile(
         name="cpu-multilingual",
         model_name="Alibaba-NLP/gte-multilingual-base",
+        revision="11922d38fb7620aeb9530b2a12f2cc5a29b3d3f6",
+        dimension=768,
+        max_seq_length=8192,
         query=_role("query", "multilingual retrieval query"),
         document=_role("document", "multilingual retrieval passage"),
         trust_remote_code=True,
@@ -103,6 +118,9 @@ EMBEDDING_PROFILES = MappingProxyType({
     "quality-multilingual": EmbeddingProfile(
         name="quality-multilingual",
         model_name="Qwen/Qwen3-Embedding-0.6B",
+        revision="3d106eabb5535a84de3ae88f45887a78259b52de",
+        dimension=1024,
+        max_seq_length=32768,
         query=_role(
             "query",
             "instruction-aware multilingual retrieval query",
@@ -136,6 +154,9 @@ def custom_embedding_profile(model_name):
     return EmbeddingProfile(
         name=CUSTOM_EMBEDDING_PROFILE,
         model_name=model_name,
+        revision=None,
+        dimension=0,
+        max_seq_length=0,
         query=_role("query", "custom model query"),
         document=_role("document", "custom model document"),
         trust_remote_code=False,
@@ -144,7 +165,10 @@ def custom_embedding_profile(model_name):
 
 
 def resolve_embedding_profile(profile_name=None, model_name=None):
-    override = model_name or os.getenv("PAPERSTORM_EMBEDDING_MODEL")
+    override = str(model_name or os.getenv("PAPERSTORM_EMBEDDING_MODEL") or "").strip()
     if override:
+        for profile in EMBEDDING_PROFILES.values():
+            if profile.model_name == override:
+                return profile
         return custom_embedding_profile(override)
     return get_embedding_profile(profile_name)

@@ -626,10 +626,8 @@ class LongTermMemoryService:
         return dict(payload, candidate_id=candidate_id, namespace=namespace, status="pending")
 
 
-@functools.lru_cache(maxsize=4)
 def build_memory_embedding_provider(model_name=None, cache_folder=None, profile_name=None):
     """Load the real local semantic model used by opt-in memory retrieval."""
-    from .retrieval import SentenceTransformerProvider
     from .retrieval_profiles import resolve_embedding_profile
 
     model = (
@@ -639,7 +637,15 @@ def build_memory_embedding_provider(model_name=None, cache_folder=None, profile_
     )
     cache = cache_folder or os.getenv("PAPERSTORM_MODEL_CACHE") or os.getenv("HF_HOME")
     profile = resolve_embedding_profile(profile_name=profile_name, model_name=model)
-    return SentenceTransformerProvider(profile=profile, cache_folder=cache)
+    return _memory_provider_for_profile(profile, cache)
+
+
+@functools.lru_cache(maxsize=4)
+def _memory_provider_for_profile(profile, cache_folder):
+    """Reuse only providers whose frozen profile contract is identical."""
+    from .retrieval import SentenceTransformerProvider
+
+    return SentenceTransformerProvider(profile=profile, cache_folder=cache_folder)
 
 
 def _is_hash_provider(provider):
