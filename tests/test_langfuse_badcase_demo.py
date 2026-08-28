@@ -40,6 +40,26 @@ class _RemoteLangfuseClient:
 
 
 class LangfuseBadcaseDemoTest(unittest.TestCase):
+    _MODULE_NAMES = (
+        "knowledge_storm",
+        "knowledge_storm.paperstorm_observability",
+        "knowledge_storm.langfuse_badcase_demo",
+    )
+    _MISSING = object()
+
+    def setUp(self):
+        self._original_modules = {
+            name: sys.modules.get(name, self._MISSING)
+            for name in self._MODULE_NAMES
+        }
+
+    def tearDown(self):
+        for name, module in self._original_modules.items():
+            if module is self._MISSING:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
     @staticmethod
     def _load_module(module_name):
         root = Path(__file__).resolve().parents[1]
