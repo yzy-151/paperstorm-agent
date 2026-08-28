@@ -27,6 +27,12 @@ class PaperStormCareerDocsTest(unittest.TestCase):
         cls.playbook = (cls.root / "docs" / "RAG_AGENT_INTERVIEW_PLAYBOOK.md").read_text(
             encoding="utf-8"
         )
+        cls.badcase_report = (
+            cls.root / "docs" / "RAG_BADCASE_PROGRESSIVE_RESULTS.md"
+        ).read_text(encoding="utf-8")
+        cls.domain_report = (
+            cls.root / "docs" / "PAPERSTORM_DOMAIN_PILOT.md"
+        ).read_text(encoding="utf-8")
 
     def assert_every_metric_line_has_context(self, document):
         line_contracts = (
@@ -139,6 +145,19 @@ class PaperStormCareerDocsTest(unittest.TestCase):
             with self.subTest(column=column):
                 self.assertIn(column, self.resume)
 
+        ownership_contract = (
+            "Stanford STORM 原项目",
+            "已有多视角 Persona、Conv Simulator",
+            "个人主要负责：RAG 与论文数据",
+            "个人主要负责：Agent 工程",
+            "个人主要负责：质量闭环",
+            "不应把这些上游能力全部表述为个人从零实现",
+            "不宣称已通过企业生产流量验证",
+        )
+        for item in ownership_contract:
+            with self.subTest(ownership=item):
+                self.assertIn(item, self.resume)
+
     def test_interview_playbook_has_one_hundred_questions_in_fixed_modules(self):
         matches = list(re.finditer(r"^### (\d+)\. .+$", self.playbook, flags=re.MULTILINE))
         self.assertEqual([int(match.group(1)) for match in matches], list(range(1, 101)))
@@ -148,7 +167,13 @@ class PaperStormCareerDocsTest(unittest.TestCase):
             section = self.playbook[match.start() : section_end]
             for label in self.REQUIRED_QUESTION_FIELDS:
                 with self.subTest(question=match.group(1), label=label):
-                    self.assertEqual(section.count(f"**{label}**"), 1)
+                    field_matches = re.findall(
+                        rf"^\*\*{re.escape(label)}\*\*[：:]\s*(\S.*)$",
+                        section,
+                        flags=re.MULTILINE,
+                    )
+                    self.assertEqual(len(field_matches), 1)
+                    self.assertGreaterEqual(len(field_matches[0].strip()), 4)
 
         module_matches = list(
             re.finditer(
@@ -246,6 +271,23 @@ class PaperStormCareerDocsTest(unittest.TestCase):
                 self.assertIn(item, self.playbook)
 
         self.assert_every_metric_line_has_context(self.playbook)
+
+    def test_career_metrics_are_anchored_in_frozen_project_reports(self):
+        for metric in (
+            "SciFact test, K=10, n=300",
+            "0.8264",
+            "QASPER test, K=5, n=1309",
+            "0.5526",
+            "36.33%",
+            "45.68%",
+            "0.4631",
+        ):
+            with self.subTest(metric=metric, report="badcase"):
+                self.assertIn(metric, self.badcase_report)
+
+        for metric in ("5 篇", "797", "50", "0.7200", "0.3983", "0.9237"):
+            with self.subTest(metric=metric, report="domain"):
+                self.assertIn(metric, self.domain_report)
 
 
 if __name__ == "__main__":
