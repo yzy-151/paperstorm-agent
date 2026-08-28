@@ -1,0 +1,113 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="920" viewBox="0 0 1900 920" role="img" aria-label="PaperStorm 异步 Agent Runtime 时序">
+  <defs>
+    <filter id="node-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#24364A" flood-opacity=".14" />
+    </filter>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#E6EBF2" stroke-width=".6" />
+    </pattern>
+    <marker id="arrow-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2F6FED" />
+    </marker>
+    <marker id="arrow-control" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F9D8A" />
+    </marker>
+    <marker id="arrow-external" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#D58A16" />
+    </marker>
+    <marker id="arrow-storage" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7567A8" />
+    </marker>
+    <marker id="arrow-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#D94A4A" />
+    </marker>
+    <marker id="arrow-storm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#435A73" />
+    </marker>
+    <marker id="arrow-neutral" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#CBD5E1" />
+    </marker>
+    <style>text{font-family:'Segoe UI','Microsoft YaHei',Arial,sans-serif;fill:#172033;}.header{font-weight:750;fill:#FFFFFF;}.subtitle{fill:#C8D2DE;}.legend{fill:#D8E0E8;font-size:9px;}.panel-title,.node-title{font-weight:700;}.node-subtitle{fill:#526078;font-weight:400;}.edge-label{fill:#526078;font-size:10px;font-weight:600;}</style>
+  </defs>
+  <rect width="100%" height="100%" fill="#F7F9FC" />
+  <rect width="100%" height="100%" fill="url(#grid)" />
+  <rect x="20" y="18" width="1860" height="70" fill="#172033" stroke="#172033" />
+  <rect x="20" y="18" width="10" height="70" fill="#0F9D8A" />
+  <text x="48" y="49" class="header" font-size="28">PaperStorm 异步 Agent Runtime 时序</text>
+  <text x="48" y="73" class="subtitle" font-size="13">请求快速确认，后台检索与生成可恢复执行，并通过 SSE、Langfuse 持续反馈进度与质量</text>
+  <path d="M 137.5 244.0 L 342.5 244.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="240.0" y="238.0" class="edge-label" text-anchor="middle">POST /research</text>
+  <path d="M 342.5 282.0 L 547.5 282.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="445.0" y="276.0" class="edge-label" text-anchor="middle">enqueue task</text>
+  <path d="M 342.5 320.0 L 137.5 320.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="240.0" y="314.0" class="edge-label" text-anchor="middle">202 Accepted + task_id</text>
+  <path d="M 547.5 373.20000000000005 L 752.5 373.20000000000005" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="650.0" y="367.20000000000005" class="edge-label" text-anchor="middle">claim job</text>
+  <path d="M 752.5 411.2 L 1367.5 411.2" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="1060.0" y="405.2" class="edge-label" text-anchor="middle">create checkpoint</text>
+  <path d="M 752.5 449.2 L 1777.5 449.2" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="1265.0" y="443.2" class="edge-label" text-anchor="middle">start trace</text>
+  <path d="M 752.5 502.4 L 957.5 502.4" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="855.0" y="496.4" class="edge-label" text-anchor="middle">retrieve evidence</text>
+  <path d="M 957.5 540.4000000000001 L 1162.5 540.4000000000001" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="1060.0" y="534.4000000000001" class="edge-label" text-anchor="middle">ranked context</text>
+  <path d="M 1162.5 578.4 L 752.5 578.4" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="957.5" y="572.4" class="edge-label" text-anchor="middle">grounded draft</text>
+  <path d="M 752.5 631.6 L 1367.5 631.6" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="1060.0" y="625.6" class="edge-label" text-anchor="middle">persist progress</text>
+  <path d="M 752.5 677.1999999999999 L 1572.5 677.1999999999999" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="1162.5" y="671.1999999999999" class="edge-label" text-anchor="middle">emit stage event</text>
+  <path d="M 1572.5 722.8000000000001 L 137.5 722.8000000000001" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="855.0" y="716.8000000000001" class="edge-label" text-anchor="middle">stream progress</text>
+  <path d="M 752.5 768.4 L 1777.5 768.4" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="1265.0" y="762.4" class="edge-label" text-anchor="middle">record spans + score</text>
+  <path d="M 752.5 814.0 L 1572.5 814.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="1162.5" y="808.0" class="edge-label" text-anchor="middle">emit completed result</text>
+  <path d="M 1572.5 852.0 L 137.5 852.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <text x="855.0" y="846.0" class="edge-label" text-anchor="middle">final article + citations</text>
+  <rect x="55" y="130" width="165" height="66" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
+  <line x1="137.5" y1="196" x2="137.5" y2="890" stroke="#2F6FED" stroke-width="1.5" stroke-dasharray="6 6" />
+  <text x="137.5" y="154" class="node-title" text-anchor="middle" font-size="15">Browser</text>
+  <text x="137.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">submit topic</text>
+  <rect x="260" y="130" width="165" height="66" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <line x1="342.5" y1="196" x2="342.5" y2="890" stroke="#0F9D8A" stroke-width="1.5" stroke-dasharray="6 6" />
+  <text x="342.5" y="154" class="node-title" text-anchor="middle" font-size="15">FastAPI</text>
+  <text x="342.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">task API</text>
+  <rect x="465" y="130" width="165" height="66" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
+  <line x1="547.5" y1="196" x2="547.5" y2="890" stroke="#2F6FED" stroke-width="1.5" stroke-dasharray="6 6" />
+  <text x="547.5" y="154" class="node-title" text-anchor="middle" font-size="15">Async Queue</text>
+  <text x="547.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">durable jobs</text>
+  <rect x="670" y="130" width="165" height="66" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <line x1="752.5" y1="196" x2="752.5" y2="890" stroke="#0F9D8A" stroke-width="1.5" stroke-dasharray="6 6" />
+  <text x="752.5" y="154" class="node-title" text-anchor="middle" font-size="15">Agent Runtime</text>
+  <text x="752.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">LangGraph</text>
+  <rect x="875" y="130" width="165" height="66" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
+  <line x1="957.5" y1="196" x2="957.5" y2="890" stroke="#2F6FED" stroke-width="1.5" stroke-dasharray="6 6" />
+  <text x="957.5" y="154" class="node-title" text-anchor="middle" font-size="15">Retriever</text>
+  <text x="957.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">hybrid RAG</text>
+  <rect x="1080" y="130" width="165" height="66" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
+  <line x1="1162.5" y1="196" x2="1162.5" y2="890" stroke="#2F6FED" stroke-width="1.5" stroke-dasharray="6 6" />
+  <text x="1162.5" y="154" class="node-title" text-anchor="middle" font-size="15">LLM</text>
+  <text x="1162.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">route and generate</text>
+  <rect x="1285" y="130" width="165" height="66" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
+  <line x1="1367.5" y1="196" x2="1367.5" y2="890" stroke="#2F6FED" stroke-width="1.5" stroke-dasharray="6 6" />
+  <text x="1367.5" y="154" class="node-title" text-anchor="middle" font-size="15">Checkpoint</text>
+  <text x="1367.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">resume state</text>
+  <rect x="1490" y="130" width="165" height="66" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <line x1="1572.5" y1="196" x2="1572.5" y2="890" stroke="#0F9D8A" stroke-width="1.5" stroke-dasharray="6 6" />
+  <text x="1572.5" y="154" class="node-title" text-anchor="middle" font-size="15">SSE</text>
+  <text x="1572.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">event stream</text>
+  <rect x="1695" y="130" width="165" height="66" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <line x1="1777.5" y1="196" x2="1777.5" y2="890" stroke="#0F9D8A" stroke-width="1.5" stroke-dasharray="6 6" />
+  <text x="1777.5" y="154" class="node-title" text-anchor="middle" font-size="15">Langfuse</text>
+  <text x="1777.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">trace and score</text>
+  <rect x="1460" y="40" width="8" height="8" fill="#2F6FED" />
+  <text x="1473" y="48" class="legend">数据 / 检索</text>
+  <rect x="1562" y="40" width="8" height="8" fill="#0F9D8A" />
+  <text x="1575" y="48" class="legend">Agent 控制</text>
+  <rect x="1664" y="40" width="8" height="8" fill="#435A73" />
+  <text x="1677" y="48" class="legend">STORM 核心</text>
+  <rect x="1766" y="40" width="8" height="8" fill="#D58A16" />
+  <text x="1779" y="48" class="legend">外部依赖</text>
+</svg>

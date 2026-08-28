@@ -1,0 +1,83 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" version="24.7.17">
+  <diagram id="paperstorm-async-runtime-sequence" name="Page-1">
+    <mxGraphModel dx="2400" dy="1500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="920" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="browser" value="&lt;b&gt;Browser&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#526078&quot;&gt;submit topic&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;fontSize=15;fontColor=#172033;fontStyle=1;strokeColor=#2F6FED;fillColor=#EDF3FF;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="55" y="130" width="165" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="fastapi" value="&lt;b&gt;FastAPI&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#526078&quot;&gt;task API&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;fontSize=15;fontColor=#172033;fontStyle=1;strokeColor=#0F9D8A;fillColor=#E8F7F4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="260" y="130" width="165" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="queue" value="&lt;b&gt;Async Queue&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#526078&quot;&gt;durable jobs&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;fontSize=15;fontColor=#172033;fontStyle=1;strokeColor=#2F6FED;fillColor=#EDF3FF;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="465" y="130" width="165" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime" value="&lt;b&gt;Agent Runtime&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#526078&quot;&gt;LangGraph&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;fontSize=15;fontColor=#172033;fontStyle=1;strokeColor=#0F9D8A;fillColor=#E8F7F4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="670" y="130" width="165" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="retriever" value="&lt;b&gt;Retriever&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#526078&quot;&gt;hybrid RAG&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;fontSize=15;fontColor=#172033;fontStyle=1;strokeColor=#2F6FED;fillColor=#EDF3FF;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="875" y="130" width="165" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="llm" value="&lt;b&gt;LLM&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#526078&quot;&gt;route and generate&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;fontSize=15;fontColor=#172033;fontStyle=1;strokeColor=#2F6FED;fillColor=#EDF3FF;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="130" width="165" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="checkpoint" value="&lt;b&gt;Checkpoint&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#526078&quot;&gt;resume state&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;fontSize=15;fontColor=#172033;fontStyle=1;strokeColor=#2F6FED;fillColor=#EDF3FF;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1285" y="130" width="165" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="sse" value="&lt;b&gt;SSE&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#526078&quot;&gt;event stream&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;fontSize=15;fontColor=#172033;fontStyle=1;strokeColor=#0F9D8A;fillColor=#E8F7F4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="130" width="165" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="langfuse" value="&lt;b&gt;Langfuse&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;color:#526078&quot;&gt;trace and score&lt;/font&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;fontSize=15;fontColor=#172033;fontStyle=1;strokeColor=#0F9D8A;fillColor=#E8F7F4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1695" y="130" width="165" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-1" value="POST /research" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.15;exitPerimeter=0;entryX=0.5;entryY=0.15;entryPerimeter=0;" edge="1" parent="1" source="browser" target="fastapi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-2" value="enqueue task" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.2;exitPerimeter=0;entryX=0.5;entryY=0.2;entryPerimeter=0;" edge="1" parent="1" source="fastapi" target="queue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-3" value="202 Accepted + task_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.25;exitPerimeter=0;entryX=0.5;entryY=0.25;entryPerimeter=0;" edge="1" parent="1" source="fastapi" target="browser">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-4" value="claim job" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.32;exitPerimeter=0;entryX=0.5;entryY=0.32;entryPerimeter=0;" edge="1" parent="1" source="queue" target="runtime">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-5" value="create checkpoint" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.37;exitPerimeter=0;entryX=0.5;entryY=0.37;entryPerimeter=0;" edge="1" parent="1" source="runtime" target="checkpoint">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-6" value="start trace" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.42;exitPerimeter=0;entryX=0.5;entryY=0.42;entryPerimeter=0;" edge="1" parent="1" source="runtime" target="langfuse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-7" value="retrieve evidence" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.49;exitPerimeter=0;entryX=0.5;entryY=0.49;entryPerimeter=0;" edge="1" parent="1" source="runtime" target="retriever">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-8" value="ranked context" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.54;exitPerimeter=0;entryX=0.5;entryY=0.54;entryPerimeter=0;" edge="1" parent="1" source="retriever" target="llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-9" value="grounded draft" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.59;exitPerimeter=0;entryX=0.5;entryY=0.59;entryPerimeter=0;" edge="1" parent="1" source="llm" target="runtime">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-10" value="persist progress" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.66;exitPerimeter=0;entryX=0.5;entryY=0.66;entryPerimeter=0;" edge="1" parent="1" source="runtime" target="checkpoint">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-11" value="emit stage event" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.72;exitPerimeter=0;entryX=0.5;entryY=0.72;entryPerimeter=0;" edge="1" parent="1" source="runtime" target="sse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-12" value="stream progress" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.78;exitPerimeter=0;entryX=0.5;entryY=0.78;entryPerimeter=0;" edge="1" parent="1" source="sse" target="browser">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-13" value="record spans + score" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.84;exitPerimeter=0;entryX=0.5;entryY=0.84;entryPerimeter=0;" edge="1" parent="1" source="runtime" target="langfuse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-14" value="emit completed result" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.9;exitPerimeter=0;entryX=0.5;entryY=0.9;entryPerimeter=0;" edge="1" parent="1" source="runtime" target="sse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-15" value="final article + citations" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;exitX=0.5;exitY=0.95;exitPerimeter=0;entryX=0.5;entryY=0.95;entryPerimeter=0;" edge="1" parent="1" source="sse" target="browser">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

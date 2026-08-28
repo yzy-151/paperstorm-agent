@@ -140,14 +140,14 @@
   <rect x="145" y="943" width="7" height="56" fill="#7567A8" />
   <rect x="159" y="955" width="24" height="18" fill="#7567A8" />
   <text x="171" y="968" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">12</text>
-  <text x="385.0" y="967" class="node-title" text-anchor="middle" font-size="17">运行可靠</text>
-  <text x="385.0" y="984" class="node-subtitle" text-anchor="middle" font-size="11">LangGraph · Checkpoint · Retry · Trace</text>
+  <text x="385.0" y="967" class="node-title" text-anchor="middle" font-size="17">异步运行</text>
+  <text x="385.0" y="984" class="node-subtitle" text-anchor="middle" font-size="11">Async Queue · LangGraph · Checkpoint · SSE</text>
   <rect x="720" y="943" width="480" height="56" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="720" y="943" width="7" height="56" fill="#2F6FED" />
   <rect x="734" y="955" width="24" height="18" fill="#2F6FED" />
   <text x="746" y="968" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">13</text>
-  <text x="960.0" y="967" class="node-title" text-anchor="middle" font-size="17">效果可量化</text>
-  <text x="960.0" y="984" class="node-subtitle" text-anchor="middle" font-size="11">SciFact · QASPER · LongMemEval</text>
+  <text x="960.0" y="967" class="node-title" text-anchor="middle" font-size="17">可观测与领域评测</text>
+  <text x="960.0" y="984" class="node-subtitle" text-anchor="middle" font-size="11">Langfuse Score · PIM Domain Pilot</text>
   <rect x="1295" y="943" width="480" height="56" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="1295" y="943" width="7" height="56" fill="#0F9D8A" />
   <rect x="1309" y="955" width="24" height="18" fill="#0F9D8A" />

@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from html import escape
 from pathlib import Path
+from typing import Optional
 import xml.etree.ElementTree as ET
 
 
@@ -63,6 +64,18 @@ class Edge:
     dashed: bool = False
     direction: str = "auto"
     points: list[tuple[int, int]] = field(default_factory=list)
+    source_offset: Optional[float] = None
+    target_offset: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class SequenceMessage:
+    source: str
+    target: str
+    label: str
+    source_offset: float
+    target_offset: float
+    kind: str = "control"
 
 
 @dataclass
@@ -97,8 +110,8 @@ def executive_diagram():
         Node("memory", 565, 790, 365, 70, "Memory", "跨会话长期记忆 · 时间事实", "storage", font_size=19),
         Node("context", 985, 790, 365, 70, "Context", "分层 Token 预算 · 自动压缩恢复", "control", font_size=19),
         Node("multi", 1405, 790, 365, 70, "Multi-Agent", "规划 · 检索 · 审核 · 生成", "storm", font_size=19),
-        Node("runtime", 145, 943, 480, 56, "运行可靠", "LangGraph · Checkpoint · Retry · Trace", "storage", font_size=17),
-        Node("evaluation", 720, 943, 480, 56, "效果可量化", "SciFact · QASPER · LongMemEval", "primary", font_size=17),
+        Node("runtime", 145, 943, 480, 56, "异步运行", "Async Queue · LangGraph · Checkpoint · SSE", "storage", font_size=17),
+        Node("evaluation", 720, 943, 480, 56, "可观测与领域评测", "Langfuse Score · PIM Domain Pilot", "primary", font_size=17),
         Node("value", 1295, 943, 480, 56, "业务价值", "可追溯 · 可恢复 · 可迭代 · 可演示", "control", font_size=17),
     ]
     edges = [
@@ -143,7 +156,7 @@ def detailed_diagram():
         Node("tools", 65, 625, 210, 100, "Tool System", "ArxivSearch\nLocalPDFSearch\nKnowledgeBaseQA\nResearchQA", "primary", font_size=17),
         Node("public_data", 65, 770, 210, 96, "公开评测数据", "SciFact\nQASPER\nLongMemEval-S\nLongBench", "external", font_size=17),
         Node("artifacts", 65, 910, 210, 76, "交付与运行产物", "引用回答 · 大纲 · 文章\nTrace · Metrics · Bad Cases", "storage", font_size=16),
-        Node("entry", 650, 138, 560, 56, "统一服务层", "Task Service · Chat Service · Queue · Benchmark Manager", "primary", font_size=20),
+        Node("entry", 650, 138, 560, 56, "服务层与 Async Queue", "Task Service · Chat Service · Async Queue · Benchmark Manager", "primary", font_size=20),
         Node("router", 650, 225, 560, 62, "意图路由 Agent", "规则兜底 + LLM 增强：闲聊 / 记忆问答 / 知识检索 / 深度调研", "control", font_size=19),
         Node("chat_lane", 365, 330, 535, 44, "Chat Agent Runtime", "", "control", font_size=18),
         Node("research_lane", 945, 330, 550, 44, "Research Agent Pipeline", "", "storm", font_size=18),
@@ -176,8 +189,8 @@ def detailed_diagram():
         Node("runtime_algo", 1580, 651, 560, 132, "Agent Runtime", "LangGraph StateGraph\nSQLite Checkpoint · 节点 Retry\nTool Registry · Hook · Cancel\nSSE Event · Span Trace", "storm", font_size=18),
         Node("governance_algo", 1580, 806, 560, 168, "工程治理", "任务队列与并发控制\nACL · 幂等 · TTL Cache · 熔断\n错误脱敏 · 审计事件\n失败显式化与可恢复中间产物", "danger", font_size=18),
         Node("checkpoint", 80, 1115, 320, 92, "可恢复 Runtime", "LangGraph Checkpoint · Retry · Cancel\nSession / Task 持久化", "storage", font_size=17),
-        Node("observability", 445, 1115, 320, 92, "全链路可观测", "SSE · Runtime Event · Agent Trace\nSpan Tree · Token / Latency", "control", font_size=17),
-        Node("bench", 810, 1115, 470, 92, "Benchmark Registry", "SciFact · QASPER · LongMemEval-S\nSmoke / Quality · Metrics / CI / Bad Cases", "primary", font_size=17),
+        Node("observability", 445, 1115, 320, 92, "Langfuse Score", "SSE · Runtime Event · Agent Trace\nSpan Tree · Token / Latency", "control", font_size=17),
+        Node("bench", 810, 1115, 470, 92, "PIM Domain Pilot", "PIM 专项评测 · SciFact · QASPER\nSmoke / Quality · Metrics / CI / Bad Cases", "primary", font_size=17),
         Node("feedback", 1325, 1115, 360, 92, "数据驱动优化", "检索质量 · Memory 召回\nContext 保真 · 延迟与成本", "control", font_size=17),
         Node("outcome", 1730, 1115, 390, 92, "项目价值", "可信回答 · 深度文章\n可追溯 · 可恢复 · 可量化", "external", font_size=17),
     ]
@@ -234,6 +247,76 @@ def detailed_diagram():
     )
 
 
+def async_runtime_sequence_diagram():
+    participants = [
+        ("browser", "Browser", "submit topic"),
+        ("fastapi", "FastAPI", "task API"),
+        ("queue", "Async Queue", "durable jobs"),
+        ("runtime", "Agent Runtime", "LangGraph"),
+        ("retriever", "Retriever", "hybrid RAG"),
+        ("llm", "LLM", "route and generate"),
+        ("checkpoint", "Checkpoint", "resume state"),
+        ("sse", "SSE", "event stream"),
+        ("langfuse", "Langfuse", "trace and score"),
+    ]
+    nodes = []
+    control_participants = {"fastapi", "runtime", "sse", "langfuse"}
+    for index, (node_id, title, subtitle) in enumerate(participants):
+        kind = "control" if node_id in control_participants else "primary"
+        nodes.append(
+            Node(
+                node_id,
+                55 + index * 205,
+                130,
+                165,
+                760,
+                title,
+                subtitle,
+                kind,
+                shape="participant",
+                font_size=15,
+            )
+        )
+    messages = [
+        SequenceMessage("browser", "fastapi", "POST /research", 0.15, 0.15),
+        SequenceMessage("fastapi", "queue", "enqueue task", 0.20, 0.20),
+        SequenceMessage("fastapi", "browser", "202 Accepted + task_id", 0.25, 0.25),
+        SequenceMessage("queue", "runtime", "claim job", 0.32, 0.32),
+        SequenceMessage("runtime", "checkpoint", "create checkpoint", 0.37, 0.37),
+        SequenceMessage("runtime", "langfuse", "start trace", 0.42, 0.42),
+        SequenceMessage("runtime", "retriever", "retrieve evidence", 0.49, 0.49),
+        SequenceMessage("retriever", "llm", "ranked context", 0.54, 0.54),
+        SequenceMessage("llm", "runtime", "grounded draft", 0.59, 0.59),
+        SequenceMessage("runtime", "checkpoint", "persist progress", 0.66, 0.66),
+        SequenceMessage("runtime", "sse", "emit stage event", 0.72, 0.72),
+        SequenceMessage("sse", "browser", "stream progress", 0.78, 0.78),
+        SequenceMessage("runtime", "langfuse", "record spans + score", 0.84, 0.84),
+        SequenceMessage("runtime", "sse", "emit completed result", 0.90, 0.90),
+        SequenceMessage("sse", "browser", "final article + citations", 0.95, 0.95),
+    ]
+    edges = [
+        Edge(
+            message.source,
+            message.target,
+            message.label,
+            message.kind,
+            direction="sequence",
+            source_offset=message.source_offset,
+            target_offset=message.target_offset,
+        )
+        for message in messages
+    ]
+    return Diagram(
+        "paperstorm-async-runtime-sequence",
+        1900,
+        920,
+        "PaperStorm 异步 Agent Runtime 时序",
+        "请求快速确认，后台检索与生成可恢复执行，并通过 SSE、Langfuse 持续反馈进度与质量",
+        nodes,
+        edges,
+    )
+
+
 def drawio_style(node):
     stroke, fill = KINDS[node.kind]
     if node.shape == "panel":
@@ -241,6 +324,13 @@ def drawio_style(node):
             "rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;align=left;"
             f"spacingTop=12;spacingLeft=14;fontSize={node.font_size};fontStyle=1;"
             f"strokeColor={stroke};fillColor={fill};strokeWidth=2;arcSize=8;"
+        )
+    if node.shape == "participant":
+        stroke, fill = KINDS[node.kind]
+        return (
+            "shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;"
+            f"fontSize={node.font_size};fontColor={COLORS['ink']};fontStyle=1;"
+            f"strokeColor={stroke};fillColor={fill};strokeWidth=1.5;"
         )
     return (
         "rounded=0;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;"
@@ -257,7 +347,21 @@ def drawio_label(node):
     return value
 
 
+def validate_sequence_offsets(diagram):
+    for edge in diagram.edges:
+        if edge.direction != "sequence":
+            continue
+        for attribute in ("source_offset", "target_offset"):
+            offset = getattr(edge, attribute)
+            if not isinstance(offset, (int, float)) or not 0 <= offset <= 1:
+                raise ValueError(
+                    f"sequence edge {edge.source}->{edge.target} {attribute} "
+                    "must be within 0..1"
+                )
+
+
 def write_drawio(diagram):
+    validate_sequence_offsets(diagram)
     mxfile = ET.Element("mxfile", {"host": "app.diagrams.net", "version": "24.7.17"})
     page = ET.SubElement(mxfile, "diagram", {"id": diagram.name, "name": "Page-1"})
     model = ET.SubElement(page, "mxGraphModel", {
@@ -286,6 +390,13 @@ def write_drawio(diagram):
             f"html=1;strokeColor={color};strokeWidth=2;endArrow=block;endFill=1;"
             f"dashed={1 if edge.dashed else 0};fontSize=10;fontColor={COLORS['muted']};"
         )
+        if edge.direction == "sequence":
+            source = next(node for node in diagram.nodes if node.id == edge.source)
+            target = next(node for node in diagram.nodes if node.id == edge.target)
+            style += (
+                f"exitX=0.5;exitY={edge.source_offset};exitPerimeter=0;"
+                f"entryX=0.5;entryY={edge.target_offset};entryPerimeter=0;"
+            )
         cell = ET.SubElement(root, "mxCell", {
             "id": f"edge-{index}", "value": escape(edge.label), "style": style,
             "edge": "1", "parent": "1", "source": edge.source, "target": edge.target,
@@ -321,6 +432,10 @@ def svg_text(parent, node):
 
 
 def edge_path(source, target, edge):
+    if edge.direction == "sequence":
+        sx, sy = source.x + source.w / 2, source.y + source.h * edge.source_offset
+        tx, ty = target.x + target.w / 2, target.y + target.h * edge.target_offset
+        return f"M {sx} {sy} L {tx} {ty}"
     if edge.points:
         start = (source.x + source.w, source.y + source.h / 2)
         end = (target.x, target.y + target.h / 2)
@@ -338,6 +453,7 @@ def edge_path(source, target, edge):
 
 
 def write_svg(diagram):
+    validate_sequence_offsets(diagram)
     svg = ET.Element("svg", {
         "xmlns": "http://www.w3.org/2000/svg", "width": str(diagram.width),
         "height": str(diagram.height), "viewBox": f"0 0 {diagram.width} {diagram.height}",
@@ -393,20 +509,35 @@ def write_svg(diagram):
             "marker-end": f"url(#arrow-{edge.kind})",
         })
         if edge.label:
-            lx = (source.x + source.w / 2 + target.x + target.w / 2) / 2
-            ly = (source.y + source.h / 2 + target.y + target.h / 2) / 2 - 6
+            if edge.direction == "sequence":
+                lx = (source.x + source.w / 2 + target.x + target.w / 2) / 2
+                ly = source.y + source.h * edge.source_offset - 6
+            else:
+                lx = (source.x + source.w / 2 + target.x + target.w / 2) / 2
+                ly = (source.y + source.h / 2 + target.y + target.h / 2) / 2 - 6
             label = ET.SubElement(svg, "text", {"x": str(lx), "y": str(ly), "class": "edge-label", "text-anchor": "middle"})
             label.text = edge.label
     node_index = 0
     for node in (item for item in diagram.nodes if item.layer == "node"):
         node_index += 1
         stroke, fill = KINDS[node.kind]
-        ET.SubElement(svg, "rect", {
-            "x": str(node.x), "y": str(node.y), "width": str(node.w), "height": str(node.h),
-            "fill": COLORS["white"], "stroke": stroke, "stroke-width": "1.5", "filter": "url(#node-shadow)",
-        })
-        ET.SubElement(svg, "rect", {"x": str(node.x), "y": str(node.y), "width": "7", "height": str(node.h), "fill": stroke})
-        if node.w >= 180:
+        if node.shape == "participant":
+            ET.SubElement(svg, "rect", {
+                "x": str(node.x), "y": str(node.y), "width": str(node.w), "height": "66",
+                "fill": COLORS["white"], "stroke": stroke, "stroke-width": "1.5", "filter": "url(#node-shadow)",
+            })
+            ET.SubElement(svg, "line", {
+                "x1": str(node.x + node.w / 2), "y1": str(node.y + 66),
+                "x2": str(node.x + node.w / 2), "y2": str(node.y + node.h),
+                "stroke": stroke, "stroke-width": "1.5", "stroke-dasharray": "6 6",
+            })
+        else:
+            ET.SubElement(svg, "rect", {
+                "x": str(node.x), "y": str(node.y), "width": str(node.w), "height": str(node.h),
+                "fill": COLORS["white"], "stroke": stroke, "stroke-width": "1.5", "filter": "url(#node-shadow)",
+            })
+            ET.SubElement(svg, "rect", {"x": str(node.x), "y": str(node.y), "width": "7", "height": str(node.h), "fill": stroke})
+        if node.w >= 180 and node.shape != "participant":
             ET.SubElement(svg, "rect", {"x": str(node.x + 14), "y": str(node.y + 12), "width": "24", "height": "18", "fill": stroke})
             number = ET.SubElement(svg, "text", {"x": str(node.x + 26), "y": str(node.y + 25), "text-anchor": "middle", "font-size": "9", "font-weight": "800", "fill": "#FFFFFF"})
             number.text = f"{node_index:02d}"
@@ -424,14 +555,9 @@ def write_svg(diagram):
 
 
 def main():
-    for diagram in (executive_diagram(), detailed_diagram()):
+    for diagram in (executive_diagram(), detailed_diagram(), async_runtime_sequence_diagram()):
         write_drawio(diagram)
         write_svg(diagram)
-        original_name = diagram.name
-        diagram.name = f"{original_name}-v57"
-        write_drawio(diagram)
-        write_svg(diagram)
-        diagram.name = original_name
         print(f"generated {diagram.name}: {diagram.width}x{diagram.height}")
 
 
