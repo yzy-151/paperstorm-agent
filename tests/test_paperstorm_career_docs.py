@@ -4,6 +4,20 @@ from pathlib import Path
 
 
 class PaperStormCareerDocsTest(unittest.TestCase):
+    EXPECTED_PLAYBOOK_SECTIONS = {
+        "基础原理": 30,
+        "Bad Case 与排查": 25,
+        "假设性系统设计": 20,
+        "PaperStorm 针对性追问": 25,
+    }
+    REQUIRED_QUESTION_FIELDS = (
+        "参考回答",
+        "项目实例",
+        "排查/设计步骤",
+        "追问",
+        "考察点",
+        "常见失误",
+    )
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).resolve().parents[1]
@@ -88,16 +102,37 @@ class PaperStormCareerDocsTest(unittest.TestCase):
         self.assertGreaterEqual(len(bullets), 3)
         self.assertLessEqual(len(bullets), 5)
 
-    def test_interview_playbook_has_sixty_structured_questions_and_required_topics(self):
+    def test_interview_playbook_has_one_hundred_questions_in_fixed_modules(self):
         matches = list(re.finditer(r"^### (\d+)\. .+$", self.playbook, flags=re.MULTILINE))
-        self.assertGreaterEqual(len(matches), 60)
+        self.assertEqual([int(match.group(1)) for match in matches], list(range(1, 101)))
 
         for index, match in enumerate(matches):
             section_end = matches[index + 1].start() if index + 1 < len(matches) else len(self.playbook)
             section = self.playbook[match.start() : section_end]
-            for label in ("参考回答", "追问", "考察点", "常见失误"):
+            for label in self.REQUIRED_QUESTION_FIELDS:
                 with self.subTest(question=match.group(1), label=label):
                     self.assertEqual(section.count(f"**{label}**"), 1)
+
+        module_matches = list(
+            re.finditer(
+                r"^## (基础原理|Bad Case 与排查|假设性系统设计|PaperStorm 针对性追问)$",
+                self.playbook,
+                flags=re.MULTILINE,
+            )
+        )
+        self.assertEqual(
+            [match.group(1) for match in module_matches],
+            list(self.EXPECTED_PLAYBOOK_SECTIONS),
+        )
+        for index, match in enumerate(module_matches):
+            module_end = (
+                module_matches[index + 1].start()
+                if index + 1 < len(module_matches)
+                else len(self.playbook)
+            )
+            module = self.playbook[match.end() : module_end]
+            count = len(re.findall(r"^### \d+\. ", module, flags=re.MULTILINE))
+            self.assertEqual(count, self.EXPECTED_PLAYBOOK_SECTIONS[match.group(1)])
 
         topics = (
             "RAG 基础",
@@ -126,6 +161,26 @@ class PaperStormCareerDocsTest(unittest.TestCase):
         for topic in topics:
             with self.subTest(topic=topic):
                 self.assertIn(topic, self.playbook)
+
+    def test_playbook_covers_real_debugging_and_system_design_cases(self):
+        required = (
+            "PIM / RAM / DRAM",
+            "100% 重排",
+            "recall-safe MMR",
+            "Parent Context 预算饥饿",
+            "Cross-Encoder 误排",
+            "引用映射",
+            "Memory 召回",
+            "ACL",
+            "百万级知识库",
+            "多租户企业知识库 Agent",
+            "高并发 RAG",
+            "长期记忆 Agent",
+            "论文调研 Agent",
+        )
+        for item in required:
+            with self.subTest(item=item):
+                self.assertIn(item, self.playbook)
 
     def test_playbook_repeats_metric_provenance_and_prohibits_exaggeration(self):
         required = (
