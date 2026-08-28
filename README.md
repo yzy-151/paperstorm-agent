@@ -18,7 +18,7 @@ PaperStorm Agent 是基于 Stanford STORM 扩展的论文调研与知识问答�
 | Memory | SQLite WAL、事实与 episode、provenance、时间有效性、BM25/真实向量、RRF、MMR | 只保存稳定用户事实、偏好、决策和可复用流程 |
 | Context | Pinned、Active、Summary、Memory、Evidence、Artifact 分层预算 | 支持结构化递归摘要、压缩 lineage 和恢复 |
 | Runtime | LangGraph、SQLite checkpoint、节点重试、幂等、ACL、缓存、熔断与 trace | 对话状态、调研任务和控制面持久化 |
-| Evaluation | SciFact、QASPER、LongMemEval-S、Context Pareto、Answer/Evidence F1 | smoke 仅用于确定性验证，quality profile 才可形成质量结论 |
+| Evaluation | SciFact、QASPER、LongMemEval-S、PIM 领域 Pilot、Context Pareto、Answer/Evidence F1 | smoke 仅用于确定性验证，quality profile 才可形成质量结论 |
 | Observability | 本地 JSONL、SSE、Langfuse Trace/Span/Score | 敏感字段脱敏，远程观测失败不阻断业务链路 |
 
 ## 系统架构
@@ -136,6 +136,7 @@ RAG 的已知 bad case、工业方案对照和后续路线见
 | LongMemEval-S | 跨会话长期记忆 | Evidence-session Recall@5、类别 Recall、P50/P95 |
 | QASPER Context | 上下文预算治理 | token ratio、gold evidence retention、validation rate |
 | Context Pareto | 长上下文配置 | 质量、输入 Token、TTFT、成本和 Pareto frontier |
+| PIM Domain Pilot | 50 条本地论文证据绑定问题 | Recall@5、MRR@5、Answer F1、Citation Precision、ANN Recall |
 
 ### 已记录结果
 
@@ -148,6 +149,7 @@ RAG 的已知 bad case、工业方案对照和后续路线见
 | P1+P2+P3：Claim-Citation | QASPER Answer | 1451 条 test：Answer F1 `0.5083`、Evidence F1 `0.5500`、Claim support `0.9592`、unsupported claim `0.0214`、失败 `0` | 相对 v5.5 的跨指纹方向性对比为 Answer F1 `-0.0358`；可信度可观测性增强，但传统答案覆盖仍需优化 |
 | P1+P2+P3+P4：生产治理 | Production Governance 8-case | ACL/Trace 泄漏 `0`；失败率 `0`；缓存隔离、超时、熔断恢复、Release Gate 全部通过 | 完全离线、不调用 LLM；不重复运行未受影响的质量数据集 |
 | LongMemEval-S Memory | LongMemEval-S | Recall@5 `0.8003`，P95 `359.3 ms` | 仅代表 evidence-session retrieval，不等同端到端回答准确率 |
+| v7.0 PIM Domain Pilot | 5 篇论文、797 chunks、50 questions | GTE Recall@5 `0.7200`；Answer F1 `0.3983`；Citation Precision `0.9237`；真实向量 HNSW Recall@5 `1.0000` | 私有领域 pilot；题目由模型生成，不作为公开榜单或生产 SLA |
 
 ### Embedding 与规模诊断
 
@@ -170,6 +172,9 @@ hard negatives。该小样本用于工程选型，不替代完整 test 与置信
 为 `198.504 ms`，HNSW Recall@10 为 `0.9055`。这是规模行为诊断，不是论文检索质量结论；
 2,000,000 向量只报告原始 float32 容量估算，不外推延迟。完整协议、具体改善/退化案例与边界见
 [PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md](docs/PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md)。
+
+v7.0 的 PIM 领域协议、三模型比较、50 条 Reader 评测和真实 Bad Case 见
+[PAPERSTORM_DOMAIN_PILOT.md](docs/PAPERSTORM_DOMAIN_PILOT.md)。
 
 详细协议、样本量、split、模型和证据等级见
 [PAPERSTORM_V55_PUBLIC_BENCHMARKS.md](docs/PAPERSTORM_V55_PUBLIC_BENCHMARKS.md) 与
@@ -248,6 +253,14 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_paperstorm_
   --modes bm25 dense hybrid hybrid_rerank `
   --reranker `
   --top-k 5
+
+# PIM 领域 pilot，使用 50 条证据绑定问题比较三个真实 Embedding Profile
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_pim_domain_pilot.py `
+  --corpus "$env:PAPERSTORM_BENCHMARK_ROOT\domain-pim-v7\corpus.jsonl" `
+  --cases "$env:PAPERSTORM_BENCHMARK_ROOT\domain-pim-v7\cases.jsonl" `
+  --output-dir "$env:PAPERSTORM_BENCHMARK_ROOT\domain-pim-v7\runs" `
+  --model-cache "$env:PAPERSTORM_BENCHMARK_ROOT\models" `
+  --top-k 5
 ```
 
 ## Langfuse 可观测性
@@ -306,6 +319,7 @@ knowledge_storm/
   control_plane.py                 # ACL、幂等、缓存、任务与 trace
   paperstorm_service.py            # 应用服务层
   evaluation/public_benchmarks/    # SciFact/QASPER/LongMemEval adapters
+  evaluation/domain_pilot.py       # 私有领域题集合同与证据校验
 examples/storm_examples/           # FastAPI、MCP 与 Benchmark CLI
 frontend/paperstorm_dashboard/     # 调研、问答和开发者控制台
 tests/                              # 离线单元、API、前端与评测契约测试

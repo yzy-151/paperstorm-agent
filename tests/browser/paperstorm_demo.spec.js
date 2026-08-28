@@ -13,12 +13,13 @@ test.use({
 test("desktop one-click demo completes and renders the research result", async ({page}) => {
   await page.setViewportSize({width: 1366, height: 768});
   await page.goto(baseURL, {waitUntil: "networkidle"});
-  await expect(page.locator(".release-pill strong")).toHaveText("v5.8.1");
+  await expect(page.locator(".release-pill strong")).toHaveText("v7.0");
   await expect(page.locator("#developer-view")).toBeHidden();
 
   await page.locator("#show-research-mode").click();
-  await expect(page.locator(".workspace-inspector")).toBeVisible();
-  await expect(page.locator('[data-stage="completed"]')).not.toHaveClass(/complete/);
+  await expect(page.locator(".workspace-inspector")).toBeHidden();
+  const deliveryNode = page.locator('.pipeline-node[data-node="deliver"]');
+  await expect(deliveryNode).not.toHaveClass(/complete/);
   await expect(page.locator("#research-score-section")).toBeHidden();
   await expect(page.locator("#article-content")).toContainText("完成调研后");
   await page.screenshot({
@@ -31,7 +32,7 @@ test("desktop one-click demo completes and renders the research result", async (
   await expect(page.locator("#start-research-demo")).toBeEnabled({timeout: 30000});
   await expect(page.locator("#research-current-activity")).toContainText("调研完成");
   await expect(page.locator("#article-content")).not.toBeEmpty();
-  await expect(page.locator('[data-stage="completed"]')).toHaveClass(/complete/);
+  await expect(deliveryNode).toHaveClass(/complete/);
   await page.screenshot({
     path: path.join(screenshotRoot, "research-completed.png"),
     fullPage: true,
@@ -74,10 +75,13 @@ test("developer workbench discovers local datasets and exposes reproducible runs
   await page.locator("#show-developer-mode").click();
 
   await expect(page.locator("#developer-view")).toBeVisible();
-  await expect(page.locator(".benchmark-card")).toHaveCount(6, {timeout: 30000});
+  await expect(page.locator(".benchmark-card")).toHaveCount(9, {timeout: 30000});
   await expect(page.locator("#ready-root-detail")).toContainText("paperstorm-benchmarks");
 
-  const longMemory = page.locator('[data-benchmark-id="longmemeval-retrieval-v56"]');
+  const pimPilot = page.locator('[data-benchmark-id="pim-domain-pilot"]');
+  await expect(pimPilot).toContainText("PIM");
+
+  const longMemory = page.locator('[data-benchmark-id="longmemeval-retrieval"]');
   await expect(longMemory).toContainText("LongMemEval");
   await longMemory.click();
   await expect(page.locator("#benchmark-selected-name")).toContainText("LongMemEval");
@@ -95,6 +99,7 @@ test("chat exposes session list, expandable citations and regenerate without los
   await page.setViewportSize({width: 1440, height: 900});
   await page.goto(baseURL, {waitUntil: "networkidle"});
   await page.locator("#show-chat-mode").click();
+  await page.locator("#chat-run-mode").selectOption("fake");
 
   const sessionsBefore = await page.locator(".session-item").count().catch(() => 0);
   await page.locator("#create-chat").click();
@@ -125,6 +130,7 @@ test("chat exposes session list, expandable citations and regenerate without los
 test("research article downloads as markdown and developer console stays clean", async ({page}) => {
   await page.setViewportSize({width: 1366, height: 768});
   await page.goto(baseURL, {waitUntil: "networkidle"});
+  await page.locator("#task-run-mode").selectOption("fake", {force: true});
 
   const downloadPromise = page.waitForEvent("download", {timeout: 15000});
   await page.locator("#start-research-demo").click();
@@ -135,6 +141,6 @@ test("research article downloads as markdown and developer console stays clean",
   expect(download.suggestedFilename()).toMatch(/\.md$/);
 
   await page.locator("#show-developer-mode").click();
-  await expect(page.locator(".benchmark-card")).toHaveCount(6, {timeout: 30000});
+  await expect(page.locator(".benchmark-card")).toHaveCount(9, {timeout: 30000});
   await expect(page.locator("#leave-developer-mode")).toBeVisible();
 });

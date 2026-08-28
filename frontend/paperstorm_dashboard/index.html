@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PaperStorm Agent Workspace</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2300c2a8'/%3E%3Cpath d='M8 24V8h15v4H13v3h8v4h-8v5z' fill='%23060a0e'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="styles.css?v=6.6.0" />
+    <link rel="stylesheet" href="styles.css?v=7.0.0" />
   </head>
   <body data-mode="research">
     <header class="topbar">
@@ -16,7 +16,7 @@
       <div class="topbar-context"><span>WORKSPACE</span><strong id="workspace-title">论文调研</strong></div>
       <div class="topbar-actions">
         <span class="service-pill" id="service-state"><i class="status-dot"></i><span>连接中</span></span>
-          <span class="release-pill"><small>release</small><strong>v6.6</strong></span>
+          <span class="release-pill"><small>release</small><strong>v7.0</strong></span>
       </div>
     </header>
 
@@ -136,7 +136,7 @@
           <section class="status-band" id="benchmark-readiness">
             <div><small>API SERVICE</small><strong id="ready-service">检查中</strong><span id="ready-service-detail">连接 API</span></div>
             <div><small>BENCHMARK ROOT</small><strong id="ready-root">未发现</strong><span id="ready-root-detail">等待服务返回</span></div>
-            <div><small>DATASETS</small><strong id="ready-datasets">0 / 6</strong><span>本机缓存自动发现</span></div>
+            <div><small>DATASETS</small><strong id="ready-datasets">检测中</strong><span>本机缓存自动发现</span></div>
             <div><small>RUNTIME</small><strong id="ready-python">未知</strong><span id="ready-model-cache">模型缓存未发现</span></div>
             <div><small>LANGFUSE</small><strong id="ready-langfuse">检查中</strong><span id="ready-langfuse-detail">本地 Trace 可用</span></div>
             <button class="icon-button" id="refresh-benchmark-catalog" type="button" title="刷新环境">↻</button>
@@ -206,6 +206,6 @@
     </div>
 
     <div class="toast hidden" id="toast" role="status"></div>
-    <script src="app.js?v=6.6.0"></script>
+    <script src="app.js?v=7.0.0"></script>
   </body>
 </html>

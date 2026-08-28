@@ -167,3 +167,13 @@ query batch=1 后 SciFact 与 QASPER 均完整结束。代价是 SciFact 构建�
 
 完整协议、模型表、具体改善与退化案例、HNSW 参数和面试表达见
 [PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md](PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md)。
+
+## v7.0：PIM 领域闭环 Pilot
+
+在 5 篇本地 PIM 论文的 797 个 chunk 上构建 50 条证据绑定问题。Legacy/BGE/GTE 的
+Recall@5 分别为 `0.58/0.64/0.72`；GTE 胜出但 Query P95 为 `188.5 ms`，BGE 的
+`42.6 ms` 更适合低延迟 CPU 档。GTE 真实向量 HNSW Recall@5 为 `1.0`，P95 为
+`0.79 ms`。50 条 Hermes Reader 回答的 Answer F1 为 `0.3983`、Citation Precision 为
+`0.9237`，同时暴露 12 个原始非法引用 ID，证明引用 registry 白名单仍是必要边界。
+
+协议、案例、限制与复现命令见 [PAPERSTORM_DOMAIN_PILOT.md](PAPERSTORM_DOMAIN_PILOT.md)。

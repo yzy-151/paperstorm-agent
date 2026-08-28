@@ -36,6 +36,8 @@ class PaperStormBenchmarkRegistryTest(unittest.TestCase):
             "qasper-official-v0.3/qasper-test-v0.3.json",
             "v56/longmemeval_s_cleaned.json",
             "v56/runs/qasper-context/predictions.jsonl",
+            "domain-pim-v7/corpus.jsonl",
+            "domain-pim-v7/cases.jsonl",
         ):
             path = self.benchmark_root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +73,9 @@ class PaperStormBenchmarkRegistryTest(unittest.TestCase):
             catalog["benchmarks"][0]["inputs"][0]["path"].endswith("scifact")
         )
         self.assertEqual(catalog["benchmarks"][-1]["status"], "blocked")
+        pim = next(item for item in catalog["benchmarks"] if item["id"] == "pim-domain-pilot")
+        self.assertTrue(pim["ready"])
+        self.assertIn("ANN Recall@5", pim["metrics"])
 
     def test_command_builder_is_allowlisted_and_applies_smoke_profile(self):
         from knowledge_storm.paperstorm_benchmarks import BenchmarkRegistry
@@ -174,6 +179,8 @@ class PaperStormBenchmarkWorkbenchApiTest(unittest.TestCase):
         self.assertIn("startBenchmarkRun", script)
         self.assertIn("pollBenchmarkRun", script)
         self.assertIn("result.modes?.paperstorm_memory", script)
+        self.assertIn('id === "pim-domain-pilot"', script)
+        self.assertIn("PIM GTE Recall@5", script)
 
 
 if __name__ == "__main__":

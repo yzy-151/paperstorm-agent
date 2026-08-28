@@ -570,6 +570,18 @@ DEFINITIONS = (
         "约 1-3 分钟，不调用 LLM",
     ),
     BenchmarkDefinition(
+        "pim-domain-pilot",
+        "PIM 领域检索与 ANN Pilot",
+        "v7.0",
+        "Domain RAG",
+        "private_domain_pilot",
+        "50 个证据绑定问题上比较 MiniLM、BGE、GTE，并测量真实论文向量的 Exact/HNSW 差异。",
+        "run_pim_domain_pilot.py",
+        ("pim_corpus", "pim_cases"),
+        ("Recall@5", "MRR@5", "nDCG@5", "ANN Recall@5", "P95 latency"),
+        "本地 CPU 约 8-15 分钟；Hermes Reader 使用独立评测入口",
+    ),
+    BenchmarkDefinition(
         "longbench-context",
         "LongBench Context 配对评测",
         "current",
@@ -726,6 +738,14 @@ class BenchmarkRegistry:
             command += [
                 "--dataset", str(self.inputs["qasper_json"]), "--rankings", str(self.inputs["qasper_rankings"]),
                 "--output-dir", str(output_dir), "--mode", "hybrid_rerank",
+            ]
+        elif benchmark_id == "pim-domain-pilot":
+            command += [
+                "--corpus", str(self.inputs["pim_corpus"]),
+                "--cases", str(self.inputs["pim_cases"]),
+                "--output-dir", str(output_dir),
+                "--model-cache", str(self.root / "models"),
+                "--top-k", "5",
             ]
         elif benchmark_id == "context-pareto":
             command += [
@@ -938,6 +958,8 @@ def _discover_inputs(root):
         "longmemeval_json": root / "v56" / "longmemeval_s_cleaned.json",
         "longbench_json": root / "v56" / "longbench_v2_data.json",
         "longbench_predictions": root / "v56" / "runs" / "longbench-context" / "predictions.json",
+        "pim_corpus": root / "domain-pim-v7" / "corpus.jsonl",
+        "pim_cases": root / "domain-pim-v7" / "cases.jsonl",
     }
     return {key: path.resolve() for key, path in values.items() if _input_exists(key, path)}
 
@@ -960,6 +982,10 @@ def _latest_result_path(benchmark_id, root):
         "qasper-context": [root / "v56/runs/qasper-context/metrics.json"],
         "context-pareto": [root / "v60/runs/context-pareto/metrics.json"],
         "longmemeval-e2e": [root / "v60/runs/longmemeval-e2e/metrics.json"],
+        "pim-domain-pilot": [
+            root / "domain-pim-v7/release_metrics.json",
+            root / "domain-pim-v7/runs/metrics.json",
+        ],
     }.get(benchmark_id, [])
     return next((path.resolve() for path in candidates if path.exists()), None)
 

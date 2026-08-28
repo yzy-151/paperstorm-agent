@@ -515,10 +515,10 @@ function applyPipelineTrace(trace) {
       state.activeInvocations[stage] = active;
     }
     setPipelineNodeStatus(stage, "active", trace.operation || detail, telemetry);
-    $("#research-current-activity").textContent = trace.operation || pipelineNodes[stage].title;
+    if (!state.runFinished) $("#research-current-activity").textContent = trace.operation || pipelineNodes[stage].title;
   } else if (eventName === "stage_progress" && pipelineNodes[stage]) {
     setPipelineNodeStatus(stage, "active", trace.operation || detail, telemetry);
-    $("#research-current-activity").textContent = trace.operation || pipelineNodes[stage].title;
+    if (!state.runFinished) $("#research-current-activity").textContent = trace.operation || pipelineNodes[stage].title;
   } else if (eventName === "stage_end" && pipelineNodes[stage]) {
     if (invocationId) state.activeInvocations[stage]?.delete(invocationId);
     const stillActive = (state.activeInvocations[stage]?.size || 0) > 0;
@@ -534,7 +534,7 @@ function applyPipelineTrace(trace) {
     if (invocationId) state.activeInvocations[stage]?.delete(invocationId);
     setPipelineNodeStatus(stage, "failed", trace.operation || trace.error_message || "阶段失败", telemetry);
     markDownstreamSkipped(stage);
-    $("#research-current-activity").textContent = trace.error_message || "阶段执行失败";
+    if (!state.runFinished) $("#research-current-activity").textContent = trace.error_message || "阶段执行失败";
   } else if (eventName === "stage_usage" && pipelineNodes[stage]) {
     const status = state.pipelineStatus[stage]?.status || "complete";
     setPipelineNodeStatus(stage, status, trace.operation || "用量已汇总", telemetry);
@@ -602,6 +602,8 @@ async function runResearchWorkflow(demo = false) {
     $("#research-current-activity").textContent = "任务已提交，等待后端阶段 Trace...";
     const completed = await fetchJson(`/research-tasks/${encodeURIComponent(task.task_id)}/run`, {method: "POST"});
     if (completed.status !== "succeeded") throw new Error(completed.error || `任务状态：${completed.status}`);
+    state.runFinished = true;
+    settleArtifactStatuses();
     $("#research-current-activity").textContent = "调研完成，文章、评分与引用已更新。";
     await loadResearchResult(task.task_id);
     toast("调研任务已完成");
@@ -1057,6 +1059,7 @@ function buildBenchmarkPreview(item, profile) {
     "qasper-answer": `python examples/storm_examples/run_qasper_answer_benchmark.py --split test --retrieval-predictions "${paths.qasper_rankings}" --output-dir "${output}"${profile === "smoke" ? " --smoke-limit 10" : ""}`,
     "longmemeval-retrieval": `python examples/storm_examples/run_longmemeval_benchmark.py --dataset "${paths.longmemeval_json}" --output-dir "${output}" --embedding ${profile === "smoke" ? "hash --limit 10" : "sentence-transformer"}`,
     "qasper-context": `python examples/storm_examples/run_qasper_context_benchmark.py --dataset "${paths.qasper_json}" --rankings "${paths.qasper_rankings}" --output-dir "${output}"`,
+    "pim-domain-pilot": `python examples/storm_examples/run_pim_domain_pilot.py --corpus "${paths.pim_corpus}" --cases "${paths.pim_cases}" --output-dir "${output}" --model-cache "${state.catalog?.model_cache || "<model-cache>"}" --top-k 5`,
     "longbench-context": "Blocked: 先生成同模型 full/fixed/v5.6 配对预测。",
   };
   return commands[item.id] || "该任务不可运行";
@@ -1170,6 +1173,22 @@ function renderBenchmarkMetrics(container, result) {
       ["压缩后 Gold Recall", result.gold_evidence_recall_after_context],
       ["Context / 全文", result.mean_context_to_full_document_ratio],
       ["超预算率", result.over_budget_rate], ["结构校验通过率", result.validation_pass_rate],
+    ];
+  } else if (id === "pim-domain-pilot") {
+    const legacy = result.profiles?.["legacy-multilingual"]?.metrics || {};
+    const bge = result.profiles?.["cpu-zh"]?.metrics || {};
+    const gte = result.profiles?.["cpu-multilingual"]?.metrics || {};
+    const selected = result.selected_profile || "cpu-multilingual";
+    const best = result.profiles?.[selected]?.metrics || gte;
+    metrics = [
+      ["样本数", result.case_count],
+      ["PIM Legacy Recall@5", legacy.recall_at_5],
+      ["PIM BGE Recall@5", bge.recall_at_5],
+      ["PIM GTE Recall@5", gte.recall_at_5],
+      [`Best (${selected}) MRR@5`, best.mrr_at_5],
+      [`Best (${selected}) P95`, best.query_p95_ms, "ms"],
+      ["ANN Recall@5", result.ann?.hnsw_recall_at_k],
+      ["ANN P95", result.ann?.hnsw_p95_ms, "ms"],
     ];
   }
   metrics = metrics.filter(([, value]) => typeof value === "number" && Number.isFinite(value));
