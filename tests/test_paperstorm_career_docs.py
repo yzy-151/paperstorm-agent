@@ -102,6 +102,43 @@ class PaperStormCareerDocsTest(unittest.TestCase):
         self.assertGreaterEqual(len(bullets), 3)
         self.assertLessEqual(len(bullets), 5)
 
+    def test_resume_explains_ownership_decisions_and_improvement_matrix(self):
+        required_sections = (
+            "## 个人职责与原项目边界",
+            "## 为什么进行架构改造",
+            "## 技术改进矩阵",
+            "## 可组合的简历 Bullet",
+            "## 面试叙事：难题、决策与结果",
+        )
+        required_improvements = (
+            "Jieba",
+            "结构化 Chunk",
+            "Parent-Child",
+            "BM25",
+            "Dense",
+            "RRF",
+            "Embedding Profile",
+            "HNSW",
+            "选择性 Cross-Encoder",
+            "证据治理",
+            "Memory/Context",
+            "Langfuse",
+        )
+        for item in required_sections + required_improvements:
+            with self.subTest(item=item):
+                self.assertIn(item, self.resume)
+
+        for column in (
+            "原结构/问题",
+            "如何发现",
+            "技术决策",
+            "为什么这样选",
+            "结果",
+            "局限",
+        ):
+            with self.subTest(column=column):
+                self.assertIn(column, self.resume)
+
     def test_interview_playbook_has_one_hundred_questions_in_fixed_modules(self):
         matches = list(re.finditer(r"^### (\d+)\. .+$", self.playbook, flags=re.MULTILINE))
         self.assertEqual([int(match.group(1)) for match in matches], list(range(1, 101)))
