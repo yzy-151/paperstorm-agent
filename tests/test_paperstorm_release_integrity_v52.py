@@ -52,9 +52,33 @@ class PaperStormReleaseIntegrityV52Test(unittest.TestCase):
         )
         setup_version = re.search(r'version="([^"]+)"', setup_text).group(1)
         init_version = re.search(r'__version__ = "([^"]+)"', init_text).group(1)
-        self.assertEqual(setup_version, "7.0.0")
+        self.assertEqual(setup_version, "7.1.0")
         self.assertEqual(init_version, setup_version)
         self.assertIn("PaperStorm Agent", setup_text)
+
+    def test_readme_documents_v71_observability_and_interview_workflows(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        for marker in (
+            "v7.1",
+            "run_langfuse_badcase_demo.py",
+            "LANGFUSE_BADCASE_GUIDE.md",
+            "tags",
+            "scores",
+            "case_id",
+            "events.jsonl",
+            "run_rag_interview_simulator.py",
+            "--mode deterministic",
+            "--mode llm",
+            "PAPERSTORM_RESUME_GUIDE.md",
+            "RAG_AGENT_INTERVIEW_PLAYBOOK.md",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, readme)
+
+        self.assertNotIn("v7.0", readme)
+        self.assertIn('$env:LANGFUSE_PUBLIC_KEY="<Langfuse public key>"', readme)
+        self.assertIn('$env:LANGFUSE_SECRET_KEY="<Langfuse secret key>"', readme)
 
     def test_litellm_is_bounded_to_verified_release_line(self):
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")

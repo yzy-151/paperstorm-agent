@@ -16,7 +16,7 @@ class PaperStormUIV57Test(unittest.TestCase):
         cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     def test_product_uses_v57_workspace_shell(self):
-        self.assertIn("v7.0", self.html)
+        self.assertIn("v7.1", self.html)
         self.assertIn('class="workspace-rail"', self.html)
         self.assertIn('class="workspace-main"', self.html)
         self.assertIn('class="workspace-inspector product-only"', self.html)
@@ -34,6 +34,7 @@ class PaperStormUIV57Test(unittest.TestCase):
             "paperstorm-research-flow-v65.gif",
             "paperstorm-chat-flow-v65.gif",
             "paperstorm-executive-overview.svg",
+            "paperstorm-async-runtime-sequence.svg",
             "benchmark-icon-retrieval.svg",
             "benchmark-icon-memory.svg",
             "benchmark-icon-context.svg",
@@ -88,9 +89,13 @@ class PaperStormUIV57Test(unittest.TestCase):
         self.assertIn("@keyframes execution-flow", self.css)
         self.assertIn("@keyframes artifact-flow", self.css)
 
-    def test_public_readme_has_no_recruiting_or_leadership_copy(self):
-        for marker in ("面试", "领导"):
-            self.assertNotIn(marker, self.readme)
+    def test_public_readme_links_professional_interview_materials(self):
+        for marker in (
+            "双 Agent 面试模拟器",
+            "PAPERSTORM_RESUME_GUIDE.md",
+            "RAG_AGENT_INTERVIEW_PLAYBOOK.md",
+        ):
+            self.assertIn(marker, self.readme)
 
 
 if __name__ == "__main__":

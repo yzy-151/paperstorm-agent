@@ -1,6 +1,6 @@
 # PaperStorm Agent
 
-PaperStorm Agent 是基于 Stanford STORM 扩展的论文调研与知识问答平台。系统面向科学论文、
+PaperStorm Agent v7.1 是基于 Stanford STORM 扩展的论文调研与知识问答平台。系统面向科学论文、
 本地 PDF、Zotero 文献库和企业内部文档，提供多 Agent 深度调研、证据约束问答、混合检索、
 跨会话记忆、上下文治理、运行时恢复、公开 Benchmark 与 Langfuse 可观测性。
 
@@ -38,6 +38,12 @@ PaperStorm Agent 是基于 Stanford STORM 扩展的论文调研与知识问答�
 ![PaperStorm Agent 系统流程](docs/architecture/paperstorm-agent-system-flow.svg)
 
 [Draw.io 可编辑源文件](docs/architecture/paperstorm-agent-system-flow.drawio)
+
+### 异步运行时顺序
+
+![PaperStorm 异步运行时顺序](docs/architecture/paperstorm-async-runtime-sequence.svg)
+
+[Draw.io 可编辑源文件](docs/architecture/paperstorm-async-runtime-sequence.drawio)
 
 ### 官方 STORM 基础架构
 
@@ -149,7 +155,7 @@ RAG 的已知 bad case、工业方案对照和后续路线见
 | P1+P2+P3：Claim-Citation | QASPER Answer | 1451 条 test：Answer F1 `0.5083`、Evidence F1 `0.5500`、Claim support `0.9592`、unsupported claim `0.0214`、失败 `0` | 相对 v5.5 的跨指纹方向性对比为 Answer F1 `-0.0358`；可信度可观测性增强，但传统答案覆盖仍需优化 |
 | P1+P2+P3+P4：生产治理 | Production Governance 8-case | ACL/Trace 泄漏 `0`；失败率 `0`；缓存隔离、超时、熔断恢复、Release Gate 全部通过 | 完全离线、不调用 LLM；不重复运行未受影响的质量数据集 |
 | LongMemEval-S Memory | LongMemEval-S | Recall@5 `0.8003`，P95 `359.3 ms` | 仅代表 evidence-session retrieval，不等同端到端回答准确率 |
-| v7.0 PIM Domain Pilot | 5 篇论文、797 chunks、50 questions | GTE Recall@5 `0.7200`；Answer F1 `0.3983`；Citation Precision `0.9237`；真实向量 HNSW Recall@5 `1.0000` | 私有领域 pilot；题目由模型生成，不作为公开榜单或生产 SLA |
+| PIM Domain Pilot | 5 篇论文、797 chunks、50 questions | GTE Recall@5 `0.7200`；Answer F1 `0.3983`；Citation Precision `0.9237`；真实向量 HNSW Recall@5 `1.0000` | 私有领域 pilot；题目由模型生成，不作为公开榜单或生产 SLA |
 
 ### Embedding 与规模诊断
 
@@ -173,7 +179,7 @@ hard negatives。该小样本用于工程选型，不替代完整 test 与置信
 2,000,000 向量只报告原始 float32 容量估算，不外推延迟。完整协议、具体改善/退化案例与边界见
 [PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md](docs/PAPERSTORM_RETRIEVAL_STACK_UPGRADE.md)。
 
-v7.0 的 PIM 领域协议、三模型比较、50 条 Reader 评测和真实 Bad Case 见
+PIM 领域协议、三模型比较、50 条 Reader 评测和真实 Bad Case 见
 [PAPERSTORM_DOMAIN_PILOT.md](docs/PAPERSTORM_DOMAIN_PILOT.md)。
 
 详细协议、样本量、split、模型和证据等级见
@@ -263,17 +269,30 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_pim_domain_
   --top-k 5
 ```
 
-## Langfuse 可观测性
+## Langfuse 可观测性与 5 分钟 Bad Case 演示
 
-Langfuse 为可选依赖：
+Langfuse 是可选分析后端。固定复合 RAG bad case 会先生成本地可复核事件，再按需导出远程 trace；
+密钥只从运行环境读取，不应写入 README、脚本、提交记录或结果文件。
 
 ```powershell
 D:\SOFTWARE\spyder\envs\storm\python.exe -m pip install -e ".[observability]"
 $env:PAPERSTORM_OBSERVABILITY="langfuse"
-$env:LANGFUSE_PUBLIC_KEY="pk-lf-..."
-$env:LANGFUSE_SECRET_KEY="sk-lf-..."
+$env:LANGFUSE_PUBLIC_KEY="<Langfuse public key>"
+$env:LANGFUSE_SECRET_KEY="<Langfuse secret key>"
 $env:LANGFUSE_BASE_URL="https://cloud.langfuse.com"
+
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_langfuse_badcase_demo.py `
+  --output-dir .\results\langfuse_badcase_demo
 ```
+
+在 Langfuse 中先按 `badcase` 与分类 tags（如 `retrieval_miss`、`invalid_citation`）筛选，
+再按 `retrieval_recall_at_5`、`citation_validity`、`answer_groundedness` 等 scores 缩小范围；
+使用 `case_id` 关联固定用例。报告中的 `remote_trace_id` 仅在 SDK 返回时出现，不能假定其与
+PaperStorm 本地 trace ID 等价。未配置、不可达或降级时，仍可在
+`<output-dir>/observability/events.jsonl` 审计同一事件链路。
+
+完整的输入合同、筛选步骤与本地 events 降级说明见
+[LANGFUSE_BADCASE_GUIDE.md](docs/LANGFUSE_BADCASE_GUIDE.md)。
 
 映射关系：
 
@@ -285,6 +304,33 @@ $env:LANGFUSE_BASE_URL="https://cloud.langfuse.com"
 
 未启用 Langfuse 时，事件仍写入 `<service-root>/observability/events.jsonl`。测试环境设置
 `PAPERSTORM_OFFLINE_TESTS=1` 后会禁用远程 exporter 和模型下载。
+
+## 双 Agent 面试模拟器
+
+模拟器以面试官与候选人两个角色完成结构化 RAG / Agent 技术面试。默认 deterministic 模式不调用
+模型，适合复现题目顺序、追问和 Markdown 记录：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_rag_interview_simulator.py `
+  --mode deterministic `
+  --rounds 6 `
+  --output .\results\rag_interview_simulation.md
+```
+
+需要模型生成时，先仅在运行环境中配置所选 LiteLLM 提供方的凭据，再显式启用 `llm` 模式；
+解析失败时可选择回退到确定性答案：
+
+```powershell
+D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_rag_interview_simulator.py `
+  --mode llm `
+  --model openai/gpt-4o-mini `
+  --rounds 6 `
+  --fallback-on-parse-error `
+  --output .\results\rag_interview_simulation_llm.md
+```
+
+简历素材与指标表述边界见 [PAPERSTORM_RESUME_GUIDE.md](docs/PAPERSTORM_RESUME_GUIDE.md)，
+题库、追问与评分要点见 [RAG_AGENT_INTERVIEW_PLAYBOOK.md](docs/RAG_AGENT_INTERVIEW_PLAYBOOK.md)。
 
 ## 关键环境变量
 

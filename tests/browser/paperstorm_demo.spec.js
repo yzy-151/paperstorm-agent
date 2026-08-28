@@ -13,7 +13,7 @@ test.use({
 test("desktop one-click demo completes and renders the research result", async ({page}) => {
   await page.setViewportSize({width: 1366, height: 768});
   await page.goto(baseURL, {waitUntil: "networkidle"});
-  await expect(page.locator(".release-pill strong")).toHaveText("v7.0");
+  await expect(page.locator(".release-pill strong")).toHaveText("v7.1");
   await expect(page.locator("#developer-view")).toBeHidden();
 
   await page.locator("#show-research-mode").click();

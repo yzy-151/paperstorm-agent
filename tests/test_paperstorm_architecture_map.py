@@ -197,8 +197,10 @@ class ArchitectureMapTests(unittest.TestCase):
         for filename in (
             "paperstorm-executive-overview.svg",
             "paperstorm-agent-system-flow.svg",
+            "paperstorm-async-runtime-sequence.svg",
             "paperstorm-executive-overview.drawio",
             "paperstorm-agent-system-flow.drawio",
+            "paperstorm-async-runtime-sequence.drawio",
         ):
             with self.subTest(filename=filename):
                 self.assertIn(f"docs/architecture/{filename}", readme)

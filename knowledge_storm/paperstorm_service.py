@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 
 from .paperstorm_eval import EvalCase, evaluate_run, write_scorecards
 from .paperstorm_qa import PaperStormKnowledgeBase, write_qa_artifact
+from . import __version__
 
 
 class PaperStormTaskService:
@@ -125,7 +126,7 @@ class PaperStormTaskService:
                 "run_mode": state.get("run_mode"),
                 "retriever": state.get("retriever"),
                 "output_language": state.get("output_language"),
-                "version": "7.0.0",
+                "version": __version__,
             },
             session_id=task_id,
             tags=["research", str(state.get("run_mode") or "")],
@@ -299,7 +300,7 @@ class PaperStormTaskService:
         return {
             "project": {
                 "name": "PaperStorm Agent",
-                "version": "v7.0",
+                "version": "v{0}".format(__version__.rsplit(".", 1)[0]),
                 "description": "Service-backed PaperStorm dashboard snapshot",
             },
             "tasks": [state],
@@ -651,7 +652,7 @@ class PaperStormTaskService:
                 "chat_id": chat_id,
                 "run_mode": session.get("run_mode", ""),
                 "retriever": session.get("retriever", ""),
-                "version": "7.0.0",
+                "version": __version__,
             },
             session_id=chat_id,
             user_id=session.get("user_id", ""),

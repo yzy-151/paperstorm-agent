@@ -11,7 +11,7 @@ class PaperStormV60UITest(unittest.TestCase):
         cls.js = (root / "app.js").read_text(encoding="utf-8")
 
     def test_release_and_memory_mode_controls_are_visible(self):
-        self.assertIn("v7.0", self.html)
+        self.assertIn("v7.1", self.html)
         self.assertIn('id="chat-memory-mode"', self.html)
         self.assertIn('value="semantic"', self.html)
 

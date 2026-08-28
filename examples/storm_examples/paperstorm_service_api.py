@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+from knowledge_storm import __version__
 from knowledge_storm.paperstorm_service import PaperStormTaskService
 
 
@@ -40,7 +41,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         finally:
             service.observability.flush()
 
-    app = FastAPI(title="PaperStorm Agent Service", version="7.0.0", lifespan=lifespan)
+    app = FastAPI(title="PaperStorm Agent Service", version=__version__, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
