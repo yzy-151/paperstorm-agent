@@ -183,6 +183,21 @@ class PaperStormRetrieversTest(unittest.TestCase):
         self.assertEqual([item["title"] for item in results], ["Muon is Scalable for LLM Training"])
         self.assertEqual(results[0]["meta"]["authors"], ["Optimizer Researcher"])
 
+    def test_arxiv_rm_rejects_neural_network_paper_without_muon_optimizer_method(self):
+        rm = ArxivRM(k=3)
+        response = ARXIV_MUON_AMBIGUOUS_SAMPLE.replace(
+            "Muon is Scalable for LLM Training",
+            "Physics-Informed Neural Networks for Magnetohydrodynamics",
+        ).replace(
+            "We study the Muon optimizer, an orthogonalized momentum method based on\n      Newton-Schulz iterations, for training large neural networks.",
+            "Physics-informed neural networks solve magnetohydrodynamics optimization problems.",
+        )
+        rm.request = lambda _query: response
+
+        results = rm.forward("Muon optimizer neural network training")
+
+        self.assertEqual(results, [])
+
     def test_local_pdf_rm_retrieves_relevant_chunks_from_loaded_documents(self):
         rm = LocalPDFRM(
             documents=[
@@ -276,8 +291,9 @@ class PaperStormRetrieversTest(unittest.TestCase):
 
         limits = build_lm_token_limits()
 
-        self.assertGreaterEqual(limits["outline_gen"], 1800)
-        self.assertGreaterEqual(limits["article_gen"], 1800)
+        self.assertGreaterEqual(limits["outline_gen"], 2600)
+        self.assertGreaterEqual(limits["article_gen"], 5000)
+        self.assertGreaterEqual(limits["article_polish"], 7000)
 
     def test_arxiv_search_tool_exposes_schema_and_runs(self):
         from knowledge_storm.paperstorm_tools import ArxivSearchTool

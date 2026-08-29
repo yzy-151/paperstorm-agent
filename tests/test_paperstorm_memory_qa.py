@@ -146,6 +146,12 @@ class PaperStormMemoryQATest(unittest.TestCase):
             citation["original_sources"][0]["url"],
             "https://arxiv.org/abs/2407.06886",
         )
+        self.assertIn("## 参考文献", answer["answer"])
+        self.assertIn("Embodied AI Survey", answer["answer"])
+        self.assertIn("A. Author", answer["answer"])
+        self.assertIn(
+            "https://arxiv.org/abs/2407.06886", answer["answer"]
+        )
         self.assertNotIn("Generated article paragraph", json.dumps(citation))
 
     def test_kb_answer_generator_produces_generated_answer(self):

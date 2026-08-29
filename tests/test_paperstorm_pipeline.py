@@ -1,8 +1,41 @@
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
 
 class PaperStormPipelineTest(unittest.TestCase):
+    def test_arxiv_research_fails_explicitly_when_no_sources_were_saved(self):
+        from knowledge_storm.paperstorm_pipeline import (
+            EmptyRetrievalError,
+            ensure_research_sources,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            (run_dir / "url_to_info.json").write_text(
+                json.dumps({"url_to_info": {}}), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(EmptyRetrievalError, "empty_retrieval"):
+                ensure_research_sources(run_dir, retriever="arxiv", enabled=True)
+
+    def test_pipeline_defaults_use_balanced_research_profile(self):
+        from knowledge_storm.paperstorm_pipeline import PaperStormPipelineConfig
+
+        config = PaperStormPipelineConfig(
+            topic="Muon optimizer",
+            topic_for_storm="Muon optimizer",
+            output_root="C:/tmp/paperstorm",
+            output_dir_name="muon",
+            article_dir="C:/tmp/paperstorm/muon",
+        )
+
+        self.assertEqual(config.max_thread_num, 3)
+        self.assertEqual(config.max_conv_turn, 2)
+        self.assertEqual(config.max_perspective, 3)
+        self.assertEqual(config.search_top_k, 5)
+        self.assertEqual(config.retrieve_top_k, 5)
+
     def test_build_pipeline_config_from_task_state_uses_task_output_dir(self):
         from knowledge_storm.paperstorm_pipeline import build_pipeline_config_from_task_state
 

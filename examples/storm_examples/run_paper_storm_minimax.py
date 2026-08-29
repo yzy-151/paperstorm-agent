@@ -125,11 +125,11 @@ def build_lm_settings(args):
 
 def build_lm_token_limits():
     return {
-        "conv_simulator": 700,
-        "question_asker": 700,
-        "outline_gen": 1800,
-        "article_gen": 1800,
-        "article_polish": 4000,
+        "conv_simulator": 1200,
+        "question_asker": 1200,
+        "outline_gen": 2600,
+        "article_gen": 5000,
+        "article_polish": 7000,
     }
 
 
@@ -321,9 +321,9 @@ if __name__ == "__main__":
     parser.add_argument("--pdf-dir", type=str, default=None)
     parser.add_argument("--max-thread-num", type=int, default=3)
     parser.add_argument("--max-conv-turn", type=int, default=2)
-    parser.add_argument("--max-perspective", type=int, default=2)
-    parser.add_argument("--search-top-k", type=int, default=3)
-    parser.add_argument("--retrieve-top-k", type=int, default=3)
+    parser.add_argument("--max-perspective", type=int, default=3)
+    parser.add_argument("--search-top-k", type=int, default=5)
+    parser.add_argument("--retrieve-top-k", type=int, default=5)
     parser.add_argument("--do-research", action="store_true")
     parser.add_argument("--do-generate-outline", action="store_true")
     parser.add_argument("--do-generate-article", action="store_true")

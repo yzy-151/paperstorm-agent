@@ -328,36 +328,12 @@ def _formula_render_metrics(markdown_text, print_html):
 
 
 def _append_original_references(markdown_text, run_dir):
-    """Append a source-faithful bibliography without rewriting the article."""
-    text = str(markdown_text or "")
-    if re.search(r"^#{1,3}\s*(参考文献|references)\s*$", text, flags=re.I | re.M):
-        return text
-    source_path = Path(run_dir) / "url_to_info.json"
-    try:
-        payload = json.loads(source_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return text
-    url_to_index = payload.get("url_to_unified_index") or {}
-    url_to_info = payload.get("url_to_info") or {}
-    references = []
-    for url, raw_index in sorted(url_to_index.items(), key=lambda item: int(item[1])):
-        info = url_to_info.get(url) or {}
-        metadata = info.get("meta") or {}
-        title = str(info.get("title") or "").strip()
-        if not title:
-            continue
-        authors = [str(item).strip() for item in metadata.get("authors") or [] if str(item).strip()]
-        author_text = ", ".join(authors) if authors else "作者信息未提供"
-        published = str(metadata.get("published") or "").strip()
-        suffix = " · {0}".format(published[:10]) if published else ""
-        references.append(
-            "{0}. **{1}** — {2}{3}. [原文]({4})".format(
-                raw_index, title, author_text, suffix, info.get("url") or url
-            )
-        )
-    if not references:
-        return text
-    return text.rstrip() + "\n\n## 参考文献\n\n" + "\n\n".join(references) + "\n"
+    """Compatibility wrapper around the shared reference renderer."""
+    from .paperstorm_references import append_reference_section, load_reference_registry
+
+    return append_reference_section(
+        markdown_text, load_reference_registry(run_dir)
+    )
 
 
 def _wait_for_output_file(path, timeout_seconds):

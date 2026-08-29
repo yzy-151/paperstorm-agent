@@ -85,15 +85,15 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
         topic: str
         retriever: str = "arxiv"
         output_language: str = "zh"
-        run_mode: str = "fake"
+        run_mode: str = "paperstorm"
         pdf_dir: Optional[str] = None
         llm_provider: str = "deepseek"
         llm_model: str = "flash"
-        max_thread_num: int = 1
-        max_conv_turn: int = 1
-        max_perspective: int = 1
-        search_top_k: int = 2
-        retrieve_top_k: int = 3
+        max_thread_num: int = 3
+        max_conv_turn: int = 2
+        max_perspective: int = 3
+        search_top_k: int = 5
+        retrieve_top_k: int = 5
         do_research: bool = True
         do_generate_outline: bool = True
         do_generate_article: bool = True

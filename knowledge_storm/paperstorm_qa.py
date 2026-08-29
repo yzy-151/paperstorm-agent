@@ -135,6 +135,9 @@ class PaperStormKnowledgeBase:
         elif answer_validator is not None:
             raise ValueError("answer_validator requires answer_generator")
 
+        from .paperstorm_references import append_answer_references
+
+        answer = append_answer_references(answer, citations)
         retrieval_metadata = _json_safe_copy(self.retrieval_meta)
         payload = {
             "question": question,

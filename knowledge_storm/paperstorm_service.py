@@ -269,6 +269,11 @@ class PaperStormTaskService:
         return report
 
     def get_article(self, task_id: str):
+        from .paperstorm_references import (
+            append_reference_section,
+            load_reference_registry,
+        )
+
         state = self._read_state(task_id)
         output_dir = Path(state["output_dir"])
         path = _first_existing(
@@ -277,12 +282,13 @@ class PaperStormTaskService:
                 output_dir / "storm_gen_article.txt",
             ]
         )
+        references = load_reference_registry(output_dir)
+        content = path.read_text(encoding="utf-8", errors="replace") if path else ""
         return {
             "task_id": task_id,
             "path": str(path) if path else "",
-            "content": (
-                path.read_text(encoding="utf-8", errors="replace") if path else ""
-            ),
+            "content": append_reference_section(content, references),
+            "references": references,
         }
 
     def get_scorecard(self, task_id: str):

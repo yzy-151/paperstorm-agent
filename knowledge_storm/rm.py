@@ -145,12 +145,16 @@ class ArxivRM(dspy.Retrieve):
             )
         )
         if is_muon_optimizer_query:
+            method_terms = (
+                "muon",
+                "orthogonalized momentum",
+                "orthogonal momentum",
+                "newton-schulz",
+            )
             optimizer_terms = (
                 "optimizer",
                 "optimization",
-                "orthogonalized momentum",
-                "newton-schulz",
-                "neural network",
+                "neural network training",
                 "llm training",
             )
             particle_terms = (
@@ -161,8 +165,10 @@ class ArxivRM(dspy.Retrieve):
                 "muon collider",
                 "muon decay",
             )
-            return any(term in haystack for term in optimizer_terms) and not any(
-                term in haystack for term in particle_terms
+            return (
+                any(term in haystack for term in method_terms)
+                and any(term in haystack for term in optimizer_terms)
+                and not any(term in haystack for term in particle_terms)
             )
         if "passive intermodulation" not in query:
             return True
@@ -294,6 +300,8 @@ class ArxivRM(dspy.Retrieve):
                     continue
                 collected_results.append(result)
                 seen_urls.add(url)
+                if len(collected_results) >= self.k:
+                    return collected_results
 
         return collected_results
 

@@ -79,6 +79,7 @@ class PaperStormServiceTest(unittest.TestCase):
 
         self.assertEqual(finished["status"], "succeeded")
         self.assertIn("passive intermodulation", article["content"])
+        self.assertIn("references", article)
         self.assertGreater(scorecard["scores"]["total"], 50)
         self.assertTrue(trace["events"])
         stage_starts = [
@@ -272,6 +273,25 @@ class PaperStormServiceTest(unittest.TestCase):
 
         self.assertEqual(pdf.status_code, 200)
         self.assertEqual(pdf.content, b"%PDF-test")
+
+    def test_fastapi_minimal_research_request_uses_balanced_profile(self):
+        from fastapi.testclient import TestClient
+
+        from examples.storm_examples.paperstorm_service_api import create_app
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            client = TestClient(create_app(service_root=Path(temp_dir)))
+            task = client.post(
+                "/research-tasks", json={"topic": "Muon optimizer"}
+            ).json()
+
+        options = task["options"]
+        self.assertEqual(task["run_mode"], "paperstorm")
+        self.assertEqual(options["max_thread_num"], 3)
+        self.assertEqual(options["max_conv_turn"], 2)
+        self.assertEqual(options["max_perspective"], 3)
+        self.assertEqual(options["search_top_k"], 5)
+        self.assertEqual(options["retrieve_top_k"], 5)
         self.assertEqual(forbidden.status_code, 403)
         self.assertEqual(missing.status_code, 404)
 

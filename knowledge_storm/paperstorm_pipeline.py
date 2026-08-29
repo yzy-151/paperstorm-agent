@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from . import STORMWikiLMConfigs, STORMWikiRunner, STORMWikiRunnerArguments
 from .lm import LitellmModel
 from .paperstorm_eval import EvalCase, evaluate_run, write_scorecards
+from .paperstorm_references import materialize_article_references
 from .rm import ArxivRM, LocalPDFRM
 from .utils import load_api_key
 
@@ -24,6 +25,10 @@ from .paperstorm_trace import (
 from examples.storm_examples.run_storm_wiki_minimax import get_topic_for_storm
 
 
+class EmptyRetrievalError(RuntimeError):
+    pass
+
+
 @dataclass
 class PaperStormPipelineConfig:
     topic: str
@@ -36,11 +41,11 @@ class PaperStormPipelineConfig:
     llm_model: str = "flash"
     retriever: str = "arxiv"
     pdf_dir: str = ""
-    max_thread_num: int = 1
-    max_conv_turn: int = 1
-    max_perspective: int = 1
-    search_top_k: int = 2
-    retrieve_top_k: int = 3
+    max_thread_num: int = 3
+    max_conv_turn: int = 2
+    max_perspective: int = 3
+    search_top_k: int = 5
+    retrieve_top_k: int = 5
     do_research: bool = True
     do_generate_outline: bool = True
     do_generate_article: bool = True
@@ -68,11 +73,11 @@ def build_pipeline_config_from_task_state(state):
         llm_model=options.get("llm_model", "flash"),
         retriever=state.get("retriever", "arxiv"),
         pdf_dir=options.get("pdf_dir") or "",
-        max_thread_num=int(options.get("max_thread_num", 1)),
-        max_conv_turn=int(options.get("max_conv_turn", 1)),
-        max_perspective=int(options.get("max_perspective", 1)),
-        search_top_k=int(options.get("search_top_k", 2)),
-        retrieve_top_k=int(options.get("retrieve_top_k", 3)),
+        max_thread_num=int(options.get("max_thread_num", 3)),
+        max_conv_turn=int(options.get("max_conv_turn", 2)),
+        max_perspective=int(options.get("max_perspective", 3)),
+        search_top_k=int(options.get("search_top_k", 5)),
+        retrieve_top_k=int(options.get("retrieve_top_k", 5)),
         do_research=bool(options.get("do_research", True)),
         do_generate_outline=bool(options.get("do_generate_outline", True)),
         do_generate_article=bool(options.get("do_generate_article", True)),
@@ -166,6 +171,11 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
             remove_duplicate=config.remove_duplicate,
             callback_handler=callback_handler,
         )
+        ensure_research_sources(
+            article_dir,
+            retriever=config.retriever,
+            enabled=config.do_research,
+        )
         trace.start_stage(
             "evaluate",
             "汇总运行日志并检查文章与引用完整性",
@@ -173,6 +183,13 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
         )
         runner.post_run()
         runner.summary()
+        reference_result = materialize_article_references(article_dir)
+        trace.emit(
+            "artifact_ready",
+            stage="evaluate",
+            artifact_name="references",
+            reference_count=reference_result["reference_count"],
+        )
         _write_pipeline_scorecard(config)
         scorecard_path = article_dir / "scorecard.json"
         scorecard = (
@@ -232,6 +249,23 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
             },
         )
         raise
+
+
+def ensure_research_sources(article_dir, retriever, enabled=True):
+    """Reject a zero-source research run instead of publishing a hollow report."""
+    if not enabled or retriever != "arxiv":
+        return 0
+    registry_path = Path(article_dir) / "url_to_info.json"
+    try:
+        payload = json.loads(registry_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    source_count = len(payload.get("url_to_info") or {})
+    if source_count == 0:
+        raise EmptyRetrievalError(
+            "empty_retrieval: arXiv 未返回可用论文，请调整主题或领域约束后重试。"
+        )
+    return source_count
 
 
 def _instrument_runner_stages(runner, trace):
