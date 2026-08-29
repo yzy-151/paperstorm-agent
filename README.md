@@ -1,8 +1,15 @@
 # PaperStorm Agent
 
-PaperStorm Agent v7.1 是基于 Stanford STORM 扩展的论文调研与知识问答平台。系统面向科学论文、
+PaperStorm Agent v7.2 是基于 Stanford STORM 扩展的论文调研与知识问答平台。系统面向科学论文、
 本地 PDF、Zotero 文献库和企业内部文档，提供多 Agent 深度调研、证据约束问答、混合检索、
 跨会话记忆、上下文治理、运行时恢复、公开 Benchmark 与 Langfuse 可观测性。
+
+### v7.2 发布摘要
+
+- 增加 arXiv 领域查询编译与结果门控，消除 `Muon optimizer` 与粒子物理 muon 的语义歧义。
+- 统一文章、PDF 和问答引用契约，输出论文原始标题、作者及可点击原文链接。
+- 修复真实 arXiv URL 字典索引、DeepSeek 思考预算吞占可见输出、重试残留错误状态等运行时问题。
+- 提升真实调研默认深度，并在零检索结果时显式失败，避免生成缺少论文证据的空报告。
 
 ![PaperStorm 论文调研工作台](docs/screenshots/dashboard-research-v64.png)
 

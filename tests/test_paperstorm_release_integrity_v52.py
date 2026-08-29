@@ -52,7 +52,7 @@ class PaperStormReleaseIntegrityV52Test(unittest.TestCase):
         )
         setup_version = re.search(r'version="([^"]+)"', setup_text).group(1)
         init_version = re.search(r'__version__ = "([^"]+)"', init_text).group(1)
-        self.assertEqual(setup_version, "7.1.0")
+        self.assertEqual(setup_version, "7.2.0")
         self.assertEqual(init_version, setup_version)
         self.assertIn("PaperStorm Agent", setup_text)
 
@@ -60,7 +60,7 @@ class PaperStormReleaseIntegrityV52Test(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         for marker in (
-            "v7.1",
+            "v7.2",
             "run_langfuse_badcase_demo.py",
             "LANGFUSE_BADCASE_GUIDE.md",
             "tags",

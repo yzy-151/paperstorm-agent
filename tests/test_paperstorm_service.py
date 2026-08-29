@@ -137,7 +137,7 @@ class PaperStormServiceTest(unittest.TestCase):
 
         bundle = service.get_dashboard_bundle(task["task_id"])
 
-        self.assertEqual(bundle["project"]["version"], "v7.1")
+        self.assertEqual(bundle["project"]["version"], "v7.2")
         self.assertEqual(bundle["tasks"][0]["task_id"], task["task_id"])
         self.assertIn("passive intermodulation", bundle["article"]["content"])
         self.assertTrue(bundle["trace"]["events"])
@@ -220,7 +220,7 @@ class PaperStormServiceTest(unittest.TestCase):
             app = create_app(service_root=Path(temp_dir))
             client = TestClient(app)
 
-            self.assertEqual(app.version, "7.1.0")
+            self.assertEqual(app.version, "7.2.0")
 
             home = client.get("/")
             self.assertEqual(home.status_code, 200)
