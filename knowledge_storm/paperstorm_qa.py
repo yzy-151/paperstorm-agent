@@ -104,6 +104,7 @@ class PaperStormKnowledgeBase:
         )
         answer = _compose_answer(question, evidence, memory_context)
         validation_metadata = None
+        generation_metadata = None
         citations = [
             _citation_from_doc(index, doc)
             for index, doc in enumerate(evidence, start=1)
@@ -111,9 +112,11 @@ class PaperStormKnowledgeBase:
         if answer_generator is not None:
             if answer_validator is None:
                 try:
-                    generated = str(
-                        answer_generator(_kb_answer_prompt(question, evidence)) or ""
-                    ).strip()
+                    raw_generated = answer_generator(
+                        _kb_answer_prompt(question, evidence)
+                    )
+                    generated = _answer_text(raw_generated)
+                    generation_metadata = _answer_generation_metadata(raw_generated)
                     if generated:
                         answer = generated
                 except Exception:
@@ -157,6 +160,8 @@ class PaperStormKnowledgeBase:
                 "unsupported_claim_count"
             ]
             retrieval_metadata["answer_validation"] = validation_metadata
+        if generation_metadata:
+            payload["generation"] = generation_metadata
         return payload
 
     def search(self, query: str, top_k: int = 3, **retrieval_options):
@@ -364,6 +369,31 @@ def _validated_citations(claims):
             citations.append(serialized)
             seen.add(citation.citation_id)
     return citations
+
+
+def _answer_text(value):
+    if isinstance(value, dict):
+        return str(value.get("content") or value.get("answer") or "").strip()
+    content = getattr(value, "content", None)
+    if content is not None:
+        return str(content).strip()
+    return str(value or "").strip()
+
+
+def _answer_generation_metadata(value):
+    if not isinstance(value, dict):
+        return None
+    allowed = (
+        "finish_reason",
+        "usage",
+        "cost_usd",
+        "latency_ms",
+        "output_budget",
+        "segments",
+        "truncated",
+        "error",
+    )
+    return {key: value.get(key) for key in allowed if key in value}
 
 
 def _answer_validation_metadata(validation):

@@ -89,6 +89,71 @@ class PaperStormReferencesTest(unittest.TestCase):
         self.assertIn("Keller Jordan", answer)
         self.assertIn("https://arxiv.org/abs/2502.16982v2", answer)
 
+    def test_answer_reference_numbers_follow_evidence_ids_not_article_ids(self):
+        from knowledge_storm.paperstorm_references import append_answer_references
+
+        answer = append_answer_references(
+            "该结论由第 4 条证据支持。[4]",
+            [
+                {
+                    "id": 4,
+                    "title": "文章段落",
+                    "url": "",
+                    "original_sources": [
+                        {
+                            "citation_index": 1,
+                            "title": "Original Muon Paper",
+                            "authors": ["A. Researcher"],
+                            "url": "https://arxiv.org/abs/1234.5678",
+                        }
+                    ],
+                }
+            ],
+        )
+
+        self.assertIn("[4] **Original Muon Paper**", answer)
+        self.assertNotIn("[1] **Original Muon Paper**", answer)
+
+    def test_existing_model_reference_section_does_not_hide_canonical_links(self):
+        from knowledge_storm.paperstorm_references import (
+            materialize_article_references,
+        )
+
+        temp_dir, run_dir = self.make_run_dir()
+        self.addCleanup(temp_dir.cleanup)
+        article_path = run_dir / "storm_gen_article_polished.txt"
+        article_path.write_text(
+            "# Muon\n\n正文。[1]\n\n# 参考文献\n\n[1] 模型生成的来源描述。",
+            encoding="utf-8",
+        )
+
+        materialize_article_references(run_dir)
+        content = article_path.read_text(encoding="utf-8")
+
+        self.assertIn("## 原始文献与链接", content)
+        self.assertIn("Muon is Scalable for LLM Training", content)
+        self.assertIn("https://arxiv.org/abs/2502.16982v2", content)
+
+    def test_materialization_removes_polish_prompt_wrapper(self):
+        from knowledge_storm.paperstorm_references import (
+            materialize_article_references,
+        )
+
+        temp_dir, run_dir = self.make_run_dir()
+        self.addCleanup(temp_dir.cleanup)
+        article_path = run_dir / "storm_gen_article_polished.txt"
+        article_path.write_text(
+            "# summary\n\n以下是该 Wikipedia 页面的导言（lead section）：\n\n正文。[1]",
+            encoding="utf-8",
+        )
+
+        materialize_article_references(run_dir)
+        content = article_path.read_text(encoding="utf-8")
+
+        self.assertTrue(content.startswith("## 摘要"))
+        self.assertNotIn("Wikipedia 页面", content)
+        self.assertNotIn("lead section", content)
+
 
 if __name__ == "__main__":
     unittest.main()

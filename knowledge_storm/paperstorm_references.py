@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 REFERENCE_HEADING_PATTERN = re.compile(
-    r"^#{1,3}\s*(参考文献|references)\s*$", flags=re.I | re.M
+    r"^#{1,3}\s*(参考文献|references|原始文献与链接)\s*$", flags=re.I | re.M
 )
 
 
@@ -104,9 +104,16 @@ def render_reference_markdown(references, heading="参考文献"):
 
 
 def append_reference_section(text, references, heading="参考文献"):
-    value = str(text or "")
-    if REFERENCE_HEADING_PATTERN.search(value):
+    value = normalize_generated_article(text)
+    canonical_urls = [
+        str(reference.get("url") or "").strip()
+        for reference in references or []
+        if str(reference.get("url") or "").strip()
+    ]
+    if canonical_urls and all(url in value for url in canonical_urls):
         return value
+    if REFERENCE_HEADING_PATTERN.search(value):
+        heading = "原始文献与链接"
     rendered = render_reference_markdown(references, heading=heading)
     if not rendered:
         return value
@@ -134,7 +141,48 @@ def materialize_article_references(run_dir):
 
 
 def append_answer_references(answer, citations):
-    return append_reference_section(answer, normalize_citations(citations))
+    value = normalize_generated_article(answer)
+    if REFERENCE_HEADING_PATTERN.search(value):
+        return value
+    groups = []
+    for fallback_id, citation in enumerate(citations or [], start=1):
+        citation = citation or {}
+        evidence_id = _safe_int(citation.get("id"), fallback_id)
+        sources = normalize_citations([citation])
+        if sources:
+            groups.append((evidence_id, sources))
+    if not groups:
+        return value
+    lines = []
+    for evidence_id, sources in groups:
+        rendered_sources = []
+        for source in sources:
+            authors = _normalize_authors(source.get("authors"))
+            author_text = ", ".join(authors) if authors else "作者信息未提供"
+            published = str(source.get("published") or "").strip()
+            date_suffix = " · {0}".format(published[:10]) if published else ""
+            rendered_sources.append(
+                "**{0}** — {1}{2}. [原文]({3})".format(
+                    source["title"], author_text, date_suffix, source["url"]
+                )
+            )
+        lines.append(
+            "[{0}] {1}".format(evidence_id, "；\n    ".join(rendered_sources))
+        )
+    return value.rstrip() + "\n\n## 参考文献\n\n" + "\n\n".join(lines) + "\n"
+
+
+def normalize_generated_article(text):
+    """Remove common model-facing wrapper text from a polished article."""
+    value = str(text or "").lstrip()
+    value = re.sub(r"\A#\s*summary\s*\n+", "## 摘要\n\n", value, flags=re.I)
+    value = re.sub(
+        r"\A(## 摘要\s*\n+)以下是[^\n]*(?:导言|lead section)[^\n]*：\s*\n+",
+        r"\1",
+        value,
+        flags=re.I,
+    )
+    return value
 
 
 def _normalize_authors(authors):

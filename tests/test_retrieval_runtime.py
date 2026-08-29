@@ -7,6 +7,45 @@ from unittest import mock
 
 
 class PaperStormRetrievalRuntimeTest(unittest.TestCase):
+    def test_runtime_accepts_real_storm_url_keyed_search_results(self):
+        from knowledge_storm.paperstorm_qa import PaperStormKnowledgeBase
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            (run_dir / "storm_gen_article.txt").write_text(
+                "Muon uses orthogonalized momentum.", encoding="utf-8"
+            )
+            (run_dir / "raw_search_results.json").write_text(
+                json.dumps(
+                    {
+                        "https://arxiv.org/abs/2502.16982": {
+                            "title": "Muon is Scalable for LLM Training",
+                            "description": "Muon optimizer for LLM training.",
+                            "snippets": ["Orthogonalized momentum update."],
+                            "meta": {
+                                "authors": ["Keller Jordan"],
+                                "query": "Muon optimizer",
+                            },
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            kb = PaperStormKnowledgeBase.from_run_dir(run_dir)
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "PAPERSTORM_RETRIEVAL_EMBEDDING": "hash",
+                    "PAPERSTORM_RETRIEVAL_MODE": "hybrid",
+                },
+            ):
+                evidence = kb.search("Muon optimizer", top_k=3)
+
+        paper = next(item for item in evidence if item["url"])
+        self.assertEqual(paper["title"], "Muon is Scalable for LLM Training")
+        self.assertEqual(paper["url"], "https://arxiv.org/abs/2502.16982")
+        self.assertEqual(paper["metadata"]["authors"], ["Keller Jordan"])
+
     def test_auto_embedding_resolves_to_real_provider(self):
         import builtins
 

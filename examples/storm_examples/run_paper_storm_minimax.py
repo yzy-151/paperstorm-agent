@@ -146,6 +146,10 @@ def build_lm_configs(args):
         "temperature": 1.0,
         "top_p": 0.9,
     }
+    if args.llm_provider == "deepseek":
+        # DeepSeek V4 defaults to high-effort thinking. STORM's structured
+        # query/outline/article stages need the token budget for visible output.
+        llm_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     model_name = settings["model"]
 
     lm_configs = STORMWikiLMConfigs()

@@ -114,6 +114,8 @@ class PaperStormTaskService:
 
     def run_task(self, task_id: str):
         state = self._read_state(task_id)
+        state.pop("error", None)
+        state.pop("finished_at", None)
         state["status"] = "running"
         state["started_at"] = _now()
         state["updated_at"] = _now()

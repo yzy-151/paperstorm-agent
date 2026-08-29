@@ -272,6 +272,20 @@ class PaperStormRetrieversTest(unittest.TestCase):
         self.assertEqual(settings["api_env"], "DEEPSEEK_API_KEY")
         self.assertEqual(settings["api_base"], "https://api.deepseek.com")
 
+    def test_deepseek_storm_pipeline_disables_default_thinking_mode(self):
+        from unittest import mock
+
+        from examples.storm_examples.run_paper_storm_minimax import build_lm_configs
+
+        args = SimpleNamespace(llm_provider="deepseek", llm_model="flash")
+        with mock.patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
+            configs = build_lm_configs(args)
+
+        self.assertEqual(
+            configs.outline_gen_lm.kwargs["extra_body"],
+            {"thinking": {"type": "disabled"}},
+        )
+
     def test_paper_storm_runner_builds_minimax_settings(self):
         from examples.storm_examples.run_paper_storm_minimax import (
             build_lm_settings,

@@ -817,9 +817,8 @@ class HybridPaperIndex:
                     "metadata": passage,
                 }
             )
-        for index, result in enumerate(
-            _read_json(run_dir / "raw_search_results.json", []), start=1
-        ):
+        raw_results = _read_json(run_dir / "raw_search_results.json", [])
+        for index, result in enumerate(_iter_raw_search_results(raw_results), start=1):
             result_meta = result.get("meta") or {}
             snippets = result.get("snippets") or []
             text = "\n".join(
@@ -840,7 +839,7 @@ class HybridPaperIndex:
                         "url": result.get("url") or "",
                         "metadata": {
                             "result_index": index,
-                            "query": result.get("query", ""),
+                            "query": result_meta.get("query") or result.get("query", ""),
                             "authors": result_meta.get("authors") or result.get("authors") or [],
                             "published": result_meta.get("published") or result.get("published") or "",
                             "original_title": result.get("title") or "",
@@ -1288,6 +1287,26 @@ class HybridPaperIndex:
         return "{0}\n{1}".format(
             item.get("title", ""), item.get("retrieval_content", "")
         )
+
+
+def _iter_raw_search_results(payload):
+    """Yield papers from both legacy lists and STORM's URL-keyed registry."""
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict):
+                yield item
+        return
+    if not isinstance(payload, dict):
+        return
+    for key, value in payload.items():
+        if isinstance(value, dict):
+            item = dict(value)
+            item.setdefault("url", str(key))
+            yield item
+        elif isinstance(value, list):
+            for nested in value:
+                if isinstance(nested, dict):
+                    yield nested
 
 
 def _cosine(left, right):

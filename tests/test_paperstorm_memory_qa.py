@@ -177,6 +177,32 @@ class PaperStormMemoryQATest(unittest.TestCase):
         fallback = kb.answer_question("PIM 是什么？")
         self.assertTrue(fallback["answer"])
 
+    def test_kb_extracts_content_and_usage_from_structured_llm_response(self):
+        from knowledge_storm.paperstorm_qa import PaperStormKnowledgeBase
+
+        run_dir = self.make_run_dir(
+            {
+                "storm_gen_article.txt": "Muon optimizer uses orthogonalized momentum.",
+                "raw_search_results.json": [],
+            }
+        )
+        kb = PaperStormKnowledgeBase.from_run_dir(run_dir)
+
+        result = kb.answer_question(
+            "Muon 是什么？",
+            answer_generator=lambda _prompt: {
+                "content": "Muon 使用正交化动量。[1]",
+                "usage": {"total_tokens": 321},
+                "latency_ms": 456.7,
+                "cost_usd": 0.001,
+            },
+        )
+
+        self.assertTrue(result["answer"].startswith("Muon 使用正交化动量。[1]"))
+        self.assertNotIn("{'content'", result["answer"])
+        self.assertEqual(result["generation"]["usage"]["total_tokens"], 321)
+        self.assertEqual(result["generation"]["latency_ms"], 456.7)
+
     def test_kb_qa_tool_exposes_schema_and_runs(self):
         from knowledge_storm.paperstorm_tools import KnowledgeBaseQATool
 

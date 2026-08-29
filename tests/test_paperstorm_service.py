@@ -273,6 +273,8 @@ class PaperStormServiceTest(unittest.TestCase):
 
         self.assertEqual(pdf.status_code, 200)
         self.assertEqual(pdf.content, b"%PDF-test")
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(missing.status_code, 404)
 
     def test_fastapi_minimal_research_request_uses_balanced_profile(self):
         from fastapi.testclient import TestClient
@@ -292,8 +294,6 @@ class PaperStormServiceTest(unittest.TestCase):
         self.assertEqual(options["max_perspective"], 3)
         self.assertEqual(options["search_top_k"], 5)
         self.assertEqual(options["retrieve_top_k"], 5)
-        self.assertEqual(forbidden.status_code, 403)
-        self.assertEqual(missing.status_code, 404)
 
     def test_paperstorm_run_mode_uses_injected_pipeline_runner(self):
         calls = []
@@ -352,6 +352,30 @@ class PaperStormServiceTest(unittest.TestCase):
         self.assertEqual(failed["status"], "failed")
         self.assertIn("provider failed", failed["error"])
         self.assertNotIn("sk-secret-value", json.dumps(failed, ensure_ascii=False))
+
+    def test_retry_clears_stale_error_after_success(self):
+        calls = []
+
+        def runner(state):
+            calls.append(state["task_id"])
+            if len(calls) == 1:
+                raise RuntimeError("temporary provider failure")
+            output_dir = Path(state["output_dir"])
+            (output_dir / "storm_gen_article.txt").write_text(
+                "# Recovered\n\nMuon optimizer.", encoding="utf-8"
+            )
+
+        service = self.make_service_with_pipeline_runner(runner)
+        task = service.submit_research_task(
+            topic="Muon optimizer", run_mode="paperstorm"
+        )
+
+        failed = service.run_task(task["task_id"])
+        recovered = service.run_task(task["task_id"])
+
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(recovered["status"], "succeeded")
+        self.assertNotIn("error", recovered)
 
     def test_optional_pdf_is_registered_and_exposed_in_dashboard_bundle(self):
         class FakePdfRenderer:
