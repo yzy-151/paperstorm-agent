@@ -104,12 +104,31 @@ class ArxivRM(dspy.Retrieve):
 
         return re.sub(r"\s+", " ", normalized).strip()
 
+    @classmethod
+    def _compile_queries_for_arxiv(cls, query):
+        normalized = cls._normalize_query_for_arxiv(query)
+        if not normalized:
+            return []
+
+        lowered = normalized.lower()
+        compact = re.sub(r"\s+", "", lowered)
+        is_muon_optimizer = (
+            "muon优化器" in compact
+            or "muon optimizer" in lowered
+            or "orthogonalized momentum" in lowered
+            or "momentum orthogonalized" in lowered
+        )
+        if is_muon_optimizer:
+            return [
+                'all:"Muon optimizer" AND (all:"neural network" OR all:"LLM training")',
+                'all:"orthogonalized momentum" AND all:optimizer',
+                'all:"Newton-Schulz" AND all:optimizer',
+            ]
+        return [normalized]
+
     @staticmethod
     def _is_result_relevant_to_query(query, result):
         query = (query or "").lower()
-        if "passive intermodulation" not in query:
-            return True
-
         haystack = " ".join(
             [
                 result.get("title") or "",
@@ -117,6 +136,37 @@ class ArxivRM(dspy.Retrieve):
                 " ".join(result.get("snippets") or []),
             ]
         ).lower()
+        is_muon_optimizer_query = any(
+            marker in query
+            for marker in (
+                "muon optimizer",
+                "orthogonalized momentum",
+                "newton-schulz",
+            )
+        )
+        if is_muon_optimizer_query:
+            optimizer_terms = (
+                "optimizer",
+                "optimization",
+                "orthogonalized momentum",
+                "newton-schulz",
+                "neural network",
+                "llm training",
+            )
+            particle_terms = (
+                "particle physics",
+                "muon spectrometer",
+                "muon detector",
+                "muon anomalous magnetic moment",
+                "muon collider",
+                "muon decay",
+            )
+            return any(term in haystack for term in optimizer_terms) and not any(
+                term in haystack for term in particle_terms
+            )
+        if "passive intermodulation" not in query:
+            return True
+
         passive_terms = (
             "passive intermodulation",
             "intermodulation",
@@ -217,12 +267,11 @@ class ArxivRM(dspy.Retrieve):
             if isinstance(query_or_queries, str)
             else query_or_queries
         )
-        queries = [
-            self._normalize_query_for_arxiv(query)
-            for query in queries
-            if query and query.strip()
-        ]
-        queries = [query for query in queries if query]
+        compiled_queries = []
+        for query in queries:
+            if query and query.strip():
+                compiled_queries.extend(self._compile_queries_for_arxiv(query))
+        queries = list(dict.fromkeys(query for query in compiled_queries if query))
         self.usage += len(queries)
 
         collected_results = []

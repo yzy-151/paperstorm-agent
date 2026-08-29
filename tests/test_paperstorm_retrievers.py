@@ -61,6 +61,40 @@ ARXIV_PIM_AMBIGUOUS_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+ARXIV_MUON_AMBIGUOUS_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>https://arxiv.org/abs/2502.16982v2</id>
+    <updated>2025-03-01T00:00:00Z</updated>
+    <published>2025-02-24T00:00:00Z</published>
+    <title>Muon is Scalable for LLM Training</title>
+    <summary>
+      We study the Muon optimizer, an orthogonalized momentum method based on
+      Newton-Schulz iterations, for training large neural networks.
+    </summary>
+    <author><name>Optimizer Researcher</name></author>
+    <arxiv:primary_category term="cs.LG" />
+    <category term="cs.LG" />
+    <link href="https://arxiv.org/abs/2502.16982v2" rel="alternate" type="text/html" />
+  </entry>
+  <entry>
+    <id>https://arxiv.org/abs/hep-ex/0602035v1</id>
+    <updated>2006-02-20T00:00:00Z</updated>
+    <published>2006-02-20T00:00:00Z</published>
+    <title>Final Report of the Muon E821 Anomalous Magnetic Moment Measurement</title>
+    <summary>
+      We report a particle physics measurement of the muon anomalous magnetic moment.
+    </summary>
+    <author><name>Muon Collaboration</name></author>
+    <arxiv:primary_category term="hep-ex" />
+    <category term="hep-ex" />
+    <link href="https://arxiv.org/abs/hep-ex/0602035v1" rel="alternate" type="text/html" />
+  </entry>
+</feed>
+"""
+
+
 class PaperStormRetrieversTest(unittest.TestCase):
     def test_arxiv_rm_maps_atom_entries_to_storm_results(self):
         rm = ArxivRM(k=1)
@@ -113,6 +147,41 @@ class PaperStormRetrieversTest(unittest.TestCase):
 
         self.assertEqual(results, [])
         self.assertEqual(calls, [])
+
+    def test_arxiv_rm_compiles_muon_optimizer_into_constrained_queries(self):
+        queries = ArxivRM._compile_queries_for_arxiv(
+            "Muon optimizer neural network training"
+        )
+
+        self.assertGreaterEqual(len(queries), 2)
+        self.assertIn('all:"Muon optimizer"', queries[0])
+        self.assertIn("AND", queries[0])
+        self.assertTrue(
+            any("Newton-Schulz" in query or "orthogonalized momentum" in query for query in queries)
+        )
+
+    def test_arxiv_rm_translates_chinese_muon_topic_and_filters_particle_physics(self):
+        rm = ArxivRM(k=3)
+        calls = []
+
+        def request(query):
+            calls.append(query)
+            if len(calls) == 1:
+                return '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
+            return ARXIV_MUON_AMBIGUOUS_SAMPLE
+
+        rm.request = request
+        results = rm.forward("muon优化器")
+
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertTrue(
+            all(
+                "Muon" in query or "momentum" in query or "Newton-Schulz" in query
+                for query in calls
+            )
+        )
+        self.assertEqual([item["title"] for item in results], ["Muon is Scalable for LLM Training"])
+        self.assertEqual(results[0]["meta"]["authors"], ["Optimizer Researcher"])
 
     def test_local_pdf_rm_retrieves_relevant_chunks_from_loaded_documents(self):
         rm = LocalPDFRM(
