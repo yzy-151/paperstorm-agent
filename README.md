@@ -6,7 +6,6 @@ PaperStorm Agent v7.2 是基于 Stanford STORM 扩展的论文调研与知识问
 
 ### v7.2 发布摘要
 
-- 增加 arXiv 领域查询编译与结果门控，消除 `Muon optimizer` 与粒子物理 muon 的语义歧义。
 - 统一文章、PDF 和问答引用契约，输出论文原始标题、作者及可点击原文链接。
 - 修复真实 arXiv URL 字典索引、DeepSeek 思考预算吞占可见输出、重试残留错误状态等运行时问题。
 - 提升真实调研默认深度，并在零检索结果时显式失败，避免生成缺少论文证据的空报告。
@@ -29,12 +28,6 @@ PaperStorm Agent v7.2 是基于 Stanford STORM 扩展的论文调研与知识问
 | Observability | 本地 JSONL、SSE、Langfuse Trace/Span/Score | 敏感字段脱敏，远程观测失败不阻断业务链路 |
 
 ## 系统架构
-
-### 业务流程
-
-![PaperStorm 业务架构](docs/architecture/paperstorm-executive-overview.svg)
-
-[Draw.io 可编辑源文件](docs/architecture/paperstorm-executive-overview.drawio)
 
 ![PaperStorm 完整系统架构](docs/architecture/paperstorm-system-architecture.png)
 

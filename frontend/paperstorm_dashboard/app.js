@@ -54,39 +54,38 @@ const MILESTONE_PROGRESS = Object.freeze([
 let selectedMilestoneId = "p1234";
 
 const pipelineNodes = {
-  request: {title: "任务编排", description: "规范化主题、运行模式、检索源和领域约束。", input: "用户主题、语言、检索器", output: "Research Task + 运行配置"},
-  persona: {title: "Persona Generator", description: "从不同知识视角生成调研角色，扩大问题覆盖面。", input: "主题与背景资料", output: "多视角研究角色"},
-  dialogue: {title: "Conv Simulator", description: "WikiWriter 与 Topic Expert 迭代提问、检索和反思。", input: "角色、对话状态", output: "Conversation Log + 信息表"},
-  query: {title: "查询规划", description: "生成独立检索式，并进行领域消歧和空查询过滤。", input: "问题、角色、历史", output: "规范化查询集合"},
-  retrieval: {title: "论文检索", description: "从 arXiv、本地 PDF 或 Zotero 获取候选论文与段落。", input: "查询集合", output: "原始检索结果"},
-  evidence: {title: "证据治理", description: "对文献 Chunk 执行 BM25 + Dense 融合、RRF、Rerank 与引用映射。", input: "论文与段落", output: "可追溯 Evidence"},
-  outline: {title: "大纲生成", description: "先生成草案，再依据调研信息细化章节结构。", input: "信息表、证据", output: "Refined Outline"},
-  writer: {title: "章节写作", description: "各章节独立检索相关证据并并发生成带引用内容。", input: "大纲、Evidence Index", output: "Draft Article"},
-  polish: {title: "文章润色", description: "去重、统一结构和表达，同时保留引用标记。", input: "Draft Article", output: "Polished Article"},
-  evaluate: {title: "质量评估", description: "检查领域一致性、证据覆盖、引用与运行完整性。", input: "文章、Trace、Evidence", output: "Scorecard"},
-  deliver: {title: "交付产物", description: "汇总 Markdown、Trace、检索结果和评估报告。", input: "全部流水线产物", output: "Article + Trace + Score"},
+  request: {title: "任务配置", description: "规范化主题、论文源、语言和运行参数。", input: "用户主题、语言、arXiv 或本地 PDF", output: "Research Task + 运行配置"},
+  research: {title: "Multi-Agent 知识策展", description: "Persona Generator 生成视角；Conv Simulator 驱动 WikiWriter 与 TopicExpert 循环提问，并通过 arXiv API 或 LocalPDFRM 召回资料。", input: "Research Task", output: "conversation_log.json + StormInformationTable"},
+  outline: {title: "两阶段大纲", description: "先按主题生成直接大纲，再使用研究对话细化章节结构。", input: "Conversation Log + 信息表", output: "direct_gen_outline.txt + storm_gen_outline.txt"},
+  writer: {title: "语义筛选与章节写作", description: "原 STORM 使用 MiniLM 余弦相似度为各章节选取 Top-K snippet，再并发生成带引用章节。", input: "StormInformationTable + Refined Outline", output: "storm_gen_article.txt + url_to_info.json"},
+  polish: {title: "全文润色", description: "整篇去重、生成摘要并统一文章结构与表达。", input: "storm_gen_article.txt", output: "storm_gen_article_polished.txt"},
+  evaluate: {title: "引用与质量检查", description: "补齐论文原始标题、作者与链接，并检查领域一致性、引用和完整性。", input: "Polished Article + url_to_info.json", output: "Canonical References + scorecard.json"},
+  deliver: {title: "交付产物", description: "发布 Markdown、Trace、运行配置与可打印 PDF。", input: "Polished Article + Scorecard", output: "Article + Trace + PDF"},
 };
 
+const pipelineStageAliases = Object.freeze({
+  persona: "research",
+  dialogue: "research",
+  query: "research",
+  retrieval: "research",
+  evidence: "research",
+});
+
 const pipelineExecutionEdges = [
-  ["request", "persona"], ["persona", "dialogue"], ["dialogue", "query"],
-  ["query", "retrieval"], ["retrieval", "evidence"], ["evidence", "outline"],
-  ["outline", "writer"], ["writer", "polish"], ["polish", "evaluate"],
+  ["request", "research"], ["research", "outline"], ["outline", "writer"],
+  ["writer", "polish"], ["polish", "evaluate"],
   ["evaluate", "deliver"],
 ];
 
 const pipelineArtifactEdges = [
-  {id: "task-persona", from: "request", to: "persona", port: "research_task", label: "research_task.json"},
-  {id: "task-query", from: "request", to: "query", port: "research_task", label: "research_task.json"},
-  {id: "personas-dialogue", from: "persona", to: "dialogue", port: "personas", label: "personas.json"},
-  {id: "conversation-outline", from: "dialogue", to: "outline", sourcePort: "conversation", targetPort: "conversation", label: "conversation_log.json"},
-  {id: "queries-retrieval", from: "query", to: "retrieval", port: "queries", label: "queries.json"},
-  {id: "results-evidence", from: "retrieval", to: "evidence", port: "raw_results", label: "raw_search_results.json"},
-  {id: "evidence-outline", from: "evidence", to: "outline", port: "evidence", label: "evidence_index.json"},
-  {id: "evidence-writer", from: "evidence", to: "writer", sourcePort: "evidence", targetPort: "evidence", label: "evidence_index.json"},
+  {id: "task-research", from: "request", to: "research", port: "research_task", label: "research_task.json"},
+  {id: "conversation-outline", from: "research", to: "outline", port: "conversation", label: "conversation_log.json"},
+  {id: "information-writer", from: "research", to: "writer", port: "information", label: "StormInformationTable"},
   {id: "outline-writer", from: "outline", to: "writer", port: "outline", label: "storm_gen_outline.txt"},
   {id: "draft-polish", from: "writer", to: "polish", port: "draft", label: "storm_gen_article.txt"},
-  {id: "article-evaluate", from: "polish", to: "evaluate", port: "article", label: "article_polished.txt"},
-  {id: "article-deliver", from: "polish", to: "deliver", sourcePort: "article", targetPort: "article", label: "article_polished.txt"},
+  {id: "references-evaluate", from: "writer", to: "evaluate", port: "references", label: "url_to_info.json"},
+  {id: "article-evaluate", from: "polish", to: "evaluate", port: "article", label: "storm_gen_article_polished.txt"},
+  {id: "article-deliver", from: "polish", to: "deliver", sourcePort: "article", targetPort: "article", label: "storm_gen_article_polished.txt"},
   {id: "score-deliver", from: "evaluate", to: "deliver", port: "scorecard", label: "scorecard.json"},
 ];
 
@@ -501,26 +500,26 @@ function openResearchEventStream(taskId) {
 
 function applyPipelineTrace(trace) {
   const eventName = String(trace.event || trace.node || "").toLowerCase();
-  const stage = String(trace.stage || "").toLowerCase();
+  const rawStage = String(trace.stage || "").toLowerCase();
+  const stage = pipelineStageAliases[rawStage] || rawStage;
   const path = String(trace.path || "").toLowerCase();
   const detail = trace.tool_name || trace.tool || trace.retriever || trace.path || eventName;
   const telemetry = formatPipelineTelemetry(trace);
   const invocationId = String(trace.invocation_id || "");
+  const activityKey = `${rawStage || stage}:${invocationId || "stage"}`;
   if (eventName.startsWith("stage_")) state.hasStageTrace = true;
   if (eventName === "stage_start" && pipelineNodes[stage]) {
     markArtifactInputsActive(stage);
-    if (invocationId) {
-      const active = state.activeInvocations[stage] || new Set();
-      active.add(invocationId);
-      state.activeInvocations[stage] = active;
-    }
+    const active = state.activeInvocations[stage] || new Set();
+    active.add(activityKey);
+    state.activeInvocations[stage] = active;
     setPipelineNodeStatus(stage, "active", trace.operation || detail, telemetry);
     if (!state.runFinished) $("#research-current-activity").textContent = trace.operation || pipelineNodes[stage].title;
   } else if (eventName === "stage_progress" && pipelineNodes[stage]) {
     setPipelineNodeStatus(stage, "active", trace.operation || detail, telemetry);
     if (!state.runFinished) $("#research-current-activity").textContent = trace.operation || pipelineNodes[stage].title;
   } else if (eventName === "stage_end" && pipelineNodes[stage]) {
-    if (invocationId) state.activeInvocations[stage]?.delete(invocationId);
+    state.activeInvocations[stage]?.delete(activityKey);
     const stillActive = (state.activeInvocations[stage]?.size || 0) > 0;
     setPipelineNodeStatus(
       stage,
@@ -531,7 +530,7 @@ function applyPipelineTrace(trace) {
     if (!stillActive) completeArtifactInputs(stage);
     if (!stillActive) markArtifactsReady(stage, trace);
   } else if (eventName === "stage_error" && pipelineNodes[stage]) {
-    if (invocationId) state.activeInvocations[stage]?.delete(invocationId);
+    state.activeInvocations[stage]?.delete(activityKey);
     setPipelineNodeStatus(stage, "failed", trace.operation || trace.error_message || "阶段失败", telemetry);
     markDownstreamSkipped(stage);
     if (!state.runFinished) $("#research-current-activity").textContent = trace.error_message || "阶段执行失败";
@@ -543,13 +542,13 @@ function applyPipelineTrace(trace) {
   } else if (eventName === "run_start") {
     setPipelineNodeStatus("request", "active", "运行配置已冻结，正在初始化", telemetry);
   } else if (!state.hasStageTrace && (eventName.includes("retrieval_start") || eventName === "tool_start")) {
-    if (!state.pipelineStatus.retrieval || state.pipelineStatus.retrieval.status === "waiting") {
-      setPipelineNodeStatus("retrieval", "active", detail, telemetry);
+    if (!state.pipelineStatus.research || state.pipelineStatus.research.status === "waiting") {
+      setPipelineNodeStatus("research", "active", detail, telemetry);
     }
   } else if (!state.hasStageTrace && (eventName.includes("retrieval_end") || eventName === "tool_end")) {
-    setPipelineNodeStatus("retrieval", "complete", detail, telemetry);
+    setPipelineNodeStatus("research", "complete", detail, telemetry);
   } else if (!state.hasStageTrace && eventName === "artifact_written" && path.includes("outline")) {
-    setPipelineNodeStatus("evidence", "complete", "证据索引已建立");
+    setPipelineNodeStatus("research", "complete", "研究对话与信息表已建立");
     setPipelineNodeStatus("outline", "complete", detail, telemetry);
     setPipelineNodeStatus("writer", "active", "按章节生成内容");
   } else if (!state.hasStageTrace && eventName === "artifact_written" && path.includes("article_polished")) {
@@ -577,7 +576,7 @@ function applyPipelineTrace(trace) {
 }
 
 function markDownstreamSkipped(failedStage) {
-  const order = ["request", "persona", "dialogue", "query", "retrieval", "evidence", "outline", "writer", "polish", "evaluate", "deliver"];
+  const order = ["request", "research", "outline", "writer", "polish", "evaluate", "deliver"];
   const failedIndex = order.indexOf(failedStage);
   order.slice(failedIndex + 1).forEach((nodeId) => {
     if ((state.pipelineStatus[nodeId]?.status || "waiting") === "waiting") {
@@ -1261,6 +1260,12 @@ $("#start-research-demo").addEventListener("click", () => runResearchWorkflow(tr
 $("#start-research-workflow").addEventListener("click", () => runResearchWorkflow(false));
 $("#create-chat").addEventListener("click", createChat);
 $("#chat-form").addEventListener("submit", sendChat);
+$("#chat-input").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    $("#chat-form").requestSubmit();
+  }
+});
 $("#refresh-chat-sessions").addEventListener("click", loadChatSessions);
 $("#regenerate-chat").addEventListener("click", regenerateChat);
 $("#stop-chat").addEventListener("click", stopChat);

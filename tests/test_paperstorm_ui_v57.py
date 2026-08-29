@@ -33,7 +33,7 @@ class PaperStormUIV57Test(unittest.TestCase):
             "dashboard-developer-v64.png",
             "paperstorm-research-flow-v65.gif",
             "paperstorm-chat-flow-v65.gif",
-            "paperstorm-executive-overview.svg",
+            "paperstorm-agent-system-flow.svg",
             "paperstorm-async-runtime-sequence.svg",
             "benchmark-icon-retrieval.svg",
             "benchmark-icon-memory.svg",

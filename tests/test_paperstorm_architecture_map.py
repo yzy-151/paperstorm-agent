@@ -178,11 +178,14 @@ class ArchitectureMapTests(unittest.TestCase):
         for label in ("Async Queue", "Langfuse", "PIM Domain Pilot"):
             self.assertIn(label, executive)
         for label in (
-            "意图路由",
-            "Planner Agent",
+            "动作路由",
+            "统一 Hybrid RAG",
+            "arXiv API / Local PDF",
+            "StormInformationTable",
+            "MiniLM 语义 Top-K",
             "WikiWriter",
             "TopicExpert",
-            "RAG 算法",
+            "问答 / 企业知识库 RAG",
             "Memory 算法",
             "Context 工程",
             "PIM Domain Pilot",
@@ -190,20 +193,21 @@ class ArchitectureMapTests(unittest.TestCase):
             "Async Queue",
         ):
             self.assertIn(label, detailed)
+        self.assertNotIn("Retriever Agent", detailed)
+        self.assertNotIn("Critic Agent", detailed)
 
-    def test_readme_presents_both_diagrams_and_editable_sources(self):
+    def test_readme_presents_current_diagrams_and_editable_sources(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         for filename in (
-            "paperstorm-executive-overview.svg",
             "paperstorm-agent-system-flow.svg",
             "paperstorm-async-runtime-sequence.svg",
-            "paperstorm-executive-overview.drawio",
             "paperstorm-agent-system-flow.drawio",
             "paperstorm-async-runtime-sequence.drawio",
         ):
             with self.subTest(filename=filename):
                 self.assertIn(f"docs/architecture/{filename}", readme)
+        self.assertNotIn("paperstorm-executive-overview", readme)
 
 
 if __name__ == "__main__":

@@ -35,15 +35,19 @@
   <rect x="20" y="18" width="2160" height="70" fill="#172033" stroke="#172033" />
   <rect x="20" y="18" width="10" height="70" fill="#0F9D8A" />
   <text x="48" y="49" class="header" font-size="28">PaperStorm Agent 系统流程与关键算法</text>
-  <text x="48" y="73" class="subtitle" font-size="13">外部资源 → Agent 路由与协作 → STORM 深度调研 → RAG / Memory / Context → 治理与公开评测</text>
+  <text x="48" y="73" class="subtitle" font-size="13">问答使用统一 Hybrid RAG；深度调研使用 STORM Multi-Agent、论文源召回与原生语义筛选</text>
   <rect x="30" y="105" width="280" height="930" fill="#FFFFFF" fill-opacity=".82" stroke="#CBD5E1" stroke-width="1.5" />
   <rect x="30" y="105" width="280" height="42" fill="#D58A16" fill-opacity=".11" stroke="none" />
   <rect x="30" y="105" width="6" height="42" fill="#D58A16" />
   <text x="46" y="133" class="panel-title" text-anchor="start" font-size="17">外部资源与模型</text>
-  <rect x="330" y="105" width="1200" height="930" fill="#FFFFFF" fill-opacity=".82" stroke="#CBD5E1" stroke-width="1.5" />
-  <rect x="330" y="105" width="1200" height="42" fill="#2F6FED" fill-opacity=".11" stroke="none" />
-  <rect x="330" y="105" width="6" height="42" fill="#2F6FED" />
-  <text x="346" y="133" class="panel-title" text-anchor="start" font-size="17">Agent 核心流程</text>
+  <rect x="330" y="105" width="575" height="930" fill="#FFFFFF" fill-opacity=".82" stroke="#CBD5E1" stroke-width="1.5" />
+  <rect x="330" y="105" width="575" height="42" fill="#0F9D8A" fill-opacity=".11" stroke="none" />
+  <rect x="330" y="105" width="6" height="42" fill="#0F9D8A" />
+  <text x="346" y="133" class="panel-title" text-anchor="start" font-size="17">智能问答链路</text>
+  <rect x="925" y="105" width="605" height="930" fill="#FFFFFF" fill-opacity=".82" stroke="#CBD5E1" stroke-width="1.5" />
+  <rect x="925" y="105" width="605" height="42" fill="#435A73" fill-opacity=".11" stroke="none" />
+  <rect x="925" y="105" width="6" height="42" fill="#435A73" />
+  <text x="941" y="133" class="panel-title" text-anchor="start" font-size="17">STORM 深度调研链路</text>
   <rect x="1550" y="105" width="620" height="930" fill="#FFFFFF" fill-opacity=".82" stroke="#CBD5E1" stroke-width="1.5" />
   <rect x="1550" y="105" width="620" height="42" fill="#0F9D8A" fill-opacity=".11" stroke="none" />
   <rect x="1550" y="105" width="6" height="42" fill="#0F9D8A" />
@@ -52,47 +56,45 @@
   <rect x="30" y="1055" width="2140" height="42" fill="#7567A8" fill-opacity=".11" stroke="none" />
   <rect x="30" y="1055" width="6" height="42" fill="#7567A8" />
   <text x="46" y="1083" class="panel-title" text-anchor="start" font-size="17">工程保障、公开评测与反馈闭环</text>
-  <path d="M 275 188.0 L 462.5 188.0 L 462.5 166.0 L 650 166.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
-  <path d="M 930.0 194 L 930.0 209.5 L 930.0 209.5 L 930.0 225" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
-  <path d="M 930.0 287 L 930.0 308.5 L 632.5 308.5 L 632.5 330" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
-  <text x="781.25" y="298.0" class="edge-label" text-anchor="middle">chat / memory / QA</text>
-  <path d="M 930.0 287 L 930.0 308.5 L 1220.0 308.5 L 1220.0 330" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <text x="1075.0" y="298.0" class="edge-label" text-anchor="middle">research</text>
-  <path d="M 515 438.0 L 532.5 438.0 L 532.5 438.0 L 550 438.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
-  <path d="M 700 438.0 L 717.5 438.0 L 717.5 438.0 L 735 438.0" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
-  <path d="M 810.0 471 L 810.0 488.0 L 625.0 488.0 L 625.0 505" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
-  <path d="M 625.0 571 L 625.0 585.5 L 440.0 585.5 L 440.0 600" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
-  <text x="532.5" y="578.5" class="edge-label" text-anchor="middle">sufficient</text>
-  <path d="M 625.0 571 L 625.0 585.5 L 625.0 585.5 L 625.0 600" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <text x="625.0" y="578.5" class="edge-label" text-anchor="middle">insufficient</text>
-  <path d="M 625.0 571 L 625.0 585.5 L 810.0 585.5 L 810.0 600" fill="none" stroke="#D94A4A" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrow-danger)" />
-  <text x="717.5" y="578.5" class="edge-label" text-anchor="middle">ambiguous</text>
-  <path d="M 440.0 662 L 440.0 681.0 L 625.0 681.0 L 625.0 700" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
-  <path d="M 625.0 662 L 625.0 681.0 L 625.0 681.0 L 625.0 700" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
-  <path d="M 810.0 662 L 810.0 681.0 L 625.0 681.0 L 625.0 700" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
-  <path d="M 625.0 762 L 625.0 781.0 L 625.0 781.0 L 625.0 800" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
-  <path d="M 1050 437.0 L 1057.5 437.0 L 1057.5 437.0 L 1065 437.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
-  <path d="M 1160 437.0 L 1167.5 437.0 L 1167.5 437.0 L 1175 437.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
-  <path d="M 1270 437.0 L 1277.5 437.0 L 1277.5 437.0 L 1285 437.0" fill="none" stroke="#D94A4A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-danger)" />
-  <path d="M 1380 437.0 L 1387.5 437.0 L 1387.5 437.0 L 1395 437.0" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
-  <path d="M 1440.0 469 L 1440.0 497.0 L 1010.0 497.0 L 1010.0 525" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <path d="M 1065 556.0 L 1075.0 556.0 L 1075.0 556.0 L 1085 556.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <path d="M 1195 556.0 L 1205.0 556.0 L 1205.0 556.0 L 1215 556.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <path d="M 1325 556.0 L 1270 610 L 1140 610 L 1085 556.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
-  <path d="M 1325 556.0 L 1335.0 556.0 L 1335.0 556.0 L 1345 556.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <path d="M 1475 556.0 L 1410 620 L 1010 620 L 955 681.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <path d="M 1065 681.0 L 1075.0 681.0 L 1075.0 681.0 L 1085 681.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <path d="M 1195 681.0 L 1205.0 681.0 L 1205.0 681.0 L 1215 681.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <path d="M 1325 681.0 L 1335.0 681.0 L 1335.0 681.0 L 1345 681.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <path d="M 1410.0 712 L 1410.0 751.0 L 1220.0 751.0 L 1220.0 790" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
-  <path d="M 700 631.0 L 900 630 L 920 437 L 955 437.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <path d="M 275 188.0 L 322.5 188.0 L 322.5 176.0 L 370 176.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <path d="M 520 278.0 L 531.0 278.0 L 531.0 278.0 L 542 278.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <path d="M 692 278.0 L 703.0 278.0 L 703.0 278.0 L 714 278.0" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
+  <path d="M 617.5 207 L 617.5 226.0 L 445.0 226.0 L 445.0 245" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <path d="M 445.0 311 L 445.0 338.0 L 617.5 338.0 L 617.5 365" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <path d="M 617.0 311 L 617.0 338.0 L 617.5 338.0 L 617.5 365" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
+  <path d="M 789.0 311 L 789.0 338.0 L 617.5 338.0 L 617.5 365" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
+  <path d="M 617.5 447 L 617.5 471.0 L 617.5 471.0 L 617.5 495" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <path d="M 617.5 567 L 617.5 593.5 L 472.5 593.5 L 472.5 620" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <text x="545.0" y="586.0" class="edge-label" text-anchor="middle">sufficient</text>
+  <path d="M 617.5 567 L 617.5 593.5 L 702.5 593.5 L 702.5 620" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <text x="660.0" y="586.0" class="edge-label" text-anchor="middle">insufficient</text>
+  <path d="M 472.5 686 L 472.5 715.5 L 617.5 715.5 L 617.5 745" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
+  <path d="M 617.5 811 L 617.5 840.5 L 617.5 840.5 L 617.5 870" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <path d="M 805 653.0 L 885.0 653.0 L 885.0 176.0 L 965 176.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <path d="M 1227.5 207 L 1227.5 226.0 L 1040.0 226.0 L 1040.0 245" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <path d="M 1115 278.0 L 1125.0 278.0 L 1125.0 278.0 L 1135 278.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <path d="M 1315 278.0 L 1325.0 278.0 L 1325.0 278.0 L 1335 278.0" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
+  <text x="1318.75" y="272.0" class="edge-label" text-anchor="middle">query</text>
+  <path d="M 1490 278.0 L 1410 335 L 1225 335 L 1135 278.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <text x="1318.75" y="272.0" class="edge-label" text-anchor="middle">snippets</text>
+  <path d="M 1225.0 311 L 1225.0 338.0 L 1225.0 338.0 L 1225.0 365" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <path d="M 1225.0 441 L 1225.0 460.5 L 1225.0 460.5 L 1225.0 480" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
+  <path d="M 1225.0 548 L 1225.0 579.0 L 1080.0 579.0 L 1080.0 610" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <text x="1152.5" y="573.5" class="edge-label" text-anchor="middle">conversation_log</text>
+  <path d="M 1225.0 441 L 1225.0 525.5 L 1355.0 525.5 L 1355.0 610" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <text x="1290.0" y="518.0" class="edge-label" text-anchor="middle">StormInformationTable</text>
+  <path d="M 1080.0 680 L 1080.0 707.5 L 1080.0 707.5 L 1080.0 735" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <path d="M 1490 645.0 L 1227.5 645.0 L 1227.5 770.0 L 965 770.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <path d="M 1195 770.0 L 1207.5 770.0 L 1207.5 770.0 L 1220 770.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <path d="M 1355.0 805 L 1355.0 837.5 L 1225.0 837.5 L 1225.0 870" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
   <path d="M 170.0 341 L 170.0 483.0 L 170.0 483.0 L 170.0 625" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
-  <path d="M 275 675.0 L 670.0 675.0 L 670.0 437.0 L 1065 437.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
-  <path d="M 275 423.0 L 462.5 423.0 L 462.5 256.0 L 650 256.0" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
+  <path d="M 275 675.0 L 805.0 675.0 L 805.0 278.0 L 1335 278.0" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
+  <path d="M 275 675.0 L 360.0 675.0 L 360.0 406.0 L 445 406.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <path d="M 275 423.0 L 322.5 423.0 L 322.5 176.0 L 370 176.0" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
   <path d="M 275 543.0 L 927.5 543.0 L 927.5 216.0 L 1580 216.0" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
   <path d="M 170.0 866 L 170.0 990.5 L 1045.0 990.5 L 1045.0 1115" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
-  <path d="M 625.0 858 L 625.0 986.5 L 240.0 986.5 L 240.0 1115" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
-  <path d="M 1220.0 858 L 1220.0 986.5 L 605.0 986.5 L 605.0 1115" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <path d="M 617.5 932 L 617.5 1023.5 L 240.0 1023.5 L 240.0 1115" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
+  <path d="M 1225.0 940 L 1225.0 1027.5 L 605.0 1027.5 L 605.0 1115" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
   <path d="M 400 1161.0 L 422.5 1161.0 L 422.5 1161.0 L 445 1161.0" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
   <path d="M 765 1161.0 L 787.5 1161.0 L 787.5 1161.0 L 810 1161.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
   <path d="M 1280 1161.0 L 1302.5 1161.0 L 1302.5 1161.0 L 1325 1161.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
@@ -118,21 +120,21 @@
   <text x="91" y="410" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">03</text>
   <text x="170.0" y="409" class="node-title" text-anchor="middle" font-size="17">LLM 服务</text>
   <text x="170.0" y="426" class="node-subtitle" text-anchor="middle" font-size="11">DeepSeek · MiniMax</text>
-  <text x="170.0" y="441" class="node-subtitle" text-anchor="middle" font-size="11">路由 / 生成 / 证据裁判</text>
+  <text x="170.0" y="441" class="node-subtitle" text-anchor="middle" font-size="11">意图 / 对话 / 写作 / 裁判</text>
   <rect x="65" y="505" width="210" height="76" fill="#FFFFFF" stroke="#D58A16" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="65" y="505" width="7" height="76" fill="#D58A16" />
   <rect x="79" y="517" width="24" height="18" fill="#D58A16" />
   <text x="91" y="530" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">04</text>
   <text x="170.0" y="529" class="node-title" text-anchor="middle" font-size="17">检索模型</text>
-  <text x="170.0" y="546" class="node-subtitle" text-anchor="middle" font-size="11">Sentence Transformer</text>
-  <text x="170.0" y="561" class="node-subtitle" text-anchor="middle" font-size="11">Cross-Encoder Reranker</text>
+  <text x="170.0" y="546" class="node-subtitle" text-anchor="middle" font-size="11">GTE / BGE / Qwen3</text>
+  <text x="170.0" y="561" class="node-subtitle" text-anchor="middle" font-size="11">MiniLM / Cross-Encoder</text>
   <rect x="65" y="625" width="210" height="100" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="65" y="625" width="7" height="100" fill="#2F6FED" />
   <rect x="79" y="637" width="24" height="18" fill="#2F6FED" />
   <text x="91" y="650" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">05</text>
   <text x="170.0" y="649" class="node-title" text-anchor="middle" font-size="17">Tool System</text>
-  <text x="170.0" y="666" class="node-subtitle" text-anchor="middle" font-size="11">ArxivSearch</text>
-  <text x="170.0" y="681" class="node-subtitle" text-anchor="middle" font-size="11">LocalPDFSearch</text>
+  <text x="170.0" y="666" class="node-subtitle" text-anchor="middle" font-size="11">ArxivRM</text>
+  <text x="170.0" y="681" class="node-subtitle" text-anchor="middle" font-size="11">LocalPDFRM</text>
   <text x="170.0" y="696" class="node-subtitle" text-anchor="middle" font-size="11">KnowledgeBaseQA</text>
   <text x="170.0" y="711" class="node-subtitle" text-anchor="middle" font-size="11">ResearchQA</text>
   <rect x="65" y="770" width="210" height="96" fill="#FFFFFF" stroke="#D58A16" stroke-width="1.5" filter="url(#node-shadow)" />
@@ -143,207 +145,212 @@
   <text x="170.0" y="811" class="node-subtitle" text-anchor="middle" font-size="11">SciFact</text>
   <text x="170.0" y="826" class="node-subtitle" text-anchor="middle" font-size="11">QASPER</text>
   <text x="170.0" y="841" class="node-subtitle" text-anchor="middle" font-size="11">LongMemEval-S</text>
-  <text x="170.0" y="856" class="node-subtitle" text-anchor="middle" font-size="11">LongBench</text>
+  <text x="170.0" y="856" class="node-subtitle" text-anchor="middle" font-size="11">PIM Pilot</text>
   <rect x="65" y="910" width="210" height="76" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="65" y="910" width="7" height="76" fill="#7567A8" />
   <rect x="79" y="922" width="24" height="18" fill="#7567A8" />
   <text x="91" y="935" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">07</text>
   <text x="170.0" y="934" class="node-title" text-anchor="middle" font-size="16">交付与运行产物</text>
-  <text x="170.0" y="951" class="node-subtitle" text-anchor="middle" font-size="11">引用回答 · 大纲 · 文章</text>
-  <text x="170.0" y="966" class="node-subtitle" text-anchor="middle" font-size="11">Trace · Metrics · Bad Cases</text>
-  <rect x="650" y="138" width="560" height="56" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="650" y="138" width="7" height="56" fill="#2F6FED" />
-  <rect x="664" y="150" width="24" height="18" fill="#2F6FED" />
-  <text x="676" y="163" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">08</text>
-  <text x="930.0" y="162" class="node-title" text-anchor="middle" font-size="20">服务层与 Async Queue</text>
-  <text x="930.0" y="182" class="node-subtitle" text-anchor="middle" font-size="11">Task Service · Chat Service · Async Queue · Benchmark Manager</text>
-  <rect x="650" y="225" width="560" height="62" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="650" y="225" width="7" height="62" fill="#0F9D8A" />
-  <rect x="664" y="237" width="24" height="18" fill="#0F9D8A" />
-  <text x="676" y="250" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">09</text>
-  <text x="930.0" y="249" class="node-title" text-anchor="middle" font-size="19">意图路由 Agent</text>
-  <text x="930.0" y="269" class="node-subtitle" text-anchor="middle" font-size="11">规则兜底 + LLM 增强：闲聊 / 记忆问答 / 知识检索 / 深度调研</text>
-  <rect x="365" y="330" width="535" height="44" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="365" y="330" width="7" height="44" fill="#0F9D8A" />
-  <rect x="379" y="342" width="24" height="18" fill="#0F9D8A" />
-  <text x="391" y="355" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">10</text>
-  <text x="632.5" y="354" class="node-title" text-anchor="middle" font-size="18">Chat Agent Runtime</text>
-  <rect x="945" y="330" width="550" height="44" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="945" y="330" width="7" height="44" fill="#435A73" />
-  <rect x="959" y="342" width="24" height="18" fill="#435A73" />
-  <text x="971" y="355" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">11</text>
-  <text x="1220.0" y="354" class="node-title" text-anchor="middle" font-size="18">Research Agent Pipeline</text>
-  <rect x="365" y="405" width="150" height="66" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="365" y="405" width="7" height="66" fill="#0F9D8A" />
-  <text x="440.0" y="429" class="node-title" text-anchor="middle" font-size="14">Context Assemble</text>
-  <text x="440.0" y="446" class="node-subtitle" text-anchor="middle" font-size="11">五层工作集与 Token Budget</text>
-  <rect x="550" y="405" width="150" height="66" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="550" y="405" width="7" height="66" fill="#7567A8" />
-  <text x="625.0" y="429" class="node-title" text-anchor="middle" font-size="14">Memory Recall</text>
-  <text x="625.0" y="446" class="node-subtitle" text-anchor="middle" font-size="11">跨会话 episode / fact</text>
-  <rect x="735" y="405" width="150" height="66" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="735" y="405" width="7" height="66" fill="#2F6FED" />
-  <text x="810.0" y="429" class="node-title" text-anchor="middle" font-size="14">Knowledge Retrieval</text>
-  <text x="810.0" y="446" class="node-subtitle" text-anchor="middle" font-size="11">已有任务 / KB / 论文</text>
-  <rect x="550" y="505" width="150" height="66" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="550" y="505" width="7" height="66" fill="#0F9D8A" />
-  <text x="625.0" y="529" class="node-title" text-anchor="middle" font-size="14">Evidence Grade</text>
-  <text x="625.0" y="546" class="node-subtitle" text-anchor="middle" font-size="11">LLM Judge + 保守回退</text>
-  <rect x="365" y="600" width="150" height="62" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="365" y="600" width="7" height="62" fill="#2F6FED" />
-  <text x="440.0" y="624" class="node-title" text-anchor="middle" font-size="15">引用回答</text>
-  <text x="440.0" y="641" class="node-subtitle" text-anchor="middle" font-size="11">证据充分</text>
-  <rect x="550" y="600" width="150" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="550" y="600" width="7" height="62" fill="#435A73" />
-  <text x="625.0" y="624" class="node-title" text-anchor="middle" font-size="15">Deep Research</text>
-  <text x="625.0" y="641" class="node-subtitle" text-anchor="middle" font-size="11">证据不足则升级</text>
-  <rect x="735" y="600" width="150" height="62" fill="#FFFFFF" stroke="#D94A4A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="735" y="600" width="7" height="62" fill="#D94A4A" />
-  <text x="810.0" y="624" class="node-title" text-anchor="middle" font-size="15">澄清 / 拒答</text>
-  <text x="810.0" y="641" class="node-subtitle" text-anchor="middle" font-size="11">歧义或无可靠证据</text>
-  <rect x="550" y="700" width="150" height="62" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="550" y="700" width="7" height="62" fill="#7567A8" />
-  <text x="625.0" y="724" class="node-title" text-anchor="middle" font-size="15">Memory Write</text>
-  <text x="625.0" y="741" class="node-subtitle" text-anchor="middle" font-size="11">候选事实与来源写回</text>
-  <rect x="550" y="800" width="150" height="58" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="550" y="800" width="7" height="58" fill="#0F9D8A" />
-  <text x="625.0" y="824" class="node-title" text-anchor="middle" font-size="15">Final Trace</text>
-  <text x="625.0" y="841" class="node-subtitle" text-anchor="middle" font-size="11">Checkpoint + SSE + Span</text>
-  <rect x="955" y="405" width="95" height="64" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="955" y="405" width="7" height="64" fill="#0F9D8A" />
-  <text x="1002.5" y="429" class="node-title" text-anchor="middle" font-size="13">Planner Agent</text>
-  <text x="1002.5" y="446" class="node-subtitle" text-anchor="middle" font-size="11">问题分解</text>
-  <rect x="1065" y="405" width="95" height="64" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1065" y="405" width="7" height="64" fill="#2F6FED" />
-  <text x="1112.5" y="429" class="node-title" text-anchor="middle" font-size="13">Retriever Agent</text>
-  <text x="1112.5" y="446" class="node-subtitle" text-anchor="middle" font-size="11">并发检索</text>
-  <rect x="1175" y="405" width="95" height="64" fill="#FFFFFF" stroke="#D94A4A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1175" y="405" width="7" height="64" fill="#D94A4A" />
-  <text x="1222.5" y="429" class="node-title" text-anchor="middle" font-size="13">Critic Agent</text>
-  <text x="1222.5" y="446" class="node-subtitle" text-anchor="middle" font-size="11">过滤审核</text>
-  <rect x="1285" y="405" width="95" height="64" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1285" y="405" width="7" height="64" fill="#7567A8" />
-  <text x="1332.5" y="429" class="node-title" text-anchor="middle" font-size="13">Memory Agent</text>
-  <text x="1332.5" y="446" class="node-subtitle" text-anchor="middle" font-size="11">中间记忆</text>
-  <rect x="1395" y="405" width="90" height="64" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1395" y="405" width="7" height="64" fill="#0F9D8A" />
-  <text x="1440.0" y="429" class="node-title" text-anchor="middle" font-size="13">Evaluator Agent</text>
-  <text x="1440.0" y="446" class="node-subtitle" text-anchor="middle" font-size="11">覆盖与评分</text>
-  <rect x="955" y="525" width="110" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="955" y="525" width="7" height="62" fill="#435A73" />
-  <text x="1010.0" y="549" class="node-title" text-anchor="middle" font-size="13">Persona Generator</text>
-  <text x="1010.0" y="566" class="node-subtitle" text-anchor="middle" font-size="11">生成多研究视角</text>
-  <rect x="1085" y="525" width="110" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1085" y="525" width="7" height="62" fill="#435A73" />
-  <text x="1140.0" y="549" class="node-title" text-anchor="middle" font-size="13">WikiWriter</text>
-  <text x="1140.0" y="566" class="node-subtitle" text-anchor="middle" font-size="11">按 persona 逐轮提问</text>
-  <rect x="1215" y="525" width="110" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1215" y="525" width="7" height="62" fill="#435A73" />
-  <text x="1270.0" y="549" class="node-title" text-anchor="middle" font-size="13">TopicExpert</text>
-  <text x="1270.0" y="566" class="node-subtitle" text-anchor="middle" font-size="11">Query → 检索 → 引用回答</text>
-  <rect x="1345" y="525" width="130" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1345" y="525" width="7" height="62" fill="#435A73" />
-  <text x="1410.0" y="549" class="node-title" text-anchor="middle" font-size="13">ConvSimulator</text>
-  <text x="1410.0" y="566" class="node-subtitle" text-anchor="middle" font-size="11">多视角访谈并发</text>
-  <rect x="955" y="650" width="110" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="955" y="650" width="7" height="62" fill="#435A73" />
-  <text x="1010.0" y="674" class="node-title" text-anchor="middle" font-size="13">Knowledge Curation</text>
-  <text x="1010.0" y="691" class="node-subtitle" text-anchor="middle" font-size="11">对话与证据汇总</text>
-  <rect x="1085" y="650" width="110" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1085" y="650" width="7" height="62" fill="#435A73" />
-  <text x="1140.0" y="674" class="node-title" text-anchor="middle" font-size="13">两阶段 Outline</text>
-  <text x="1140.0" y="691" class="node-subtitle" text-anchor="middle" font-size="11">草案 → 对话增强</text>
-  <rect x="1215" y="650" width="110" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1215" y="650" width="7" height="62" fill="#435A73" />
-  <text x="1270.0" y="674" class="node-title" text-anchor="middle" font-size="13">章节并发写作</text>
-  <text x="1270.0" y="691" class="node-subtitle" text-anchor="middle" font-size="11">按节检索并生成</text>
-  <rect x="1345" y="650" width="130" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1345" y="650" width="7" height="62" fill="#435A73" />
-  <text x="1410.0" y="674" class="node-title" text-anchor="middle" font-size="13">Article Polish</text>
-  <text x="1410.0" y="691" class="node-subtitle" text-anchor="middle" font-size="11">整篇去重与统一风格</text>
-  <rect x="1080" y="790" width="280" height="68" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1080" y="790" width="7" height="68" fill="#2F6FED" />
-  <rect x="1094" y="802" width="24" height="18" fill="#2F6FED" />
-  <text x="1106" y="815" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">34</text>
-  <text x="1220.0" y="814" class="node-title" text-anchor="middle" font-size="18">结构化调研文章</text>
-  <text x="1220.0" y="834" class="node-subtitle" text-anchor="middle" font-size="11">outline · article · polished article · citations</text>
+  <text x="170.0" y="951" class="node-subtitle" text-anchor="middle" font-size="11">引用回答 · 对话 · 大纲 · 文章</text>
+  <text x="170.0" y="966" class="node-subtitle" text-anchor="middle" font-size="11">Trace · Metrics · PDF</text>
+  <rect x="370" y="145" width="495" height="62" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="370" y="145" width="7" height="62" fill="#0F9D8A" />
+  <rect x="384" y="157" width="24" height="18" fill="#0F9D8A" />
+  <text x="396" y="170" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">08</text>
+  <text x="617.5" y="169" class="node-title" text-anchor="middle" font-size="18">Chat Service 与动作路由</text>
+  <text x="617.5" y="189" class="node-subtitle" text-anchor="middle" font-size="11">普通回复 / Memory / Evidence / Deep Research</text>
+  <rect x="370" y="245" width="150" height="66" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="370" y="245" width="7" height="66" fill="#0F9D8A" />
+  <text x="445.0" y="269" class="node-title" text-anchor="middle" font-size="14">Context Assemble</text>
+  <text x="445.0" y="286" class="node-subtitle" text-anchor="middle" font-size="11">Pinned / Active / Summary</text>
+  <rect x="542" y="245" width="150" height="66" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="542" y="245" width="7" height="66" fill="#7567A8" />
+  <text x="617.0" y="269" class="node-title" text-anchor="middle" font-size="14">Memory Recall</text>
+  <text x="617.0" y="286" class="node-subtitle" text-anchor="middle" font-size="11">跨会话 episode / fact</text>
+  <rect x="714" y="245" width="150" height="66" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="714" y="245" width="7" height="66" fill="#7567A8" />
+  <text x="789.0" y="269" class="node-title" text-anchor="middle" font-size="14">Session Recall</text>
+  <text x="789.0" y="286" class="node-subtitle" text-anchor="middle" font-size="11">历史消息与旧话题</text>
+  <rect x="445" y="365" width="345" height="82" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="445" y="365" width="7" height="82" fill="#2F6FED" />
+  <rect x="459" y="377" width="24" height="18" fill="#2F6FED" />
+  <text x="471" y="390" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">12</text>
+  <text x="617.5" y="389" class="node-title" text-anchor="middle" font-size="17">统一 Hybrid RAG</text>
+  <text x="617.5" y="406" class="node-subtitle" text-anchor="middle" font-size="11">BM25 + Dense → RRF → 可选 Cross-Encoder</text>
+  <rect x="445" y="495" width="345" height="72" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="445" y="495" width="7" height="72" fill="#0F9D8A" />
+  <rect x="459" y="507" width="24" height="18" fill="#0F9D8A" />
+  <text x="471" y="520" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">13</text>
+  <text x="617.5" y="519" class="node-title" text-anchor="middle" font-size="16">Evidence Gate</text>
+  <text x="617.5" y="536" class="node-subtitle" text-anchor="middle" font-size="11">来源过滤 · 充分性判断 · Claim-Citation</text>
+  <rect x="370" y="620" width="205" height="66" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="370" y="620" width="7" height="66" fill="#2F6FED" />
+  <rect x="384" y="632" width="24" height="18" fill="#2F6FED" />
+  <text x="396" y="645" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">14</text>
+  <text x="472.5" y="644" class="node-title" text-anchor="middle" font-size="16">有引用的回答</text>
+  <text x="472.5" y="661" class="node-subtitle" text-anchor="middle" font-size="11">原始标题 · 作者 · 链接</text>
+  <rect x="600" y="620" width="205" height="66" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="600" y="620" width="7" height="66" fill="#435A73" />
+  <rect x="614" y="632" width="24" height="18" fill="#435A73" />
+  <text x="626" y="645" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">15</text>
+  <text x="702.5" y="644" class="node-title" text-anchor="middle" font-size="16">升级深度调研</text>
+  <text x="702.5" y="661" class="node-subtitle" text-anchor="middle" font-size="11">现有证据不足</text>
+  <rect x="445" y="745" width="345" height="66" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="445" y="745" width="7" height="66" fill="#7567A8" />
+  <rect x="459" y="757" width="24" height="18" fill="#7567A8" />
+  <text x="471" y="770" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">16</text>
+  <text x="617.5" y="769" class="node-title" text-anchor="middle" font-size="16">Memory Policy 与写回</text>
+  <text x="617.5" y="786" class="node-subtitle" text-anchor="middle" font-size="11">仅稳定用户事实、偏好和决策</text>
+  <rect x="445" y="870" width="345" height="62" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="445" y="870" width="7" height="62" fill="#0F9D8A" />
+  <rect x="459" y="882" width="24" height="18" fill="#0F9D8A" />
+  <text x="471" y="895" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">17</text>
+  <text x="617.5" y="894" class="node-title" text-anchor="middle" font-size="16">回答、引用与 Trace</text>
+  <text x="617.5" y="911" class="node-subtitle" text-anchor="middle" font-size="11">Token · Latency · Span · Session</text>
+  <rect x="965" y="145" width="525" height="62" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="965" y="145" width="7" height="62" fill="#435A73" />
+  <rect x="979" y="157" width="24" height="18" fill="#435A73" />
+  <text x="991" y="170" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">18</text>
+  <text x="1227.5" y="169" class="node-title" text-anchor="middle" font-size="18">Research Task</text>
+  <text x="1227.5" y="189" class="node-subtitle" text-anchor="middle" font-size="11">主题 · arXiv / Local PDF · 运行参数</text>
+  <rect x="965" y="245" width="150" height="66" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="965" y="245" width="7" height="66" fill="#435A73" />
+  <text x="1040.0" y="269" class="node-title" text-anchor="middle" font-size="14">Persona Generator</text>
+  <text x="1040.0" y="286" class="node-subtitle" text-anchor="middle" font-size="11">生成多研究视角</text>
+  <rect x="1135" y="245" width="180" height="66" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1135" y="245" width="7" height="66" fill="#435A73" />
+  <rect x="1149" y="257" width="24" height="18" fill="#435A73" />
+  <text x="1161" y="270" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">20</text>
+  <text x="1225.0" y="269" class="node-title" text-anchor="middle" font-size="14">Conv Simulator</text>
+  <text x="1225.0" y="286" class="node-subtitle" text-anchor="middle" font-size="11">WikiWriter ↔ TopicExpert</text>
+  <rect x="1335" y="245" width="155" height="66" fill="#FFFFFF" stroke="#D58A16" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1335" y="245" width="7" height="66" fill="#D58A16" />
+  <text x="1412.5" y="269" class="node-title" text-anchor="middle" font-size="14">论文源检索</text>
+  <text x="1412.5" y="286" class="node-subtitle" text-anchor="middle" font-size="11">arXiv API / Local PDF</text>
+  <rect x="1030" y="365" width="390" height="76" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1030" y="365" width="7" height="76" fill="#435A73" />
+  <rect x="1044" y="377" width="24" height="18" fill="#435A73" />
+  <text x="1056" y="390" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">22</text>
+  <text x="1225.0" y="389" class="node-title" text-anchor="middle" font-size="17">Knowledge Curation</text>
+  <text x="1225.0" y="406" class="node-subtitle" text-anchor="middle" font-size="11">多视角对话 + 查询循环 → StormInformationTable</text>
+  <rect x="1030" y="480" width="390" height="68" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1030" y="480" width="7" height="68" fill="#7567A8" />
+  <rect x="1044" y="492" width="24" height="18" fill="#7567A8" />
+  <text x="1056" y="505" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">23</text>
+  <text x="1225.0" y="504" class="node-title" text-anchor="middle" font-size="15">研究阶段产物</text>
+  <text x="1225.0" y="521" class="node-subtitle" text-anchor="middle" font-size="11">conversation_log.json · raw_search_results.json</text>
+  <rect x="965" y="610" width="230" height="70" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="965" y="610" width="7" height="70" fill="#435A73" />
+  <rect x="979" y="622" width="24" height="18" fill="#435A73" />
+  <text x="991" y="635" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">24</text>
+  <text x="1080.0" y="634" class="node-title" text-anchor="middle" font-size="16">两阶段 Outline</text>
+  <text x="1080.0" y="651" class="node-subtitle" text-anchor="middle" font-size="11">直接草案 → 对话增强</text>
+  <rect x="1220" y="610" width="270" height="70" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1220" y="610" width="7" height="70" fill="#2F6FED" />
+  <rect x="1234" y="622" width="24" height="18" fill="#2F6FED" />
+  <text x="1246" y="635" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">25</text>
+  <text x="1355.0" y="634" class="node-title" text-anchor="middle" font-size="16">MiniLM 语义 Top-K</text>
+  <text x="1355.0" y="651" class="node-subtitle" text-anchor="middle" font-size="11">按章节余弦筛选已收集 snippet</text>
+  <rect x="965" y="735" width="230" height="70" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="965" y="735" width="7" height="70" fill="#435A73" />
+  <rect x="979" y="747" width="24" height="18" fill="#435A73" />
+  <text x="991" y="760" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">26</text>
+  <text x="1080.0" y="759" class="node-title" text-anchor="middle" font-size="16">章节并发写作</text>
+  <text x="1080.0" y="776" class="node-subtitle" text-anchor="middle" font-size="11">Outline + StormInformationTable</text>
+  <rect x="1220" y="735" width="270" height="70" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1220" y="735" width="7" height="70" fill="#435A73" />
+  <rect x="1234" y="747" width="24" height="18" fill="#435A73" />
+  <text x="1246" y="760" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">27</text>
+  <text x="1355.0" y="759" class="node-title" text-anchor="middle" font-size="16">Article Polish</text>
+  <text x="1355.0" y="776" class="node-subtitle" text-anchor="middle" font-size="11">整篇去重 · 摘要 · 风格统一</text>
+  <rect x="1030" y="870" width="390" height="70" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1030" y="870" width="7" height="70" fill="#2F6FED" />
+  <rect x="1044" y="882" width="24" height="18" fill="#2F6FED" />
+  <text x="1056" y="895" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">28</text>
+  <text x="1225.0" y="894" class="node-title" text-anchor="middle" font-size="18">结构化调研文章</text>
+  <text x="1225.0" y="914" class="node-subtitle" text-anchor="middle" font-size="11">Markdown · 原始论文引用 · Scorecard · PDF</text>
   <rect x="1580" y="150" width="560" height="132" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="1580" y="150" width="7" height="132" fill="#2F6FED" />
   <rect x="1594" y="162" width="24" height="18" fill="#2F6FED" />
-  <text x="1606" y="175" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">35</text>
-  <text x="1860.0" y="174" class="node-title" text-anchor="middle" font-size="18">RAG 算法</text>
-  <text x="1860.0" y="194" class="node-subtitle" text-anchor="middle" font-size="11">Chunk / Overlap</text>
-  <text x="1860.0" y="209" class="node-subtitle" text-anchor="middle" font-size="11">BM25 + Dense 双路召回</text>
-  <text x="1860.0" y="224" class="node-subtitle" text-anchor="middle" font-size="11">RRF 融合 → Cross-Encoder 重排</text>
-  <text x="1860.0" y="239" class="node-subtitle" text-anchor="middle" font-size="11">Context Compression → Citation</text>
-  <rect x="1580" y="305" width="560" height="150" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1580" y="305" width="7" height="150" fill="#7567A8" />
-  <rect x="1594" y="317" width="24" height="18" fill="#7567A8" />
-  <text x="1606" y="330" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">36</text>
-  <text x="1860.0" y="329" class="node-title" text-anchor="middle" font-size="18">Memory 算法</text>
-  <text x="1860.0" y="349" class="node-subtitle" text-anchor="middle" font-size="11">Episode → Fact → Provenance / Entity</text>
-  <text x="1860.0" y="364" class="node-subtitle" text-anchor="middle" font-size="11">SQLite WAL + 时间有效事实</text>
-  <text x="1860.0" y="379" class="node-subtitle" text-anchor="middle" font-size="11">BM25 + Embedding + Entity + Time</text>
-  <text x="1860.0" y="394" class="node-subtitle" text-anchor="middle" font-size="11">RRF 融合 + MMR 多样性</text>
-  <rect x="1580" y="478" width="560" height="150" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1580" y="478" width="7" height="150" fill="#0F9D8A" />
-  <rect x="1594" y="490" width="24" height="18" fill="#0F9D8A" />
-  <text x="1606" y="503" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">37</text>
-  <text x="1860.0" y="502" class="node-title" text-anchor="middle" font-size="18">Context 工程</text>
-  <text x="1860.0" y="522" class="node-subtitle" text-anchor="middle" font-size="11">Pinned / Active / Summary</text>
-  <text x="1860.0" y="537" class="node-subtitle" text-anchor="middle" font-size="11">Memory &amp; Evidence / Artifact 五层</text>
-  <text x="1860.0" y="552" class="node-subtitle" text-anchor="middle" font-size="11">分层 Token Budget + Watermark</text>
-  <text x="1860.0" y="567" class="node-subtitle" text-anchor="middle" font-size="11">Compaction DAG + Ledger Restore</text>
-  <rect x="1580" y="651" width="560" height="132" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1580" y="651" width="7" height="132" fill="#435A73" />
-  <rect x="1594" y="663" width="24" height="18" fill="#435A73" />
-  <text x="1606" y="676" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">38</text>
-  <text x="1860.0" y="675" class="node-title" text-anchor="middle" font-size="18">Agent Runtime</text>
-  <text x="1860.0" y="695" class="node-subtitle" text-anchor="middle" font-size="11">LangGraph StateGraph</text>
-  <text x="1860.0" y="710" class="node-subtitle" text-anchor="middle" font-size="11">SQLite Checkpoint · 节点 Retry</text>
-  <text x="1860.0" y="725" class="node-subtitle" text-anchor="middle" font-size="11">Tool Registry · Hook · Cancel</text>
-  <text x="1860.0" y="740" class="node-subtitle" text-anchor="middle" font-size="11">SSE Event · Span Trace</text>
-  <rect x="1580" y="806" width="560" height="168" fill="#FFFFFF" stroke="#D94A4A" stroke-width="1.5" filter="url(#node-shadow)" />
-  <rect x="1580" y="806" width="7" height="168" fill="#D94A4A" />
-  <rect x="1594" y="818" width="24" height="18" fill="#D94A4A" />
-  <text x="1606" y="831" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">39</text>
-  <text x="1860.0" y="830" class="node-title" text-anchor="middle" font-size="18">工程治理</text>
-  <text x="1860.0" y="850" class="node-subtitle" text-anchor="middle" font-size="11">任务队列与并发控制</text>
-  <text x="1860.0" y="865" class="node-subtitle" text-anchor="middle" font-size="11">ACL · 幂等 · TTL Cache · 熔断</text>
-  <text x="1860.0" y="880" class="node-subtitle" text-anchor="middle" font-size="11">错误脱敏 · 审计事件</text>
-  <text x="1860.0" y="895" class="node-subtitle" text-anchor="middle" font-size="11">失败显式化与可恢复中间产物</text>
+  <text x="1606" y="175" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">29</text>
+  <text x="1860.0" y="174" class="node-title" text-anchor="middle" font-size="18">问答 / 企业知识库 RAG</text>
+  <text x="1860.0" y="194" class="node-subtitle" text-anchor="middle" font-size="11">结构化 Chunk / Overlap</text>
+  <text x="1860.0" y="209" class="node-subtitle" text-anchor="middle" font-size="11">BM25 + Dense 双路召回 → RRF</text>
+  <text x="1860.0" y="224" class="node-subtitle" text-anchor="middle" font-size="11">可选 Cross-Encoder 重排</text>
+  <text x="1860.0" y="239" class="node-subtitle" text-anchor="middle" font-size="11">Evidence Gate → Citation</text>
+  <rect x="1580" y="305" width="560" height="132" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1580" y="305" width="7" height="132" fill="#435A73" />
+  <rect x="1594" y="317" width="24" height="18" fill="#435A73" />
+  <text x="1606" y="330" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">30</text>
+  <text x="1860.0" y="329" class="node-title" text-anchor="middle" font-size="18">调研专用检索</text>
+  <text x="1860.0" y="349" class="node-subtitle" text-anchor="middle" font-size="11">arXiv：API relevance + 领域过滤</text>
+  <text x="1860.0" y="364" class="node-subtitle" text-anchor="middle" font-size="11">Local PDF：固定 Chunk + 词项交集</text>
+  <text x="1860.0" y="379" class="node-subtitle" text-anchor="middle" font-size="11">写作：MiniLM cosine Top-K</text>
+  <text x="1860.0" y="394" class="node-subtitle" text-anchor="middle" font-size="11">不经过统一 Hybrid RAG</text>
+  <rect x="1580" y="460" width="560" height="112" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1580" y="460" width="7" height="112" fill="#7567A8" />
+  <rect x="1594" y="472" width="24" height="18" fill="#7567A8" />
+  <text x="1606" y="485" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">31</text>
+  <text x="1860.0" y="484" class="node-title" text-anchor="middle" font-size="18">Memory 算法</text>
+  <text x="1860.0" y="504" class="node-subtitle" text-anchor="middle" font-size="11">Episode → Fact → Provenance / Entity</text>
+  <text x="1860.0" y="519" class="node-subtitle" text-anchor="middle" font-size="11">SQLite WAL + 时间有效事实</text>
+  <text x="1860.0" y="534" class="node-subtitle" text-anchor="middle" font-size="11">BM25 + Embedding + Entity + Time → RRF / MMR</text>
+  <rect x="1580" y="595" width="560" height="132" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1580" y="595" width="7" height="132" fill="#0F9D8A" />
+  <rect x="1594" y="607" width="24" height="18" fill="#0F9D8A" />
+  <text x="1606" y="620" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">32</text>
+  <text x="1860.0" y="619" class="node-title" text-anchor="middle" font-size="18">Context 工程</text>
+  <text x="1860.0" y="639" class="node-subtitle" text-anchor="middle" font-size="11">Pinned / Active / Summary</text>
+  <text x="1860.0" y="654" class="node-subtitle" text-anchor="middle" font-size="11">Memory / Evidence / Artifact 分层预算</text>
+  <text x="1860.0" y="669" class="node-subtitle" text-anchor="middle" font-size="11">Watermark 压缩</text>
+  <text x="1860.0" y="684" class="node-subtitle" text-anchor="middle" font-size="11">Compaction DAG + Restore</text>
+  <rect x="1580" y="750" width="560" height="132" fill="#FFFFFF" stroke="#435A73" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1580" y="750" width="7" height="132" fill="#435A73" />
+  <rect x="1594" y="762" width="24" height="18" fill="#435A73" />
+  <text x="1606" y="775" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">33</text>
+  <text x="1860.0" y="774" class="node-title" text-anchor="middle" font-size="18">Agent Runtime</text>
+  <text x="1860.0" y="794" class="node-subtitle" text-anchor="middle" font-size="11">Async Queue · LangGraph StateGraph</text>
+  <text x="1860.0" y="809" class="node-subtitle" text-anchor="middle" font-size="11">SQLite Checkpoint · Retry · Cancel</text>
+  <text x="1860.0" y="824" class="node-subtitle" text-anchor="middle" font-size="11">SSE Event · Span Trace</text>
+  <text x="1860.0" y="839" class="node-subtitle" text-anchor="middle" font-size="11">Langfuse Score</text>
+  <rect x="1580" y="905" width="560" height="92" fill="#FFFFFF" stroke="#D94A4A" stroke-width="1.5" filter="url(#node-shadow)" />
+  <rect x="1580" y="905" width="7" height="92" fill="#D94A4A" />
+  <rect x="1594" y="917" width="24" height="18" fill="#D94A4A" />
+  <text x="1606" y="930" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">34</text>
+  <text x="1860.0" y="929" class="node-title" text-anchor="middle" font-size="18">生产治理</text>
+  <text x="1860.0" y="949" class="node-subtitle" text-anchor="middle" font-size="11">ACL · 幂等 · Cache · 熔断 · 脱敏 · 失败恢复</text>
   <rect x="80" y="1115" width="320" height="92" fill="#FFFFFF" stroke="#7567A8" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="80" y="1115" width="7" height="92" fill="#7567A8" />
   <rect x="94" y="1127" width="24" height="18" fill="#7567A8" />
-  <text x="106" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">40</text>
+  <text x="106" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">35</text>
   <text x="240.0" y="1139" class="node-title" text-anchor="middle" font-size="17">可恢复 Runtime</text>
   <text x="240.0" y="1156" class="node-subtitle" text-anchor="middle" font-size="11">LangGraph Checkpoint · Retry · Cancel</text>
   <text x="240.0" y="1171" class="node-subtitle" text-anchor="middle" font-size="11">Session / Task 持久化</text>
   <rect x="445" y="1115" width="320" height="92" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="445" y="1115" width="7" height="92" fill="#0F9D8A" />
   <rect x="459" y="1127" width="24" height="18" fill="#0F9D8A" />
-  <text x="471" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">41</text>
+  <text x="471" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">36</text>
   <text x="605.0" y="1139" class="node-title" text-anchor="middle" font-size="17">Langfuse Score</text>
   <text x="605.0" y="1156" class="node-subtitle" text-anchor="middle" font-size="11">SSE · Runtime Event · Agent Trace</text>
   <text x="605.0" y="1171" class="node-subtitle" text-anchor="middle" font-size="11">Span Tree · Token / Latency</text>
   <rect x="810" y="1115" width="470" height="92" fill="#FFFFFF" stroke="#2F6FED" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="810" y="1115" width="7" height="92" fill="#2F6FED" />
   <rect x="824" y="1127" width="24" height="18" fill="#2F6FED" />
-  <text x="836" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">42</text>
+  <text x="836" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">37</text>
   <text x="1045.0" y="1139" class="node-title" text-anchor="middle" font-size="17">PIM Domain Pilot</text>
   <text x="1045.0" y="1156" class="node-subtitle" text-anchor="middle" font-size="11">PIM 专项评测 · SciFact · QASPER</text>
   <text x="1045.0" y="1171" class="node-subtitle" text-anchor="middle" font-size="11">Smoke / Quality · Metrics / CI / Bad Cases</text>
   <rect x="1325" y="1115" width="360" height="92" fill="#FFFFFF" stroke="#0F9D8A" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="1325" y="1115" width="7" height="92" fill="#0F9D8A" />
   <rect x="1339" y="1127" width="24" height="18" fill="#0F9D8A" />
-  <text x="1351" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">43</text>
+  <text x="1351" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">38</text>
   <text x="1505.0" y="1139" class="node-title" text-anchor="middle" font-size="17">数据驱动优化</text>
   <text x="1505.0" y="1156" class="node-subtitle" text-anchor="middle" font-size="11">检索质量 · Memory 召回</text>
   <text x="1505.0" y="1171" class="node-subtitle" text-anchor="middle" font-size="11">Context 保真 · 延迟与成本</text>
   <rect x="1730" y="1115" width="390" height="92" fill="#FFFFFF" stroke="#D58A16" stroke-width="1.5" filter="url(#node-shadow)" />
   <rect x="1730" y="1115" width="7" height="92" fill="#D58A16" />
   <rect x="1744" y="1127" width="24" height="18" fill="#D58A16" />
-  <text x="1756" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">44</text>
+  <text x="1756" y="1140" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">39</text>
   <text x="1925.0" y="1139" class="node-title" text-anchor="middle" font-size="17">项目价值</text>
   <text x="1925.0" y="1156" class="node-subtitle" text-anchor="middle" font-size="11">可信回答 · 深度文章</text>
   <text x="1925.0" y="1171" class="node-subtitle" text-anchor="middle" font-size="11">可追溯 · 可恢复 · 可量化</text>

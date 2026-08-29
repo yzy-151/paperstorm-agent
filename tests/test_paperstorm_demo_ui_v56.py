@@ -22,8 +22,13 @@ class PaperStormDemoUIV56Test(unittest.TestCase):
     def test_frontend_assets_are_versioned_to_prevent_mixed_releases(self):
         self.assertIn('href="styles.css?v=7.2.0"', self.index)
         self.assertIn('src="app.js?v=7.2.0"', self.index)
-        for node in ("request", "persona", "dialogue", "retrieval", "evidence", "outline", "writer", "deliver"):
+        for node in ("request", "research", "outline", "writer", "polish", "evaluate", "deliver"):
             self.assertIn('data-node="{0}"'.format(node), self.index)
+        for obsolete in ('data-node="persona"', 'data-node="dialogue"', 'data-node="query"', 'data-node="retrieval"', 'data-node="evidence"'):
+            self.assertNotIn(obsolete, self.index)
+        self.assertIn("StormInformationTable", self.index)
+        self.assertNotIn("Chunk / Hybrid / Rerank", self.index)
+        self.assertIn("pipelineStageAliases", self.script)
         self.assertIn("renderResearchProgress", self.script)
         self.assertIn("applyPipelineTrace", self.script)
 
@@ -36,6 +41,7 @@ class PaperStormDemoUIV56Test(unittest.TestCase):
         ):
             self.assertIn(marker, self.index)
         self.assertIn("/chat/sessions", self.script)
+        self.assertIn('event.key === "Enter" && !event.shiftKey', self.script)
 
     def test_developer_mode_is_a_separate_surface(self):
         self.assertIn('id="developer-view"', self.index)

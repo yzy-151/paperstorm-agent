@@ -69,6 +69,20 @@ test("mobile chat keeps the primary conversation controls visible", async ({page
   });
 });
 
+test("chat sends with Enter and keeps Shift Enter for a new line", async ({page}) => {
+  await page.setViewportSize({width: 1100, height: 760});
+  await page.goto(baseURL, {waitUntil: "networkidle"});
+  await page.locator("#show-chat-mode").click();
+  await page.locator("#chat-run-mode").selectOption("fake");
+  await page.locator("#chat-input").fill("第一行");
+  await page.locator("#chat-input").press("Shift+Enter");
+  await page.locator("#chat-input").type("第二行");
+  await expect(page.locator("#chat-input")).toHaveValue("第一行\n第二行");
+  await page.locator("#chat-input").press("Enter");
+  await expect(page.locator("#chat-messages .message.user").last()).toContainText("第一行");
+  await expect(page.locator("#chat-messages .message.user").last()).toContainText("第二行");
+});
+
 test("developer workbench discovers local datasets and exposes reproducible runs", async ({page}) => {
   await page.setViewportSize({width: 1440, height: 1000});
   await page.goto(baseURL, {waitUntil: "networkidle"});
