@@ -42,11 +42,12 @@ class ArchitectureMapTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn(
-            "docs/architecture/paperstorm-system-architecture.png", readme
+            "docs/architecture/paperstorm-executive-overview.svg", readme
         )
         self.assertIn(
-            "docs/architecture/paperstorm-system-architecture.html", readme
+            "docs/architecture/paperstorm-executive-overview.drawio", readme
         )
+        self.assertNotIn("paperstorm-system-architecture.png", readme)
 
     def test_drawio_sources_are_editable_and_include_runtime_sequence(self):
         architecture_dir = ROOT / "docs" / "architecture"
@@ -200,6 +201,8 @@ class ArchitectureMapTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         for filename in (
+            "paperstorm-executive-overview.svg",
+            "paperstorm-executive-overview.drawio",
             "paperstorm-agent-system-flow.svg",
             "paperstorm-async-runtime-sequence.svg",
             "paperstorm-agent-system-flow.drawio",
@@ -207,7 +210,6 @@ class ArchitectureMapTests(unittest.TestCase):
         ):
             with self.subTest(filename=filename):
                 self.assertIn(f"docs/architecture/{filename}", readme)
-        self.assertNotIn("paperstorm-executive-overview", readme)
 
 
 if __name__ == "__main__":

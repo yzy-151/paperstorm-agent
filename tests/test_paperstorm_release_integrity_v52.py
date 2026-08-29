@@ -77,7 +77,7 @@ class PaperStormReleaseIntegrityV52Test(unittest.TestCase):
                 self.assertIn(marker, readme)
 
         self.assertNotIn("v7.0", readme)
-        self.assertNotIn("paperstorm-executive-overview", readme)
+        self.assertIn("paperstorm-executive-overview.svg", readme)
         self.assertNotIn("消除 `Muon optimizer` 与粒子物理 muon 的语义歧义", readme)
         self.assertIn('$env:LANGFUSE_PUBLIC_KEY="<Langfuse public key>"', readme)
         self.assertIn('$env:LANGFUSE_SECRET_KEY="<Langfuse secret key>"', readme)

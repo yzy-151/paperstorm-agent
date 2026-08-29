@@ -10,8 +10,6 @@ PaperStorm Agent v7.2 是基于 Stanford STORM 扩展的论文调研与知识问
 - 修复真实 arXiv URL 字典索引、DeepSeek 思考预算吞占可见输出、重试残留错误状态等运行时问题。
 - 提升真实调研默认深度，并在零检索结果时显式失败，避免生成缺少论文证据的空报告。
 
-![PaperStorm 论文调研工作台](docs/screenshots/dashboard-research-v64.png)
-
 ![PaperStorm 调研工作流演示](docs/screenshots/paperstorm-research-flow-v65.gif)
 
 ## 核心能力
@@ -29,9 +27,9 @@ PaperStorm Agent v7.2 是基于 Stanford STORM 扩展的论文调研与知识问
 
 ## 系统架构
 
-![PaperStorm 完整系统架构](docs/architecture/paperstorm-system-architecture.png)
+![PaperStorm 业务架构](docs/architecture/paperstorm-executive-overview.svg)
 
-[完整系统架构 HTML 源文件](docs/architecture/paperstorm-system-architecture.html)
+[Draw.io 可编辑源文件](docs/architecture/paperstorm-executive-overview.drawio)
 
 ### Agent 与数据流
 

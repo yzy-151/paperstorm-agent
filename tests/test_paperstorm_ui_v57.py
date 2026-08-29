@@ -28,7 +28,6 @@ class PaperStormUIV57Test(unittest.TestCase):
 
     def test_readme_presents_new_screenshots_diagram_and_benchmark_icons(self):
         for marker in (
-            "dashboard-research-v64.png",
             "dashboard-chat-v64.png",
             "dashboard-developer-v64.png",
             "paperstorm-research-flow-v65.gif",
