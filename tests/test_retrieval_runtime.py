@@ -132,6 +132,68 @@ class PaperStormRetrievalRuntimeTest(unittest.TestCase):
             self.assertEqual(outcome["stack"], "retrieval_pipeline")
             self.assertEqual(outcome["mode"], "hybrid")
 
+    def test_runtime_question_answering_expands_generated_article_section(self):
+        from knowledge_storm.retrieval_runtime import search_runtime_index
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            (run_dir / "storm_gen_article_polished.txt").write_text(
+                "# 方法\n\nMuon 使用正交化动量更新参数。\n\n"
+                "该方法通过 Newton-Schulz 迭代近似正交化，以改善大模型训练效率。\n\n"
+                "# 结果\n\n实验比较了训练损失和吞吐率。",
+                encoding="utf-8",
+            )
+            (run_dir / "raw_search_results.json").write_text("[]", encoding="utf-8")
+
+            outcome = search_runtime_index(
+                run_dir,
+                "Muon 为什么使用 Newton-Schulz？",
+                top_k=1,
+                embedding="hash",
+                mode="bm25",
+                parent_budget_tokens=80,
+            )
+
+        self.assertTrue(outcome["results"])
+        result = outcome["results"][0]
+        self.assertTrue(result["parent_id"])
+        self.assertIn("正交化", result["expanded_content"])
+        self.assertGreater(result["parent_allocation"]["used_tokens"], 0)
+        parent_stage = next(
+            stage for stage in outcome["stages"] if stage["name"] == "parent_expand"
+        )
+        self.assertEqual("completed", parent_stage["status"])
+
+    def test_runtime_splits_single_long_article_paragraph_before_parent_expansion(self):
+        from knowledge_storm.retrieval_runtime import search_runtime_index
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            long_section = (
+                "Muon 使用 Newton-Schulz 正交化动量。"
+                + "训练稳定性分析。" * 90
+                + "该章节最终讨论大模型训练吞吐率。"
+            )
+            (run_dir / "storm_gen_article_polished.txt").write_text(
+                "# 算法原理\n\n" + long_section,
+                encoding="utf-8",
+            )
+            (run_dir / "raw_search_results.json").write_text("[]", encoding="utf-8")
+
+            outcome = search_runtime_index(
+                run_dir,
+                "Muon Newton-Schulz",
+                top_k=1,
+                embedding="hash",
+                mode="bm25",
+                parent_budget_tokens=160,
+            )
+
+        result = outcome["results"][0]
+        self.assertLess(len(result["content"]), len(long_section))
+        self.assertTrue(result["parent_context"])
+        self.assertGreater(result["parent_allocation"]["used_tokens"], 0)
+
     def test_runtime_index_is_lru_cached_and_invalidated_on_file_change(self):
         from knowledge_storm.retrieval_runtime import search_runtime_index
 

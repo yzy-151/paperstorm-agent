@@ -11,8 +11,11 @@ class PaperStormEnterpriseV32Test(unittest.TestCase):
             root = Path(temp_dir)
             paper = root / "paper.txt"
             paper.write_text(
+                "1 Background\n"
                 "Passive intermodulation is caused by nonlinear passive RF components.\n"
-                "Neural network cancellation can suppress PIM products.",
+                "2 Method\n"
+                "Neural network cancellation can suppress PIM products because it models "
+                "the nonlinear distortion mechanism.",
                 encoding="utf-8",
             )
             service = EnterpriseKnowledgeBaseService(root)
@@ -22,16 +25,22 @@ class PaperStormEnterpriseV32Test(unittest.TestCase):
                 embedding_provider="hash",
                 expected_keywords=["passive intermodulation", "RF"],
                 forbidden_keywords=["DRAM"],
+                chunk_size=8,
+                chunk_overlap=2,
             )
             answer = service.ask(kb["kb_id"], "PIM 是什么？", top_k=2)
 
             self.assertTrue(kb["kb_id"])
             self.assertEqual(kb["document_count"], 1)
             self.assertGreater(kb["chunk_count"], 0)
+            self.assertGreater(kb["parent_count"], 0)
             self.assertTrue(Path(kb["index_path"]).exists())
             self.assertTrue(answer["grounded"])
             self.assertIn("Passive intermodulation", answer["answer"])
             self.assertTrue(answer["citations"])
+            self.assertTrue(
+                any(item.get("parent_context") for item in answer["evidence"])
+            )
 
     def test_incremental_update_commits_a_new_index_generation(self):
         from knowledge_storm.paperstorm_enterprise_kb import EnterpriseKnowledgeBaseService

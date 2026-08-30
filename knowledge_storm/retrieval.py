@@ -765,10 +765,17 @@ class HybridPaperIndex:
         chunk_size: int = 500,
         chunk_overlap: int = 100,
     ):
-        from .document_ingestion import chunk_text
-
         if chunk_overlap >= chunk_size:
             raise ValueError("chunk_overlap must be smaller than chunk_size")
+        chunks = cls._flat_chunks_from_documents(
+            documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap
+        )
+        return cls(chunks=chunks, embedding_provider=embedding_provider)
+
+    @staticmethod
+    def _flat_chunks_from_documents(documents, chunk_size, chunk_overlap):
+        from .document_ingestion import chunk_text
+
         chunks = []
         for doc_index, document in enumerate(documents or [], start=1):
             text = str(document.get("text") or "")
@@ -791,7 +798,44 @@ class HybridPaperIndex:
                         ),
                     }
                 )
-        return cls(chunks=chunks, embedding_provider=embedding_provider)
+        return chunks
+
+    @classmethod
+    def from_structured_documents(
+        cls,
+        documents: Iterable[Dict],
+        embedding_provider,
+        chunk_tokens: int = 320,
+        overlap_tokens: int = 48,
+    ):
+        """Build retrievable child nodes with bounded document/section parents."""
+        from .document_ingestion import ingest_document
+
+        nodes = []
+        for doc_index, document in enumerate(documents or [], start=1):
+            text = str(document.get("text") or "")
+            if not text.strip():
+                continue
+            document_id = str(
+                document.get("document_id") or "doc-{0}".format(doc_index)
+            )
+            metadata = dict(document.get("metadata") or {})
+            document_nodes = ingest_document(
+                document_id=document_id,
+                pages=[{"page_number": 1, "text": text}],
+                title=document.get("title") or document_id,
+                chunk_tokens=chunk_tokens,
+                overlap_tokens=overlap_tokens,
+            )
+            for node in document_nodes:
+                enriched = dict(node)
+                enriched["url"] = document.get("url") or ""
+                enriched["source_type"] = (
+                    document.get("source_type") or "document"
+                )
+                enriched["metadata"] = dict(metadata, **(node.get("metadata") or {}))
+                nodes.append(enriched)
+        return cls(chunks=nodes, embedding_provider=embedding_provider)
 
     @classmethod
     def from_run_dir(
@@ -803,20 +847,62 @@ class HybridPaperIndex:
     ):
         """Build an index from polished article passages and raw search results."""
         run_dir = Path(run_dir)
+        nodes = []
         documents = []
+        from .document_ingestion import chunk_text
         from .paperstorm_sources import load_article_passages
 
-        for passage in load_article_passages(run_dir):
-            documents.append(
+        article_passages = load_article_passages(run_dir)
+        sections = {}
+        for passage in article_passages:
+            sections.setdefault(passage["section"], []).append(passage)
+        for section_index, (section, passages) in enumerate(sections.items(), start=1):
+            parent_id = "article::section::{0}".format(section_index)
+            nodes.append(
                 {
-                    "document_id": "article-{0}".format(passage["paragraph_index"]),
-                    "title": passage["title"],
-                    "text": passage["content"],
-                    "source_type": "article",
+                    "node_id": parent_id,
+                    "node_type": "section",
+                    "document_id": "generated-article",
+                    "parent_id": None,
+                    "title": section,
+                    "content": "\n\n".join(item["content"] for item in passages),
+                    "retrieval_content": "\n\n".join(
+                        item["content"] for item in passages
+                    ),
                     "url": "",
-                    "metadata": passage,
+                    "source_type": "article",
+                    "metadata": {"section": section, "section_index": section_index},
                 }
             )
+            for passage in passages:
+                passage_chunks = chunk_text(
+                    passage["content"],
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                )
+                for chunk_index, content in enumerate(passage_chunks, start=1):
+                    chunk_id = "article::paragraph::{0}::chunk::{1}".format(
+                        passage["paragraph_index"], chunk_index
+                    )
+                    nodes.append(
+                        {
+                            "node_id": chunk_id,
+                            "node_type": "passage",
+                            "chunk_id": chunk_id,
+                            "document_id": "generated-article",
+                            "parent_id": parent_id,
+                            "title": passage["title"],
+                            "content": content,
+                            "retrieval_content": content,
+                            "url": "",
+                            "source_type": "article",
+                            "metadata": dict(
+                                passage,
+                                chunk_index=chunk_index,
+                                chunk_count=len(passage_chunks),
+                            ),
+                        }
+                    )
         raw_results = _read_json(run_dir / "raw_search_results.json", [])
         for index, result in enumerate(_iter_raw_search_results(raw_results), start=1):
             result_meta = result.get("meta") or {}
@@ -846,12 +932,14 @@ class HybridPaperIndex:
                         },
                     }
                 )
-        return cls.from_documents(
-            documents,
-            embedding_provider=embedding_provider,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
+        nodes.extend(
+            cls._flat_chunks_from_documents(
+                documents,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
         )
+        return cls(chunks=nodes, embedding_provider=embedding_provider)
 
     def _candidate_indices(self, allowed_document_ids=None, allowed_chunk_ids=None):
         """Resolve authorization scope before either retrieval scorer executes."""

@@ -1,7 +1,9 @@
 """QASPER adapter for scientific QA, evidence selection, and context budgets."""
 
 import json
+import re
 import statistics
+from collections import Counter
 from pathlib import Path
 
 from .base import BenchmarkCase, BenchmarkDataset, BenchmarkDocument
@@ -188,6 +190,156 @@ def evaluate_qasper_context_budget(
         ],
     }
     return report, rows
+
+
+def evaluate_qasper_parent_context_coverage(
+    dataset,
+    ranking_rows,
+    mode="hybrid_governed",
+    parent_budget_tokens=512,
+):
+    """Measure extra gold evidence made visible by bounded section expansion.
+
+    Rankings are frozen: this diagnostic attributes any change only to the
+    parent-context layer. It measures Reader input coverage, not Answer F1.
+    """
+    from .runner import HashEmbeddingProvider, _benchmark_nodes
+    from ...retrieval import HybridPaperIndex
+
+    budget = int(parent_budget_tokens)
+    if budget <= 0:
+        raise ValueError("parent_budget_tokens must be positive")
+    rankings = {
+        str(row.get("case_id")): row
+        for row in ranking_rows
+        if str(row.get("mode")) == str(mode)
+    }
+    document_map = dataset.document_map()
+    index = HybridPaperIndex(
+        _benchmark_nodes(dataset, structured=True),
+        embedding_provider=HashEmbeddingProvider(dim=32),
+    )
+    chunk_map = {str(item["chunk_id"]): item for item in index.chunks}
+    rows = []
+    for case in dataset.cases:
+        ranking = rankings.get(str(case.case_id))
+        if not ranking:
+            continue
+        ranked_ids = [
+            str(value)
+            for value in ranking.get("ranked_document_ids") or []
+            if str(value) in chunk_map
+        ]
+        gold_ids = {
+            str(value)
+            for value in (case.evidence_ids or case.relevant_document_ids)
+            if str(value) in document_map
+        }
+        if not gold_ids:
+            continue
+        ranked = [
+            dict(chunk_map[document_id], final_rank=rank, score=1.0 / rank)
+            for rank, document_id in enumerate(ranked_ids, start=1)
+        ]
+        expanded = index.expand_parent_context(ranked, budget)
+        child_visible_text = "\n".join(
+            _normalized_evidence_text(item.get("content") or "")
+            for item in ranked
+        )
+        visible_text = "\n".join(
+            _normalized_evidence_text(item.get("expanded_content") or "")
+            for item in expanded
+        )
+        child_covered = gold_ids.intersection(ranked_ids)
+        expanded_covered = {
+            document_id
+            for document_id in gold_ids
+            if _normalized_evidence_text(document_map[document_id].text)
+            and _normalized_evidence_text(document_map[document_id].text)
+            in visible_text
+        }
+        expanded_covered.update(child_covered)
+        rows.append(
+            {
+                "case_id": str(case.case_id),
+                "paper_id": str(case.metadata.get("paper_id") or ""),
+                "ranked_document_ids": ranked_ids,
+                "gold_evidence_ids": sorted(gold_ids),
+                "child_covered_gold_ids": sorted(child_covered),
+                "expanded_covered_gold_ids": sorted(expanded_covered),
+                "additional_gold_evidence_ids": sorted(
+                    expanded_covered - child_covered
+                ),
+                "child_gold_evidence_recall": len(child_covered) / len(gold_ids),
+                "expanded_gold_evidence_recall": len(expanded_covered)
+                / len(gold_ids),
+                "child_gold_token_coverage": sum(
+                    _evidence_token_coverage(
+                        document_map[document_id].text, child_visible_text
+                    )
+                    for document_id in gold_ids
+                )
+                / len(gold_ids),
+                "expanded_gold_token_coverage": sum(
+                    _evidence_token_coverage(
+                        document_map[document_id].text, visible_text
+                    )
+                    for document_id in gold_ids
+                )
+                / len(gold_ids),
+                "expanded_parent_count": sum(
+                    bool(item.get("parent_context")) for item in expanded
+                ),
+                "parent_tokens_used": sum(
+                    int((item.get("parent_allocation") or {}).get("used_tokens") or 0)
+                    for item in expanded
+                ),
+            }
+        )
+    child_recall = _row_mean(rows, "child_gold_evidence_recall")
+    expanded_recall = _row_mean(rows, "expanded_gold_evidence_recall")
+    child_token_coverage = _row_mean(rows, "child_gold_token_coverage")
+    expanded_token_coverage = _row_mean(rows, "expanded_gold_token_coverage")
+    report = {
+        "benchmark": "qasper-parent-context-coverage-v1",
+        "dataset_version": dataset.version,
+        "case_count": len(rows),
+        "retrieval_mode": mode,
+        "parent_budget_tokens": budget,
+        "child_gold_evidence_recall": child_recall,
+        "expanded_gold_evidence_recall": expanded_recall,
+        "recall_delta": round(expanded_recall - child_recall, 6),
+        "child_gold_token_coverage": child_token_coverage,
+        "expanded_gold_token_coverage": expanded_token_coverage,
+        "token_coverage_delta": round(
+            expanded_token_coverage - child_token_coverage, 6
+        ),
+        "improved_case_count": sum(
+            row["expanded_gold_evidence_recall"]
+            > row["child_gold_evidence_recall"]
+            for row in rows
+        ),
+        "mean_parent_tokens_used": _row_mean(rows, "parent_tokens_used"),
+        "evidence_tier": "public-official-context-diagnostic",
+        "limitations": [
+            "Frozen rankings isolate parent-context impact from retrieval changes.",
+            "This measures visible gold evidence, not generated-answer correctness.",
+        ],
+    }
+    return report, rows
+
+
+def _normalized_evidence_text(text):
+    return " ".join(str(text or "").split())
+
+
+def _evidence_token_coverage(gold_text, visible_text):
+    gold = Counter(re.findall(r"[a-z0-9]+", str(gold_text or "").lower()))
+    if not gold:
+        return 0.0
+    visible = Counter(re.findall(r"[a-z0-9]+", str(visible_text or "").lower()))
+    matched = sum(min(count, visible.get(token, 0)) for token, count in gold.items())
+    return matched / sum(gold.values())
 
 
 def _row_mean(rows, key):

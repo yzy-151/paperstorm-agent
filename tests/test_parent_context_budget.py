@@ -69,6 +69,65 @@ class ParentContextBudgetTests(unittest.TestCase):
         self.assertIn("right", context)
         self.assertNotIn("child one", context)
 
+    def test_qasper_diagnostic_attributes_extra_gold_to_parent_context(self):
+        from knowledge_storm.evaluation.public_benchmarks.base import (
+            BenchmarkCase,
+            BenchmarkDataset,
+            BenchmarkDocument,
+        )
+        from knowledge_storm.evaluation.public_benchmarks.qasper import (
+            evaluate_qasper_parent_context_coverage,
+        )
+
+        documents = (
+            BenchmarkDocument(
+                "p1:0:0",
+                "Method",
+                "The selected passage introduces Newton-Schulz.",
+                {"paper_id": "p1", "section_index": 0, "section": "Method"},
+            ),
+            BenchmarkDocument(
+                "p1:0:1",
+                "Method",
+                "The gold passage explains orthogonalized momentum.",
+                {"paper_id": "p1", "section_index": 0, "section": "Method"},
+            ),
+        )
+        dataset = BenchmarkDataset(
+            "qasper",
+            "fixture",
+            documents,
+            (
+                BenchmarkCase(
+                    "q1",
+                    "Why Newton-Schulz?",
+                    ("p1:0:1",),
+                    "test",
+                    evidence_ids=("p1:0:1",),
+                    metadata={"paper_id": "p1"},
+                ),
+            ),
+        )
+        rankings = [
+            {
+                "case_id": "q1",
+                "mode": "hybrid_governed",
+                "ranked_document_ids": ["p1:0:0"],
+            }
+        ]
+
+        report, rows = evaluate_qasper_parent_context_coverage(
+            dataset,
+            rankings,
+            mode="hybrid_governed",
+            parent_budget_tokens=128,
+        )
+
+        self.assertEqual(0.0, report["child_gold_evidence_recall"])
+        self.assertEqual(1.0, report["expanded_gold_evidence_recall"])
+        self.assertEqual(1.0, report["recall_delta"])
+        self.assertEqual(["p1:0:1"], rows[0]["additional_gold_evidence_ids"])
+
 
 if __name__ == "__main__":
     unittest.main()

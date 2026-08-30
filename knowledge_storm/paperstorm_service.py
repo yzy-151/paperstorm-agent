@@ -384,6 +384,10 @@ class PaperStormTaskService:
         output_dir = Path(state["output_dir"])
         kb = PaperStormKnowledgeBase.from_run_dir(output_dir)
         retrieval_options = dict(retrieval_options)
+        retrieval_options.setdefault(
+            "parent_budget_tokens",
+            1600 if state.get("retriever") == "local-pdf" else 900,
+        )
         retrieval_options["history"] = tuple(history or ())
         search_plan = retrieval_options.get("search_plan")
         if search_plan is not None:

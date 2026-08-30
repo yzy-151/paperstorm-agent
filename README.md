@@ -1,14 +1,15 @@
 # PaperStorm Agent
 
-PaperStorm Agent v7.2 是基于 Stanford STORM 扩展的论文调研与知识问答平台。系统面向科学论文、
+PaperStorm Agent v7.3 是基于 Stanford STORM 扩展的论文调研与知识问答平台。系统面向科学论文、
 本地 PDF、Zotero 文献库和企业内部文档，提供多 Agent 深度调研、证据约束问答、混合检索、
 跨会话记忆、上下文治理、运行时恢复、公开 Benchmark 与 Langfuse 可观测性。
 
-### v7.2 发布摘要
+### v7.3 发布摘要
 
-- 统一文章、PDF 和问答引用契约，输出论文原始标题、作者及可点击原文链接。
-- 修复真实 arXiv URL 字典索引、DeepSeek 思考预算吞占可见输出、重试残留错误状态等运行时问题。
-- 提升真实调研默认深度，并在零检索结果时显式失败，避免生成缺少论文证据的空报告。
+- 将 Parent-Child Retrieval 接入调研文章问答和企业文档知识库：先检索段落 Child，再按来源预算展开章节 Parent，引用仍定位原始 Child。
+- 对生成文章的长段落进行二级切分，解决“Parent 与唯一 Child 内容完全相同、无法补充上下文”的产品边界。
+- 新增冻结排名的 QASPER Parent-Context 诊断；官方 test 1,309 题中，gold evidence token coverage 从 `0.808481` 提升至 `0.859614`（`+0.051133`），完整 evidence Recall 基本不变。
+- 使用真实 arXiv 与 DeepSeek API 验证 Muon 优化器完整调研和后续问答链路。
 
 ![PaperStorm 调研工作流演示](docs/screenshots/paperstorm-research-flow-v65.gif)
 
@@ -156,6 +157,7 @@ RAG 的已知 bad case、工业方案对照和后续路线见
 | P1+P2+P3+P4：生产治理 | Production Governance 8-case | ACL/Trace 泄漏 `0`；失败率 `0`；缓存隔离、超时、熔断恢复、Release Gate 全部通过 | 完全离线、不调用 LLM；不重复运行未受影响的质量数据集 |
 | LongMemEval-S Memory | LongMemEval-S | Recall@5 `0.8003`，P95 `359.3 ms` | 仅代表 evidence-session retrieval，不等同端到端回答准确率 |
 | PIM Domain Pilot | 5 篇论文、797 chunks、50 questions | GTE Recall@5 `0.7200`；Answer F1 `0.3983`；Citation Precision `0.9237`；真实向量 HNSW Recall@5 `1.0000` | 私有领域 pilot；题目由模型生成，不作为公开榜单或生产 SLA |
+| QASPER Parent Context | 官方 test 1,309 题、冻结 P2 Top-5 排名 | gold token coverage `0.808481 → 0.859614`（`+0.051133`）；完整 evidence Recall `0.552556 → 0.552641` | 衡量 Reader 可见证据覆盖，不是检索排名提升或 Answer F1 |
 
 ### Embedding 与规模诊断
 

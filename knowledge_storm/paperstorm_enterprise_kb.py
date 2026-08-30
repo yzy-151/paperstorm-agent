@@ -81,10 +81,10 @@ class EnterpriseKnowledgeBaseService:
             raise ValueError("No readable documents were provided.")
 
         provider = build_embedding_provider(embedding_provider)
-        index = HybridPaperIndex.from_documents(
+        index = HybridPaperIndex.from_structured_documents(
             documents,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
+            chunk_tokens=chunk_size,
+            overlap_tokens=chunk_overlap,
             embedding_provider=provider,
         )
         kb_id = uuid.uuid4().hex
@@ -98,6 +98,7 @@ class EnterpriseKnowledgeBaseService:
             "created_at": _now(),
             "document_count": len(documents),
             "chunk_count": len(index.chunks),
+            "parent_count": len(index.parents),
             "source_paths": [str(path) for path in source_paths or []],
             "expected_keywords": expected_keywords or [],
             "forbidden_keywords": forbidden_keywords or [],
@@ -218,6 +219,7 @@ class EnterpriseKnowledgeBaseService:
                 user_id=user_id,
                 policy_digest=policy_digest,
                 allowed_document_ids=allowed_document_ids,
+                parent_budget_tokens=1400,
             )
         )
         evidence = [_rag_chunk_to_doc(chunk) for chunk in retrieved.get("results") or []]
@@ -308,10 +310,10 @@ class EnterpriseKnowledgeBaseService:
                 owner_user_id=manifest.get("owner_user_id", user_id),
                 allowed_user_ids=manifest.get("allowed_user_ids") or [],
             )
-            index = HybridPaperIndex.from_documents(
+            index = HybridPaperIndex.from_structured_documents(
                 documents,
-                chunk_size=int(manifest.get("chunk_size") or 500),
-                chunk_overlap=int(manifest.get("chunk_overlap") or 100),
+                chunk_tokens=int(manifest.get("chunk_size") or 500),
+                overlap_tokens=int(manifest.get("chunk_overlap") or 100),
                 embedding_provider=provider,
             )
             next_version = int(manifest.get("index_version") or 1) + 1
@@ -321,6 +323,7 @@ class EnterpriseKnowledgeBaseService:
             manifest["source_paths"] = [item["path"] for item in records.values()]
             manifest["document_count"] = len(records)
             manifest["chunk_count"] = len(index.chunks)
+            manifest["parent_count"] = len(index.parents)
             manifest["index_version"] = next_version
             manifest["index_file"] = index_file
             manifest["index_path"] = str(index_path)
