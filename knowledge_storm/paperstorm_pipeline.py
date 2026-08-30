@@ -255,17 +255,36 @@ def ensure_research_sources(article_dir, retriever, enabled=True):
     """Reject a zero-source research run instead of publishing a hollow report."""
     if not enabled or retriever != "arxiv":
         return 0
-    registry_path = Path(article_dir) / "url_to_info.json"
-    try:
-        payload = json.loads(registry_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        payload = {}
-    source_count = len(payload.get("url_to_info") or {})
+    article_dir = Path(article_dir)
+    source_count = _count_saved_sources(article_dir / "url_to_info.json", registry=True)
+    if source_count == 0:
+        # A research-only run persists retrieval results before STORM builds the
+        # article-stage URL registry. Treat those results as authoritative too.
+        source_count = _count_saved_sources(article_dir / "raw_search_results.json")
     if source_count == 0:
         raise EmptyRetrievalError(
             "empty_retrieval: arXiv 未返回可用论文，请调整主题或领域约束后重试。"
         )
     return source_count
+
+
+def _count_saved_sources(path, registry=False):
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    if registry and isinstance(payload, dict):
+        payload = payload.get("url_to_info") or {}
+    if isinstance(payload, dict):
+        return sum(
+            1
+            for key, value in payload.items()
+            if str(key).startswith(("http://", "https://"))
+            or (isinstance(value, dict) and value.get("url"))
+        )
+    if isinstance(payload, list):
+        return sum(1 for value in payload if isinstance(value, dict) and value.get("url"))
+    return 0
 
 
 def _instrument_runner_stages(runner, trace):

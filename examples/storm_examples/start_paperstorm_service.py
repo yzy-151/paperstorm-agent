@@ -73,8 +73,19 @@ def preflight(args):
         )
 
 
+def load_project_api_keys():
+    """Load root-level secrets before preflight reports provider availability."""
+    secrets_path = Path(REPO_ROOT) / "secrets.toml"
+    if not secrets_path.exists():
+        return
+    from knowledge_storm.utils import load_api_key
+
+    load_api_key(toml_file_path=str(secrets_path))
+
+
 def main():
     args = build_parser().parse_args()
+    load_project_api_keys()
     preflight(args)
     print_demo_runbook(args)
     import uvicorn

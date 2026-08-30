@@ -19,6 +19,29 @@ class PaperStormPipelineTest(unittest.TestCase):
             with self.assertRaisesRegex(EmptyRetrievalError, "empty_retrieval"):
                 ensure_research_sources(run_dir, retriever="arxiv", enabled=True)
 
+    def test_arxiv_research_accepts_raw_results_before_url_registry_exists(self):
+        from knowledge_storm.paperstorm_pipeline import ensure_research_sources
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            (run_dir / "raw_search_results.json").write_text(
+                json.dumps(
+                    {
+                        "https://arxiv.org/abs/2401.15391": {
+                            "url": "https://arxiv.org/abs/2401.15391",
+                            "title": "MultiHop-RAG",
+                            "description": "A valid paper result.",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                ensure_research_sources(run_dir, retriever="arxiv", enabled=True),
+                1,
+            )
+
     def test_pipeline_defaults_use_balanced_research_profile(self):
         from knowledge_storm.paperstorm_pipeline import PaperStormPipelineConfig
 
