@@ -57,9 +57,9 @@
   <rect x="30" y="1055" width="6" height="42" fill="#7567A8" />
   <text x="46" y="1083" class="panel-title" text-anchor="start" font-size="17">工程保障、公开评测与反馈闭环</text>
   <path d="M 275 188.0 L 322.5 188.0 L 322.5 176.0 L 370 176.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
-  <path d="M 520 278.0 L 531.0 278.0 L 531.0 278.0 L 542 278.0" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
-  <path d="M 692 278.0 L 703.0 278.0 L 703.0 278.0 L 714 278.0" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
   <path d="M 617.5 207 L 617.5 226.0 L 445.0 226.0 L 445.0 245" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
+  <path d="M 617.5 207 L 617.5 226.0 L 617.0 226.0 L 617.0 245" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
+  <path d="M 617.5 207 L 617.5 226.0 L 789.0 226.0 L 789.0 245" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
   <path d="M 445.0 311 L 445.0 338.0 L 617.5 338.0 L 617.5 365" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
   <path d="M 617.0 311 L 617.0 338.0 L 617.5 338.0 L 617.5 365" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
   <path d="M 789.0 311 L 789.0 338.0 L 617.5 338.0 L 617.5 365" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
@@ -75,23 +75,22 @@
   <path d="M 1115 278.0 L 1125.0 278.0 L 1125.0 278.0 L 1135 278.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
   <path d="M 1315 278.0 L 1325.0 278.0 L 1325.0 278.0 L 1335 278.0" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
   <text x="1318.75" y="272.0" class="edge-label" text-anchor="middle">query</text>
-  <path d="M 1490 278.0 L 1410 335 L 1225 335 L 1135 278.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
-  <text x="1318.75" y="272.0" class="edge-label" text-anchor="middle">snippets</text>
   <path d="M 1225.0 311 L 1225.0 338.0 L 1225.0 338.0 L 1225.0 365" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
+  <text x="1225.0" y="334.5" class="edge-label" text-anchor="middle">dialogue</text>
+  <path d="M 1412.5 311 L 1412.5 338.0 L 1225.0 338.0 L 1225.0 365" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <text x="1318.75" y="334.5" class="edge-label" text-anchor="middle">evidence</text>
   <path d="M 1225.0 441 L 1225.0 460.5 L 1225.0 460.5 L 1225.0 480" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
   <path d="M 1225.0 548 L 1225.0 579.0 L 1080.0 579.0 L 1080.0 610" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
   <text x="1152.5" y="573.5" class="edge-label" text-anchor="middle">conversation_log</text>
   <path d="M 1225.0 441 L 1225.0 525.5 L 1355.0 525.5 L 1355.0 610" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
   <text x="1290.0" y="518.0" class="edge-label" text-anchor="middle">StormInformationTable</text>
   <path d="M 1080.0 680 L 1080.0 707.5 L 1080.0 707.5 L 1080.0 735" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
-  <path d="M 1490 645.0 L 1227.5 645.0 L 1227.5 770.0 L 965 770.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <path d="M 1355.0 680 L 1355.0 707.5 L 1080.0 707.5 L 1080.0 735" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
+  <text x="1217.5" y="701.5" class="edge-label" text-anchor="middle">Top-K snippets</text>
   <path d="M 1195 770.0 L 1207.5 770.0 L 1207.5 770.0 L 1220 770.0" fill="none" stroke="#435A73" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storm)" />
   <path d="M 1355.0 805 L 1355.0 837.5 L 1225.0 837.5 L 1225.0 870" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
   <path d="M 170.0 341 L 170.0 483.0 L 170.0 483.0 L 170.0 625" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
-  <path d="M 275 675.0 L 805.0 675.0 L 805.0 278.0 L 1335 278.0" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
-  <path d="M 275 675.0 L 360.0 675.0 L 360.0 406.0 L 445 406.0" fill="none" stroke="#2F6FED" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-primary)" />
   <path d="M 275 423.0 L 322.5 423.0 L 322.5 176.0 L 370 176.0" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
-  <path d="M 275 543.0 L 927.5 543.0 L 927.5 216.0 L 1580 216.0" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
   <path d="M 170.0 866 L 170.0 990.5 L 1045.0 990.5 L 1045.0 1115" fill="none" stroke="#D58A16" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-external)" />
   <path d="M 617.5 932 L 617.5 1023.5 L 240.0 1023.5 L 240.0 1115" fill="none" stroke="#7567A8" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-storage)" />
   <path d="M 1225.0 940 L 1225.0 1027.5 L 605.0 1027.5 L 605.0 1115" fill="none" stroke="#0F9D8A" stroke-width="2.2" stroke-dasharray="none" marker-end="url(#arrow-control)" />
@@ -354,12 +353,15 @@
   <text x="1925.0" y="1139" class="node-title" text-anchor="middle" font-size="17">项目价值</text>
   <text x="1925.0" y="1156" class="node-subtitle" text-anchor="middle" font-size="11">可信回答 · 深度文章</text>
   <text x="1925.0" y="1171" class="node-subtitle" text-anchor="middle" font-size="11">可追溯 · 可恢复 · 可量化</text>
-  <rect x="1760" y="40" width="8" height="8" fill="#2F6FED" />
-  <text x="1773" y="48" class="legend">数据 / 检索</text>
-  <rect x="1862" y="40" width="8" height="8" fill="#0F9D8A" />
-  <text x="1875" y="48" class="legend">Agent 控制</text>
-  <rect x="1964" y="40" width="8" height="8" fill="#435A73" />
-  <text x="1977" y="48" class="legend">STORM 核心</text>
-  <rect x="2066" y="40" width="8" height="8" fill="#D58A16" />
-  <text x="2079" y="48" class="legend">外部依赖</text>
+  <rect x="1655" y="40" width="8" height="8" fill="#2F6FED" />
+  <text x="1668" y="48" class="legend">检索数据</text>
+  <rect x="1759" y="40" width="8" height="8" fill="#0F9D8A" />
+  <text x="1772" y="48" class="legend">控制流</text>
+  <rect x="1863" y="40" width="8" height="8" fill="#435A73" />
+  <text x="1876" y="48" class="legend">STORM</text>
+  <rect x="1967" y="40" width="8" height="8" fill="#D58A16" />
+  <text x="1980" y="48" class="legend">外部依赖</text>
+  <rect x="2071" y="40" width="8" height="8" fill="#7567A8" />
+  <text x="2084" y="48" class="legend">记忆 / 存储</text>
+  <text x="1655" y="70" class="legend">实线箭头表示执行或数据方向；颜色表示链路类型，不表示执行先后</text>
 </svg>

@@ -102,12 +102,15 @@
   <line x1="1777.5" y1="196" x2="1777.5" y2="890" stroke="#0F9D8A" stroke-width="1.5" stroke-dasharray="6 6" />
   <text x="1777.5" y="154" class="node-title" text-anchor="middle" font-size="15">Langfuse</text>
   <text x="1777.5" y="171" class="node-subtitle" text-anchor="middle" font-size="11">trace and score</text>
-  <rect x="1460" y="40" width="8" height="8" fill="#2F6FED" />
-  <text x="1473" y="48" class="legend">数据 / 检索</text>
-  <rect x="1562" y="40" width="8" height="8" fill="#0F9D8A" />
-  <text x="1575" y="48" class="legend">Agent 控制</text>
-  <rect x="1664" y="40" width="8" height="8" fill="#435A73" />
-  <text x="1677" y="48" class="legend">STORM 核心</text>
-  <rect x="1766" y="40" width="8" height="8" fill="#D58A16" />
-  <text x="1779" y="48" class="legend">外部依赖</text>
+  <rect x="1355" y="40" width="8" height="8" fill="#2F6FED" />
+  <text x="1368" y="48" class="legend">检索数据</text>
+  <rect x="1459" y="40" width="8" height="8" fill="#0F9D8A" />
+  <text x="1472" y="48" class="legend">控制流</text>
+  <rect x="1563" y="40" width="8" height="8" fill="#435A73" />
+  <text x="1576" y="48" class="legend">STORM</text>
+  <rect x="1667" y="40" width="8" height="8" fill="#D58A16" />
+  <text x="1680" y="48" class="legend">外部依赖</text>
+  <rect x="1771" y="40" width="8" height="8" fill="#7567A8" />
+  <text x="1784" y="48" class="legend">记忆 / 存储</text>
+  <text x="1355" y="70" class="legend">实线箭头表示执行或数据方向；颜色表示链路类型，不表示执行先后</text>
 </svg>

@@ -37,6 +37,8 @@ PaperStorm Agent v7.2 是基于 Stanford STORM 扩展的论文调研与知识问
 
 [Draw.io 可编辑源文件](docs/architecture/paperstorm-agent-system-flow.drawio)
 
+图中箭头表示执行或数据传递方向；蓝色表示检索数据，绿色表示控制流，深灰表示 STORM 调研主链，橙色表示外部依赖，紫色表示记忆与持久化。
+
 ### 异步运行时顺序
 
 ![PaperStorm 异步运行时顺序](docs/architecture/paperstorm-async-runtime-sequence.svg)

@@ -195,9 +195,9 @@ def detailed_diagram():
     ]
     edges = [
         Edge("web", "chat_entry", kind="control", direction="right"),
-        Edge("context", "memory", kind="control", direction="right"),
-        Edge("memory", "session", kind="storage", direction="right"),
         Edge("chat_entry", "context", kind="control", direction="down"),
+        Edge("chat_entry", "memory", kind="storage", direction="down"),
+        Edge("chat_entry", "session", kind="storage", direction="down"),
         Edge("context", "unified_rag", kind="primary", direction="down"),
         Edge("memory", "unified_rag", kind="storage", direction="down"),
         Edge("session", "unified_rag", kind="storage", direction="down"),
@@ -210,20 +210,17 @@ def detailed_diagram():
         Edge("research_task", "persona", kind="storm", direction="down"),
         Edge("persona", "conv", kind="storm", direction="right"),
         Edge("conv", "source_rm", "query", "external", direction="right"),
-        Edge("source_rm", "conv", "snippets", "primary", direction="right", points=[(1410, 335), (1225, 335)]),
-        Edge("conv", "curation", kind="storm", direction="down"),
+        Edge("conv", "curation", "dialogue", "storm", direction="down"),
+        Edge("source_rm", "curation", "evidence", "primary", direction="down"),
         Edge("curation", "research_files", kind="storage", direction="down"),
         Edge("research_files", "outline", "conversation_log", "storm", direction="down"),
         Edge("curation", "semantic_topk", "StormInformationTable", "primary", direction="down"),
         Edge("outline", "writing", kind="storm", direction="down"),
-        Edge("semantic_topk", "writing", kind="primary", direction="right"),
+        Edge("semantic_topk", "writing", "Top-K snippets", "primary", direction="down"),
         Edge("writing", "polish", kind="storm", direction="right"),
         Edge("polish", "article", kind="primary", direction="down"),
         Edge("papers", "tools", kind="external", direction="down"),
-        Edge("tools", "source_rm", kind="external", direction="right"),
-        Edge("tools", "unified_rag", kind="primary", direction="right"),
         Edge("llm", "chat_entry", kind="external", direction="right"),
-        Edge("embedding", "rag_algo", kind="external", direction="right"),
         Edge("public_data", "bench", kind="external", direction="down"),
         Edge("chat_trace", "checkpoint", kind="storage", direction="down"),
         Edge("article", "observability", kind="control", direction="down"),
@@ -538,14 +535,16 @@ def write_svg(diagram):
             number = ET.SubElement(svg, "text", {"x": str(node.x + 26), "y": str(node.y + 25), "text-anchor": "middle", "font-size": "9", "font-weight": "800", "fill": "#FFFFFF"})
             number.text = f"{node_index:02d}"
         svg_text(svg, node)
-    legend_x = diagram.width - 440
+    legend_x = diagram.width - 545
     legend_y = 40
-    for offset, (kind, label) in enumerate((("primary", "数据 / 检索"), ("control", "Agent 控制"), ("storm", "STORM 核心"), ("external", "外部依赖"))):
+    for offset, (kind, label) in enumerate((("primary", "检索数据"), ("control", "控制流"), ("storm", "STORM"), ("external", "外部依赖"), ("storage", "记忆 / 存储"))):
         color = KINDS[kind][0]
-        x = legend_x + offset * 102
+        x = legend_x + offset * 104
         ET.SubElement(svg, "rect", {"x": str(x), "y": str(legend_y), "width": "8", "height": "8", "fill": color})
         item = ET.SubElement(svg, "text", {"x": str(x + 13), "y": str(legend_y + 8), "class": "legend"})
         item.text = label
+    note = ET.SubElement(svg, "text", {"x": str(diagram.width - 545), "y": "70", "class": "legend"})
+    note.text = "实线箭头表示执行或数据方向；颜色表示链路类型，不表示执行先后"
     ET.indent(svg, space="  ")
     ET.ElementTree(svg).write(ROOT / f"{diagram.name}.svg", encoding="utf-8", xml_declaration=True)
 

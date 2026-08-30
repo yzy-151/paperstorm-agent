@@ -140,13 +140,13 @@
         <mxCell id="edge-1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="web" target="chat_entry">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="context" target="memory">
+        <mxCell id="edge-2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="chat_entry" target="context">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7567A8;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="memory" target="session">
+        <mxCell id="edge-3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7567A8;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="chat_entry" target="memory">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="chat_entry" target="context">
+        <mxCell id="edge-4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7567A8;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="chat_entry" target="session">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="edge-5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="context" target="unified_rag">
@@ -185,15 +185,10 @@
         <mxCell id="edge-16" value="query" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D58A16;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="conv" target="source_rm">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-17" value="snippets" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="source_rm" target="conv">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1410" y="335" />
-              <mxPoint x="1225" y="335" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="edge-17" value="dialogue" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#435A73;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="conv" target="curation">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-18" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#435A73;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="conv" target="curation">
+        <mxCell id="edge-18" value="evidence" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="source_rm" target="curation">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="edge-19" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7567A8;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="curation" target="research_files">
@@ -208,7 +203,7 @@
         <mxCell id="edge-22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#435A73;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="outline" target="writing">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="semantic_topk" target="writing">
+        <mxCell id="edge-23" value="Top-K snippets" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="semantic_topk" target="writing">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="edge-24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#435A73;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="writing" target="polish">
@@ -220,37 +215,28 @@
         <mxCell id="edge-26" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D58A16;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="papers" target="tools">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-27" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D58A16;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="tools" target="source_rm">
+        <mxCell id="edge-27" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D58A16;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="llm" target="chat_entry">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-28" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="tools" target="unified_rag">
+        <mxCell id="edge-28" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D58A16;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="public_data" target="bench">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-29" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D58A16;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="llm" target="chat_entry">
+        <mxCell id="edge-29" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7567A8;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="chat_trace" target="checkpoint">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-30" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D58A16;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="embedding" target="rag_algo">
+        <mxCell id="edge-30" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="article" target="observability">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-31" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D58A16;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="public_data" target="bench">
+        <mxCell id="edge-31" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7567A8;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="checkpoint" target="observability">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-32" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7567A8;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="chat_trace" target="checkpoint">
+        <mxCell id="edge-32" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="observability" target="bench">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-33" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="article" target="observability">
+        <mxCell id="edge-33" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="bench" target="feedback">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-34" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7567A8;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="checkpoint" target="observability">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-35" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="observability" target="bench">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-36" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2F6FED;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="bench" target="feedback">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-37" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="feedback" target="outcome">
+        <mxCell id="edge-34" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F9D8A;strokeWidth=2;endArrow=block;endFill=1;dashed=0;fontSize=10;fontColor=#526078;" edge="1" parent="1" source="feedback" target="outcome">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>

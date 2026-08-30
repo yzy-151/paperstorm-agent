@@ -154,12 +154,15 @@
   <text x="1321" y="968" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF">14</text>
   <text x="1535.0" y="967" class="node-title" text-anchor="middle" font-size="17">业务价值</text>
   <text x="1535.0" y="984" class="node-subtitle" text-anchor="middle" font-size="11">可追溯 · 可恢复 · 可迭代 · 可演示</text>
-  <rect x="1480" y="40" width="8" height="8" fill="#2F6FED" />
-  <text x="1493" y="48" class="legend">数据 / 检索</text>
-  <rect x="1582" y="40" width="8" height="8" fill="#0F9D8A" />
-  <text x="1595" y="48" class="legend">Agent 控制</text>
-  <rect x="1684" y="40" width="8" height="8" fill="#435A73" />
-  <text x="1697" y="48" class="legend">STORM 核心</text>
-  <rect x="1786" y="40" width="8" height="8" fill="#D58A16" />
-  <text x="1799" y="48" class="legend">外部依赖</text>
+  <rect x="1375" y="40" width="8" height="8" fill="#2F6FED" />
+  <text x="1388" y="48" class="legend">检索数据</text>
+  <rect x="1479" y="40" width="8" height="8" fill="#0F9D8A" />
+  <text x="1492" y="48" class="legend">控制流</text>
+  <rect x="1583" y="40" width="8" height="8" fill="#435A73" />
+  <text x="1596" y="48" class="legend">STORM</text>
+  <rect x="1687" y="40" width="8" height="8" fill="#D58A16" />
+  <text x="1700" y="48" class="legend">外部依赖</text>
+  <rect x="1791" y="40" width="8" height="8" fill="#7567A8" />
+  <text x="1804" y="48" class="legend">记忆 / 存储</text>
+  <text x="1375" y="70" class="legend">实线箭头表示执行或数据方向；颜色表示链路类型，不表示执行先后</text>
 </svg>
