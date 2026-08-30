@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import time
 import xml.etree.ElementTree as ET
 from typing import Callable, Union, List
 
@@ -21,13 +20,10 @@ class ArxivRM(dspy.Retrieve):
     def __init__(
         self,
         k=3,
-        endpoint="https://export.arxiv.org/api/query",
+        endpoint="http://export.arxiv.org/api/query",
         sort_by="relevance",
         sort_order="descending",
         is_valid_source: Callable = None,
-        request_interval=3.0,
-        max_retries=2,
-        request_timeout=30,
     ):
         super().__init__(k=k)
         self.k = k
@@ -36,10 +32,6 @@ class ArxivRM(dspy.Retrieve):
         self.sort_order = sort_order
         self.usage = 0
         self.is_valid_source = is_valid_source or (lambda x: True)
-        self.request_interval = max(0.0, float(request_interval))
-        self.max_retries = max(0, int(max_retries))
-        self.request_timeout = max(1, int(request_timeout))
-        self._last_request_at = None
 
     def get_usage_and_reset(self):
         usage = self.usage
@@ -47,57 +39,19 @@ class ArxivRM(dspy.Retrieve):
         return {"ArxivRM": usage}
 
     def request(self, query: str):
-        params = {
-            "search_query": query,
-            "start": 0,
-            "max_results": self.k,
-            "sortBy": self.sort_by,
-            "sortOrder": self.sort_order,
-        }
-        headers = {
-            "User-Agent": "PaperStorm-Agent (+https://github.com/yzy-151/paperstorm-agent)"
-        }
-        for attempt in range(self.max_retries + 1):
-            self._respect_request_interval()
-            try:
-                response = requests.get(
-                    self.endpoint,
-                    params=params,
-                    headers=headers,
-                    timeout=self.request_timeout,
-                )
-                response.raise_for_status()
-                return response.text
-            except requests.RequestException as error:
-                if attempt >= self.max_retries or not self._is_retryable(error):
-                    raise
-                retry_after = self._retry_after_seconds(error)
-                delay = retry_after if retry_after is not None else 3.0 * (2**attempt)
-                time.sleep(delay)
-        raise RuntimeError("unreachable arXiv request state")
-
-    def _respect_request_interval(self):
-        now = time.monotonic()
-        if self._last_request_at is not None:
-            remaining = self.request_interval - (now - self._last_request_at)
-            if remaining > 0:
-                time.sleep(remaining)
-        self._last_request_at = time.monotonic()
-
-    @staticmethod
-    def _is_retryable(error):
-        response = getattr(error, "response", None)
-        status = getattr(response, "status_code", None)
-        return status is None or status == 429 or int(status) >= 500
-
-    @staticmethod
-    def _retry_after_seconds(error):
-        response = getattr(error, "response", None)
-        value = (getattr(response, "headers", None) or {}).get("Retry-After")
-        try:
-            return max(0.0, float(value))
-        except (TypeError, ValueError):
-            return None
+        response = requests.get(
+            self.endpoint,
+            params={
+                "search_query": query,
+                "start": 0,
+                "max_results": self.k,
+                "sortBy": self.sort_by,
+                "sortOrder": self.sort_order,
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.text
 
     @staticmethod
     def _normalize_text(text):

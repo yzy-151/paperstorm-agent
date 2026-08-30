@@ -1,6 +1,5 @@
 import unittest
 from types import SimpleNamespace
-from unittest import mock
 
 from knowledge_storm.rm import ArxivRM, LocalPDFRM
 
@@ -97,31 +96,6 @@ ARXIV_MUON_AMBIGUOUS_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 class PaperStormRetrieversTest(unittest.TestCase):
-    def test_arxiv_request_retries_rate_limit_with_retry_after(self):
-        rm = ArxivRM(k=1, request_interval=0, max_retries=2)
-        limited = mock.Mock()
-        limited.status_code = 429
-        limited.headers = {"Retry-After": "1"}
-        limited.raise_for_status.side_effect = __import__("requests").HTTPError(
-            "rate limited", response=limited
-        )
-        success = mock.Mock()
-        success.status_code = 200
-        success.headers = {}
-        success.text = ARXIV_SAMPLE
-        success.raise_for_status.return_value = None
-
-        with mock.patch(
-            "knowledge_storm.rm.requests.get", side_effect=[limited, success]
-        ) as get:
-            with mock.patch("knowledge_storm.rm.time.sleep") as sleep:
-                payload = rm.request("retrieval augmented generation")
-
-        self.assertEqual(payload, ARXIV_SAMPLE)
-        self.assertEqual(get.call_count, 2)
-        self.assertEqual(sleep.call_args_list, [mock.call(1.0)])
-        self.assertIn("User-Agent", get.call_args.kwargs["headers"])
-
     def test_arxiv_rm_maps_atom_entries_to_storm_results(self):
         rm = ArxivRM(k=1)
         rm.request = lambda query: ARXIV_SAMPLE
