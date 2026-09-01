@@ -1,0 +1,253 @@
+{
+  "dataset_name": "paperstorm-langfuse-observed-badcases",
+  "version": "2.6",
+  "source": "results/langfuse_pim_nn_acceptance/langfuse_cloud_export.json",
+  "scope": "Langfuse-derived semantic and operational regressions from real PIM neural-suppression research and 20-turn chat acceptance runs.",
+  "cases": [
+    {
+      "case_id": "arxiv-wavelet-query-compiler",
+      "kind": "arxiv_query",
+      "source_trace_id": "4cef79a4b98bc74ad298ebe9cd2c604e",
+      "message": "小波神经网络 核心结构",
+      "min_query_count": 2,
+      "required_terms": ["wavelet", "neural network"],
+      "expected": {"query_count_at_least": true, "all_contain": true}
+    },
+    {
+      "case_id": "memory-explicit-answer-preference-write",
+      "kind": "memory_sequence",
+      "source_trace_id": "bf77d93734c23bc6b9bd1657e1080a11",
+      "user_id": "langfuse-v2-memory-user",
+      "write_message": "请记住我的回答偏好：先给结论，再给证据。",
+      "recall_message": "你记得我的回答偏好吗？",
+      "expected": {
+        "write_status": "persisted",
+        "read_after_write_verified": true,
+        "recall_contains": "先给结论",
+        "retrieval_triggered": false
+      }
+    },
+    {
+      "case_id": "memory-context-does-not-terminate-task",
+      "kind": "memory_context",
+      "source_trace_id": "cec4f9af93df31546ce51f2ca95b4c1c",
+      "user_id": "langfuse-v2-context-user",
+      "write_message": "请记住我的回答偏好：先给结论，再给证据。",
+      "message": "按照我的偏好解释梯度下降，不要检索论文。",
+      "planner_output": "{\"action\":\"tool_call\",\"tool_calls\":[{\"name\":\"memory.search\",\"arguments\":{\"query\":\"回答偏好\",\"mode\":\"context\"}}],\"tool_policy\":{\"external_retrieval\":\"deny\",\"new_research\":\"deny\"},\"rewritten_query\":\"解释梯度下降\",\"working_subject\":\"梯度下降\",\"confidence\":0.98,\"reason\":\"use preference\",\"response_contract\":{\"task\":\"解释梯度下降\",\"requires_citations\":false}}",
+      "model_answer": "结论：梯度下降通过沿负梯度方向更新参数来降低损失。",
+      "expected": {
+        "route": "casual_chat",
+        "answer_contains": "梯度下降",
+        "prompt_contains": "先给结论",
+        "retrieval_triggered": false
+      }
+    },
+    {
+      "case_id": "embedding-local-first-no-runtime-download",
+      "kind": "operational_contract",
+      "source_trace_id": "b9b0ca62df50e64663f74b250f759d2d",
+      "message": "小波神经网络是什么？请基于论文证据回答并附原文链接。",
+      "expected": {
+        "model_loading": "local_first",
+        "runtime_download": false,
+        "failure_mode": "fast_and_explicit"
+      }
+    },
+    {
+      "case_id": "router-json-output-budget-not-truncated",
+      "kind": "router_config",
+      "source_trace_id": "2cc25fdd124e4046b823de4d36df61f1",
+      "message": "Planner must return one complete structured decision.",
+      "expected": {
+        "default_output_tokens": 2048,
+        "complete_json_budget": true
+      }
+    },
+    {
+      "case_id": "stale-research-task-does-not-hijack-story-continuation",
+      "kind": "router",
+      "message": "继续写下去",
+      "session": {"topic": "PIM 无源互调", "task_id": "task-pim"},
+      "context_window": [{"role": "user", "content": "从前有一座城……"}],
+      "planner_output": "{\"action\":\"respond\",\"tool_calls\":[],\"working_subject\":\"\",\"confidence\":0.98,\"reason\":\"continue text\",\"response_contract\":{\"task\":\"续写故事\",\"continue_previous\":true,\"requires_citations\":false}}",
+      "expected": {
+        "action": "respond",
+        "need_retrieval": false,
+        "tool": "chat_fallback",
+        "first_tool_call": "",
+        "planner_status": "success",
+        "planner_error_type": ""
+      }
+    },
+    {
+      "case_id": "existing-research-evidence-before-new-research",
+      "kind": "router",
+      "source_trace_id": "2cc25fdd124e4046b823de4d36df61f1",
+      "message": "小波神经网络是什么？请基于论文证据回答并附原文链接。",
+      "session": {"task_id": "task-wavelet"},
+      "context_window": [],
+      "planner_output": "truncated-no-json",
+      "expected": {
+        "action": "respond",
+        "need_retrieval": false,
+        "tool": "chat_fallback",
+        "first_tool_call": "",
+        "planner_status": "fallback",
+        "planner_error_type": "invalid_response"
+      }
+    },
+    {
+      "case_id": "citation-followup-reuses-existing-evidence",
+      "kind": "router",
+      "source_trace_id": "312505f2c0cb41d3a9c803f84a80e094",
+      "message": "请给出支持上一结论的论文名称、作者和原文链接。",
+      "session": {"task_id": "task-wavelet"},
+      "context_window": [
+        {"role": "user", "content": "小波神经网络与普通前馈神经网络有什么区别？"},
+        {"role": "assistant", "content": "两者的激活函数与局部化能力不同。"}
+      ],
+      "planner_output": "truncated-no-json",
+      "expected": {
+        "action": "respond",
+        "need_retrieval": false,
+        "tool": "chat_fallback",
+        "first_tool_call": "",
+        "planner_status": "fallback",
+        "planner_error_type": "invalid_response"
+      }
+    },
+    {
+      "case_id": "new-research-requires-runtime-authorization",
+      "kind": "router",
+      "message": "解释论文观点冲突时如何处理，不要启动调研。",
+      "session": {"task_id": "task-wavelet"},
+      "context_window": [],
+      "planner_output": "{\"action\":\"tool_call\",\"tool_calls\":[{\"name\":\"research.start\",\"arguments\":{}}],\"tool_policy\":{\"external_retrieval\":\"allow\",\"new_research\":\"deny\"},\"confidence\":0.99,\"reason\":\"explain only\"}",
+      "expected": {
+        "action": "respond",
+        "need_retrieval": false,
+        "tool": "chat_fallback",
+        "first_tool_call": "",
+        "planner_status": "policy_denied",
+        "planner_error_type": "tool_not_authorized"
+      }
+    },
+    {
+      "case_id": "memory-answer-mode-is-a-structured-planner-decision",
+      "kind": "router",
+      "source_trace_id": "b7e8fb1b15e349829131d7ed27f563f8",
+      "message": "你记得我叫什么吗？这轮不要检索。",
+      "planner_output": "{\"action\":\"tool_call\",\"tool_calls\":[{\"name\":\"memory.search\",\"arguments\":{\"query\":\"用户姓名\",\"mode\":\"answer\"}}],\"tool_policy\":{\"external_retrieval\":\"deny\",\"new_research\":\"deny\"},\"confidence\":0.99,\"reason\":\"direct memory answer\",\"response_contract\":{\"task\":\"回答用户姓名\",\"requires_citations\":false}}",
+      "expected": {
+        "action": "tool_call",
+        "need_retrieval": false,
+        "tool": "memory_search",
+        "first_tool_call": "memory.search",
+        "planner_status": "success",
+        "planner_error_type": ""
+      }
+    },
+    {
+      "case_id": "multilingual-followup-reuses-relevant-evidence",
+      "kind": "evidence_gate",
+      "question": "wavelet neural network vs feedforward neural network difference",
+      "topic": "小波神经网络",
+      "evidence": [
+        {
+          "title": "Wavelet neural networks",
+          "content": "Wavelet neural network activation differs from a feedforward neural network through scale and translation."
+        }
+      ],
+      "citations": [{"url": "https://example.org/wavelet-neural-network"}],
+      "expected": {"sufficient": true, "evidence_count": 1, "citation_count": 1}
+    },
+    {
+      "case_id": "memory-structured-update-supersedes-active-fact",
+      "kind": "memory_structured_update",
+      "canonical_key": "user.answer_preference.conclusion_first",
+      "initial_content": "用户的回答偏好：先给结论，再给证据。",
+      "updated_content": "用户的回答偏好：先给一句结论，再列三条依据。",
+      "expected": {
+        "initial_status": "persisted",
+        "update_status": "persisted",
+        "read_after_write_verified": true,
+        "active_count": 1,
+        "active_content": "用户的回答偏好：先给一句结论，再列三条依据。",
+        "superseded_count": 1
+      }
+    },
+    {
+      "case_id": "citation-contract-binds-existing-evidence",
+      "kind": "response_contract",
+      "message": "请继续比较并附引用。",
+      "task_id": "task-wavelet",
+      "decision": {
+        "action": "respond",
+        "tool_calls": [],
+        "rewritten_query": "wavelet neural network comparison",
+        "response_contract": {"requires_citations": true},
+        "authorization": {"evidence.search": "allowed"}
+      },
+      "expected": {
+        "action": "tool_call",
+        "first_tool_call": "evidence.search",
+        "query": "wavelet neural network comparison",
+        "adjustment": "citation_contract"
+      }
+    },
+    {
+      "case_id": "chat-api-preserves-bound-research-task",
+      "kind": "api_contract",
+      "source_trace_id": "d3730fd7a140410a82ac94a32bce7044",
+      "payload": {
+        "topic": "小波神经网络",
+        "task_id": "task-wavelet",
+        "run_mode": "fake"
+      },
+      "expected": {"status_code": 200, "task_id": "task-wavelet"}
+    },
+    {
+      "case_id": "memory-tool-provider-enum-drift",
+      "kind": "memory_type_contract",
+      "source_trace_id": "402576a2ef95d28f4f5927bd33d3de64",
+      "content": "用户姓名是小宇",
+      "canonical_key": "user.name",
+      "memory_type": "user_preference",
+      "expected": {
+        "write_status": "persisted",
+        "memory_type": "semantic",
+        "normalized_from": "user_preference",
+        "read_after_write_verified": true
+      }
+    },
+    {
+      "case_id": "existing-evidence-read-is-not-external-research",
+      "kind": "citation_authorization",
+      "source_trace_id": "2548fb29f4abd2dd2b9353a15657cd5e",
+      "message": "总结今天关于 PIM 的讨论，明确区分论文事实和你的推断并附引用。",
+      "task_id": "task-pim",
+      "decision": {
+        "action": "respond",
+        "tool_calls": [],
+        "rewritten_query": "PIM 神经网络抑制论文事实",
+        "response_contract": {"requires_citations": true},
+        "tool_policy": {"external_retrieval": "deny", "new_research": "deny"}
+      },
+      "expected": {
+        "evidence_search": "allowed",
+        "research_start": "denied",
+        "action": "tool_call",
+        "first_tool_call": "evidence.search",
+        "adjustment": "citation_contract"
+      }
+    },
+    {
+      "case_id": "final-scorecard-observes-authoritative-run-status",
+      "kind": "scorecard_lifecycle",
+      "source_trace_id": "df6af2db654c246ad8dd414d8f7833da",
+      "topic": "无源互调的神经网络抑制",
+      "expected": {"run_success": true}
+    }
+  ]
+}

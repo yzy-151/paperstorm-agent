@@ -124,6 +124,7 @@ def create_app(service_root=DEFAULT_SERVICE_ROOT, dashboard_dir=DEFAULT_DASHBOAR
     class ChatSessionRequest(BaseModel):
         title: str = ""
         topic: str = ""
+        task_id: str = ""
         run_mode: str = "fake"
         retriever: str = "arxiv"
         output_language: str = "zh"

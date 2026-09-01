@@ -1,7 +1,6 @@
 import hashlib
 import json
 import logging
-import re
 import sqlite3
 import time
 import uuid
@@ -293,7 +292,6 @@ class PaperStormConversationRuntime:
                 "classify",
                 "memory_recall",
                 "casual_chat",
-                "memory_answer",
                 "knowledge_retrieval",
                 "evidence_grade",
                 "deep_research",
@@ -305,7 +303,7 @@ class PaperStormConversationRuntime:
             "edges": [
                 ["START", "classify"],
                 ["classify", "memory_recall|refuse_or_clarify"],
-                ["memory_recall", "memory_answer|casual_chat|knowledge_retrieval|refuse_or_clarify"],
+                ["memory_recall", "casual_chat|knowledge_retrieval|refuse_or_clarify"],
                 ["knowledge_retrieval", "evidence_grade"],
                 ["evidence_grade", "answer_with_citations|deep_research|refuse_or_clarify"],
                 ["deep_research", "answer_with_citations"],
@@ -362,7 +360,6 @@ class PaperStormConversationRuntime:
         builder.add_node("classify", self._classify, metadata={"timeout_sec": 5})
         builder.add_node("memory_recall", self._memory_recall, metadata={"timeout_sec": 2})
         builder.add_node("casual_chat", self._casual_chat)
-        builder.add_node("memory_answer", self._memory_answer)
         builder.add_node(
             "knowledge_retrieval",
             self._knowledge_retrieval,
@@ -397,7 +394,6 @@ class PaperStormConversationRuntime:
             "memory_recall",
             self._after_memory_recall,
             {
-                "memory_answer": "memory_answer",
                 "casual_chat": "casual_chat",
                 "knowledge_retrieval": "knowledge_retrieval",
                 "refuse_or_clarify": "refuse_or_clarify",
@@ -423,7 +419,6 @@ class PaperStormConversationRuntime:
             },
         )
         for node in [
-            "memory_answer",
             "answer_with_citations",
             "refuse_or_clarify",
         ]:
@@ -448,6 +443,11 @@ class PaperStormConversationRuntime:
                 },
                 context_window=state.get("context_window") or [],
                 memory_context=memory_preview,
+            )
+            decision = _enforce_response_contract(
+                decision,
+                task_id=state.get("task_id") or "",
+                message=state.get("message") or "",
             )
             return self._success_update(
                 state,
@@ -486,7 +486,8 @@ class PaperStormConversationRuntime:
         escalate = False
         llm_call = {}
         llm_error = {}
-        if _is_explicit_memory_write(state["message"]):
+        offline_routing = decision.get("planner_status") == "offline_fallback"
+        if offline_routing and _is_explicit_memory_write(state["message"]):
             answer = _casual_answer(state["message"], state.get("memory_recall") or {})
             decision = {
                 "intent": "memory_write",
@@ -497,37 +498,25 @@ class PaperStormConversationRuntime:
                 "reason": "explicit durable memory instruction",
                 "router": "conversation_memory_policy",
             }
-        elif _is_memory_question(state["message"]):
-            answer = _casual_answer(state["message"], state.get("memory_recall") or {})
-            decision = {
-                "intent": "memory_recall",
-                "need_retrieval": False,
-                "tool": "memory_search",
-                "rewritten_query": state["message"],
-                "confidence": 0.98,
-                "reason": "memory question has no relevant hit",
-                "router": "conversation_memory_policy",
-            }
         else:
-            guard = _rule_guard(state)
             llm_call = self._casual_answer(state)
             answer = str(llm_call.get("content") or "")
             llm_error = llm_call.get("error") or {}
             if llm_error:
                 answer = _llm_failure_message(llm_error)
             if answer == RETRIEVE_MARKER:
-                if guard and guard.get("intent") in {"system_help", "clarify"}:
-                    # Meta/system questions must be answered, never escalated.
-                    answer = _casual_answer(
-                        state["message"], state.get("memory_recall") or {}
-                    )
-                    escalate = False
-                else:
+                if _can_escalate_to_retrieval(state):
                     answer = ""
                     escalate = True
+                else:
+                    answer = (
+                        "当前回合没有获得外部检索或新调研授权。"
+                        "我不会自行启动高成本工具；请明确允许检索后再继续。"
+                    )
+                    escalate = False
             elif not answer and not llm_error:
                 answer = _casual_answer(state["message"], state.get("memory_recall") or {})
-                escalate = _needs_research_fallback(state)
+                escalate = False
         telemetry = {
             key: llm_call.get(key)
             for key in (
@@ -639,45 +628,19 @@ class PaperStormConversationRuntime:
             return "knowledge_retrieval"
         return "memory_candidate_write"
 
-    def _memory_answer(self, state: ConversationState):
-        started = time.perf_counter()
-        results = (state.get("memory_recall") or {}).get("results") or []
-        answer = "我从你的跨会话长期记忆中找到了：{0}".format(
-            "；".join(item.get("content", "") for item in results[:3])
-        )
-        return self._success_update(
-            state,
-            "memory_answer",
-            started,
-            {
-                "answer": answer,
-                "citations": [],
-                "evidence": [],
-                "grounded": False,
-                "retrieval_triggered": False,
-                "route": "memory_answer",
-                "router_decision": {
-                    "intent": "memory_recall",
-                    "need_retrieval": False,
-                    "tool": "memory_search",
-                    "rewritten_query": state["message"],
-                    "confidence": 0.98,
-                    "reason": "relevant cross-session memory is available",
-                    "router": "conversation_memory_policy",
-                },
-            },
-        )
-
     def _knowledge_retrieval(self, state: ConversationState):
         started = time.perf_counter()
         try:
             task_id = state.get("task_id") or ""
+            question = _tool_query(
+                state.get("router_decision") or {}, "evidence.search"
+            ) or state["message"]
             if not task_id:
                 result = {"answer": "", "citations": [], "evidence": [], "grounded": False}
             else:
                 result = self.task_service.query_knowledge_base(
                     task_id,
-                    question=state["message"],
+                    question=question,
                     top_k=3,
                     history=state.get("context_window") or [],
                 )
@@ -839,12 +802,27 @@ class PaperStormConversationRuntime:
 
     def _memory_candidate_write(self, state: ConversationState):
         started = time.perf_counter()
-        result = self.memory_service.ingest_message(
-            namespace=state["namespace"],
-            message=state["message"],
-            source_message_id=state.get("source_message_id") or state["request_id"],
-            subject=state.get("user_id") or "local-user",
-        )
+        decision = state.get("router_decision") or {}
+        source_message_id = state.get("source_message_id") or state["request_id"]
+        arguments = _tool_arguments(decision, "memory.write")
+        if arguments:
+            result = self.memory_service.ingest_structured(
+                namespace=state["namespace"],
+                content=arguments.get("content") or "",
+                canonical_key=arguments.get("canonical_key") or "",
+                memory_type=arguments.get("memory_type") or "semantic",
+                source_message_id=source_message_id,
+                subject=state.get("user_id") or "local-user",
+                confidence=arguments.get("confidence") or 0.99,
+                importance=arguments.get("importance") or 0.8,
+            )
+        else:
+            result = self.memory_service.ingest_message(
+                namespace=state["namespace"],
+                message=state["message"],
+                source_message_id=source_message_id,
+                subject=state.get("user_id") or "local-user",
+            )
         return self._success_update(
             state,
             "memory_candidate_write",
@@ -868,30 +846,29 @@ class PaperStormConversationRuntime:
         if action == "respond":
             return "casual_chat"
         tool_name = _first_tool_name(decision)
+        if not _tool_is_authorized(decision, tool_name):
+            return "refuse_or_clarify"
         return {
             "memory.search": "memory_recall",
+            "memory.write": "casual_chat",
             "evidence.search": "knowledge_retrieval",
             "research.start": "deep_research",
         }.get(tool_name, "refuse_or_clarify")
 
     @staticmethod
     def _after_memory_recall(state: ConversationState):
-        message = state.get("message") or ""
-        results = (state.get("memory_recall") or {}).get("results") or []
         decision = state.get("router_decision") or {}
-        if _is_memory_question(message):
-            return "memory_answer" if results else "casual_chat"
-        if _is_explicit_memory_write(message):
-            return "casual_chat"
         if _first_tool_name(decision) == "memory.search":
-            return "memory_answer" if results else "casual_chat"
+            # Memory is retrieved context, never a phrase-selected terminal.
+            # The response model uses the planner contract to finish the task.
+            return "casual_chat"
         return "refuse_or_clarify"
 
     @staticmethod
     def _after_evidence_grade(state: ConversationState):
         if (state.get("evidence_grade") or {}).get("sufficient"):
             return "answer_with_citations"
-        if state.get("allow_deep_research", True):
+        if _research_is_authorized(state):
             return "deep_research"
         return "refuse_or_clarify"
 
@@ -1028,17 +1005,21 @@ def _snapshot_payload(snapshot, include_values=True):
 
 def _casual_answer(message: str, memory_recall: Dict):
     text = str(message or "").lower()
-    if _is_memory_question(text):
-        return "我目前没有召回与你这个问题相关的长期记忆。你可以用“请记住：...”明确保存稳定偏好或事实。"
     if _is_explicit_memory_write(text):
         return "我会通过长期记忆写入策略校验这条信息；符合稳定事实、偏好或规则时才会跨会话保存。"
+    recalled = (memory_recall or {}).get("results") or []
+    if recalled:
+        return "我从你的跨会话长期记忆中找到了：{0}".format(
+            "；".join(str(item.get("content") or "") for item in recalled[:3])
+        )
     if "你是谁" in text or "模型" in text:
         return "我是 PaperStorm 的 LangGraph Conversation Runtime 演示层，基础模型由运行时配置决定。"
     if any(token in text for token in ["逻辑", "实现", "流程", "知识库", "工作方式"]):
         return (
             "知识库问答的流程是：问题进来先做意图路由和记忆召回，然后用混合检索"
             "（BM25+Dense+RRF）从当前任务或文档里找证据，证据裁判判断够不够；"
-            "不够就升级深度调研，够就带着引用编号生成中文回答。你想问某一步的细节，我可以展开讲。"
+            "够就带着引用编号生成中文回答；新调研必须由 Planner 明确授权。"
+            "你想问某一步的细节，我可以展开讲。"
         )
     if "能做什么" in text or "可以做什么" in text or "介绍一下" in text:
         return (
@@ -1098,11 +1079,12 @@ def _casual_chat_prompt(state: ConversationState) -> str:
         "【系统事实】\n"
         "- 检索算法：默认 BM25（稀疏）+ Dense 向量 + RRF 融合的混合检索，"
         "可选 Cross-Encoder 二次重排；真实语义向量模型可用时自动启用。\n"
-        "- 动作规划：真实模式由 LLM Turn Planner 结构化选择工具，规则只处理空输入、"
-        "安全约束和模型失败回退。\n"
-        "- 证据判定：LLM 证据裁判判断已有证据能否回答，不足则启动深度调研。\n"
+        "- 动作规划：真实模式由 LLM Turn Planner 结构化选择工具，Runtime 单独授权；"
+        "规则仅供离线演示，Planner 失败时禁止外部工具。\n"
+        "- 证据判定：LLM 证据裁判判断已有证据能否回答；证据不足时只有本轮已经授权"
+        "新调研才执行，否则澄清或拒绝。\n"
         "- 知识库问答：意图路由 → 记忆召回 → 混合检索 → 证据裁判 → 带引用回答；"
-        "证据不足时升级深度调研。\n"
+        "新调研作为独立高成本工具，需要显式授权。\n"
         "- 记忆：短期对话、FTS5 跨会话历史、长期用户事实和论文证据彼此隔离。\n"
         "- 当前运行模式：{run_mode}（fake=本地模拟调研；paperstorm=真实检索+LLM）。\n"
         "这是同一会话的连续对话，你有完整的会话上下文（不是没有记忆），请自然地接着聊。\n"
@@ -1134,6 +1116,60 @@ def _first_tool_name(decision: Dict) -> str:
         "kb_qa": "evidence.search",
         "paper_research": "research.start",
     }.get(legacy, "")
+
+
+def _tool_query(decision: Dict, tool_name: str) -> str:
+    for call in (decision or {}).get("tool_calls") or []:
+        if not isinstance(call, dict) or call.get("name") != tool_name:
+            continue
+        arguments = call.get("arguments") or {}
+        if isinstance(arguments, dict):
+            return str(arguments.get("query") or "").strip()
+    return ""
+
+
+def _tool_arguments(decision: Dict, tool_name: str) -> Dict:
+    for call in (decision or {}).get("tool_calls") or []:
+        if isinstance(call, dict) and call.get("name") == tool_name:
+            arguments = call.get("arguments") or {}
+            return dict(arguments) if isinstance(arguments, dict) else {}
+    return {}
+
+
+def _enforce_response_contract(decision: Dict, task_id: str, message: str) -> Dict:
+    """Bind citation-bearing responses to provenance before generation.
+
+    This is an execution invariant over the planner's structured contract, not
+    semantic intent classification. The planner remains free to describe any
+    task; the Runtime only prevents an ungrounded response from claiming
+    citations when an existing evidence store is available.
+    """
+    output = dict(decision or {})
+    contract = output.get("response_contract") or {}
+    if (
+        output.get("action") == "respond"
+        and bool(contract.get("requires_citations"))
+        and str(task_id or "").strip()
+        and (output.get("authorization") or {}).get("evidence.search") == "allowed"
+    ):
+        query = str(output.get("rewritten_query") or message or "").strip()
+        output["action"] = "tool_call"
+        output["tool_calls"] = [
+            {
+                "name": "evidence.search",
+                "arguments": {"query": query},
+            }
+        ]
+        output["intent"] = "research_qa"
+        output["tool"] = "research_qa"
+        output["need_retrieval"] = True
+        output["runtime_adjustments"] = list(
+            dict.fromkeys(
+                list(output.get("runtime_adjustments") or [])
+                + ["citation_contract"]
+            )
+        )
+    return output
 
 
 def _llm_failure_message(error: Dict) -> str:
@@ -1208,25 +1244,43 @@ def _meaningful_overlap(left: str, right: str) -> bool:
     return bool(meaningful_terms(left) & meaningful_terms(right))
 
 
-def _needs_research_fallback(state: ConversationState) -> bool:
-    """Local safety net: escalate when the message clearly needs retrieval and
-    the chat layer produced no LLM answer (e.g. offline fake mode)."""
-    decision = _rule_guard(state)
-    return bool(
-        decision and decision.get("intent") in {"research_qa", "run_research"}
+def _tool_is_authorized(decision: Dict, tool_name: str) -> bool:
+    if not tool_name:
+        return True
+    authorization = (decision or {}).get("authorization") or {}
+    if authorization:
+        return authorization.get(tool_name) == "allowed"
+    # Deterministic routing exists only for fake/offline demos. Production
+    # planners always emit an authorization map before the graph executes.
+    return (decision or {}).get("planner_status") == "offline_fallback"
+
+
+def _research_is_authorized(state: ConversationState) -> bool:
+    if not state.get("allow_deep_research", True):
+        return False
+    decision = state.get("router_decision") or {}
+    if (decision.get("planner_status") or "") == "offline_fallback":
+        return True
+    return (
+        _first_tool_name(decision) == "research.start"
+        and _tool_is_authorized(decision, "research.start")
     )
 
 
-def _rule_guard(state: ConversationState):
-    from .paperstorm_intent_router import route_high_confidence_rules
-
-    return route_high_confidence_rules(
-        str(state.get("message") or ""),
-        {
-            "topic": str(state.get("topic") or ""),
-            "task_id": str(state.get("task_id") or ""),
-        },
-        state.get("context_window") or [],
+def _can_escalate_to_retrieval(state: ConversationState) -> bool:
+    decision = state.get("router_decision") or {}
+    if (decision.get("planner_status") or "") == "offline_fallback":
+        return bool(
+            state.get("allow_deep_research", True)
+            and decision.get("intent") not in {
+                "system_help",
+                "clarify",
+                "memory_recall",
+                "memory_write",
+            }
+        )
+    return _tool_is_authorized(decision, "evidence.search") and (
+        _first_tool_name(decision) == "evidence.search"
     )
 
 
@@ -1264,7 +1318,10 @@ def _is_memory_question(message: str):
 
 def _is_explicit_memory_write(message: str):
     lowered = str(message or "").lower()
-    return any(token in lowered for token in ["请记住", "记住：", "偏好", "以后必须", "remember that"])
+    return any(
+        token in lowered
+        for token in ["请记住", "记住：", "记住:", "以后必须", "remember that"]
+    )
 
 
 def _memory_namespace(user_id: str):

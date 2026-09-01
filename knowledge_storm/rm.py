@@ -1,17 +1,24 @@
 import logging
 import os
 import re
+import threading
+import time
 import xml.etree.ElementTree as ET
 from typing import Callable, Union, List
 
 import backoff
 import dspy
 import requests
+from bs4 import BeautifulSoup
 from dsp import backoff_hdlr, giveup_hdlr
 
 from .utils import WebPageHelper
 
 logger = logging.getLogger(__name__)
+
+_ARXIV_REQUEST_LOCK = threading.Lock()
+_ARXIV_LAST_REQUEST_AT = 0.0
+_ARXIV_MIN_INTERVAL_SECONDS = 3.1
 
 
 class ArxivRM(dspy.Retrieve):
@@ -32,6 +39,7 @@ class ArxivRM(dspy.Retrieve):
         self.sort_order = sort_order
         self.usage = 0
         self.is_valid_source = is_valid_source or (lambda x: True)
+        self._api_degraded = False
 
     def get_usage_and_reset(self):
         usage = self.usage
@@ -39,19 +47,129 @@ class ArxivRM(dspy.Retrieve):
         return {"ArxivRM": usage}
 
     def request(self, query: str):
-        response = requests.get(
-            self.endpoint,
-            params={
-                "search_query": query,
-                "start": 0,
-                "max_results": self.k,
-                "sortBy": self.sort_by,
-                "sortOrder": self.sort_order,
+        global _ARXIV_LAST_REQUEST_AT
+        params = {
+            "search_query": query,
+            "start": 0,
+            "max_results": self.k,
+            "sortBy": self.sort_by,
+            "sortOrder": self.sort_order,
+        }
+        headers = {
+            "User-Agent": "PaperStorm-Agent/1.0 (academic research; contact via repository)"
+        }
+        with _ARXIV_REQUEST_LOCK:
+            wait = _ARXIV_MIN_INTERVAL_SECONDS - (
+                time.monotonic() - _ARXIV_LAST_REQUEST_AT
+            )
+            if wait > 0:
+                time.sleep(wait)
+            for attempt in range(2):
+                try:
+                    response = requests.get(
+                        self.endpoint,
+                        params=params,
+                        headers=headers,
+                        timeout=30,
+                    )
+                except (
+                    requests.exceptions.ProxyError,
+                    requests.exceptions.ConnectTimeout,
+                ) as error:
+                    proxy_values = " ".join(
+                        os.getenv(name, "")
+                        for name in (
+                            "HTTP_PROXY",
+                            "HTTPS_PROXY",
+                            "http_proxy",
+                            "https_proxy",
+                        )
+                    ).lower()
+                    if not any(
+                        host in proxy_values for host in ("127.0.0.1", "localhost")
+                    ):
+                        raise
+                    logger.warning(
+                        "Configured loopback proxy is unavailable; retrying arXiv directly: %s",
+                        error,
+                    )
+                    session = requests.Session()
+                    session.trust_env = False
+                    response = session.get(
+                        self.endpoint,
+                        params=params,
+                        headers=headers,
+                        timeout=30,
+                    )
+                except requests.exceptions.RequestException:
+                    self._api_degraded = True
+                    raise
+                finally:
+                    _ARXIV_LAST_REQUEST_AT = time.monotonic()
+                if response.status_code not in {429, 500, 502, 503, 504}:
+                    response.raise_for_status()
+                    return response.text
+                if attempt < 1:
+                    retry_after = response.headers.get("Retry-After", "")
+                    delay = float(retry_after) if retry_after.isdigit() else 5.0 * (attempt + 1)
+                    logger.warning(
+                        "arXiv returned HTTP %s; retrying in %.1fs",
+                        response.status_code,
+                        delay,
+                    )
+                    time.sleep(delay)
+            self._api_degraded = True
+            response.raise_for_status()
+
+    def _html_search(self, query: str):
+        """Read-only fallback when export.arxiv.org is unavailable or throttled."""
+        plain_query = re.sub(r"\b(?:all|ti|abs):", "", query, flags=re.I)
+        plain_query = re.sub(r"\b(?:AND|OR|NOT)\b", " ", plain_query, flags=re.I)
+        plain_query = re.sub(r"cat:[\w.-]+", " ", plain_query, flags=re.I)
+        plain_query = re.sub(r"[()\"]", " ", plain_query)
+        plain_query = re.sub(r"\s+", " ", plain_query).strip()
+        if not plain_query:
+            return []
+        session = requests.Session()
+        session.trust_env = False
+        response = session.get(
+            "https://arxiv.org/search/",
+            params={"query": plain_query, "searchtype": "all", "size": 25},
+            headers={
+                "User-Agent": "PaperStorm-Agent/1.0 (academic research; contact via repository)"
             },
-            timeout=20,
+            timeout=30,
         )
         response.raise_for_status()
-        return response.text
+        soup = BeautifulSoup(response.text, "html.parser")
+        results = []
+        for item in soup.select("li.arxiv-result"):
+            link = item.select_one('p.list-title a[href*="/abs/"]')
+            title = item.select_one("p.title")
+            abstract = item.select_one("span.abstract-full")
+            if not link or not title or not abstract:
+                continue
+            url = str(link.get("href") or "").strip()
+            description = " ".join(abstract.get_text(" ", strip=True).split())
+            description = re.sub(r"\s*△ Less\s*$", "", description)
+            authors = [node.get_text(" ", strip=True) for node in item.select("p.authors a")]
+            result = {
+                "url": url,
+                "title": " ".join(title.get_text(" ", strip=True).split()),
+                "description": description,
+                "snippets": [description],
+                "meta": {
+                    "source_type": "arxiv_html_fallback",
+                    "authors": authors,
+                    "pdf_url": url.replace("/abs/", "/pdf/"),
+                    "query": plain_query,
+                },
+            }
+            if self._is_result_relevant_to_query(query, result):
+                results.append(result)
+            if len(results) >= self.k:
+                break
+        return results
 
     @staticmethod
     def _normalize_text(text):
@@ -66,6 +184,7 @@ class ArxivRM(dspy.Retrieve):
         normalized = query
         replacements = {
             "无源互调": "passive intermodulation",
+            "小波": "wavelet",
             "神经网络": "neural network",
             "抑制": "suppression",
             "射频": "radio frequency",
@@ -124,6 +243,12 @@ class ArxivRM(dspy.Retrieve):
                 'all:"orthogonalized momentum" AND all:optimizer',
                 'all:"Newton-Schulz" AND all:optimizer',
             ]
+        if "wavelet" in lowered and "neural network" in lowered:
+            return [
+                'all:"wavelet neural network"',
+                'all:wavelet AND all:"neural network"',
+                'all:"deep wavelet neural network" AND (cat:cs.LG OR cat:cs.NE OR cat:eess.SP)',
+            ]
         return [normalized]
 
     @staticmethod
@@ -169,6 +294,11 @@ class ArxivRM(dspy.Retrieve):
                 any(term in haystack for term in method_terms)
                 and any(term in haystack for term in optimizer_terms)
                 and not any(term in haystack for term in particle_terms)
+            )
+        if "wavelet" in query and "neural network" in query:
+            return (
+                ("wavelet neural network" in haystack or "wavelet network" in haystack)
+                and any(term in haystack for term in ("neural", "learning", "network"))
             )
         if "passive intermodulation" not in query:
             return True
@@ -273,6 +403,7 @@ class ArxivRM(dspy.Retrieve):
             if isinstance(query_or_queries, str)
             else query_or_queries
         )
+        original_queries = [query for query in queries if query and query.strip()]
         compiled_queries = []
         for query in queries:
             if query and query.strip():
@@ -287,6 +418,8 @@ class ArxivRM(dspy.Retrieve):
                 results = self._parse_response(self.request(query))
             except Exception as e:
                 logger.info("Skipping failed arXiv query %r: %s", query, e)
+                if self._api_degraded:
+                    break
                 continue
 
             for result in results:
@@ -303,7 +436,17 @@ class ArxivRM(dspy.Retrieve):
                 if len(collected_results) >= self.k:
                     return collected_results
 
-        return collected_results
+        if not collected_results and original_queries:
+            try:
+                fallback_query = self._compile_queries_for_arxiv(original_queries[0])[0]
+                logger.warning("Using arXiv HTML fallback for query %r", fallback_query)
+                for result in self._html_search(fallback_query):
+                    if result["url"] not in seen_urls and result["url"] not in exclude_urls:
+                        collected_results.append(result)
+                        seen_urls.add(result["url"])
+            except Exception as error:
+                logger.info("arXiv HTML fallback failed: %s", error)
+        return collected_results[: self.k]
 
 
 class LocalPDFRM(dspy.Retrieve):

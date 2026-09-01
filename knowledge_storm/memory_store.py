@@ -236,7 +236,85 @@ class LongTermMemoryService:
         if float(candidate.confidence) < 0.85:
             queued = self._queue_candidate(namespace, payload)
             return {"status": "queued", "candidate": queued, "episode": episode}
-        return {"status": "persisted", "memory": self.upsert(namespace=namespace, **payload), "episode": episode}
+        memory = self.upsert(namespace=namespace, **payload)
+        persisted = self.get_memory(namespace, memory["id"])
+        return {
+            "status": "persisted",
+            "memory": memory,
+            "episode": episode,
+            "read_after_write": {
+                "verified": bool(
+                    persisted
+                    and persisted.get("id") == memory.get("id")
+                    and persisted.get("status") == "active"
+                ),
+                "memory_id": memory.get("id", ""),
+                "namespace": namespace,
+                "canonical_key": memory.get("canonical_key", ""),
+            },
+        }
+
+    def ingest_structured(
+        self,
+        namespace: str,
+        content: str,
+        canonical_key: str,
+        memory_type: str = "semantic",
+        source_message_id: str = "",
+        subject: str = "user",
+        confidence: float = 0.99,
+        importance: float = 0.8,
+    ):
+        """Persist a planner-authorized Memory Tool payload and verify it."""
+        raw_memory_type = str(memory_type or "semantic").strip().lower()
+        allowed_memory_types = {
+            "semantic",
+            "episodic",
+            "procedural",
+            "preference",
+        }
+        normalized_memory_type = (
+            raw_memory_type if raw_memory_type in allowed_memory_types else "semantic"
+        )
+        metadata = {"extractor": "structured_memory_tool"}
+        if normalized_memory_type != raw_memory_type:
+            metadata["normalized_memory_type_from"] = raw_memory_type
+        candidate = MemoryCandidate(
+            memory_type=normalized_memory_type,
+            subject=subject,
+            content=content,
+            canonical_key=canonical_key,
+            source_message_ids=[source_message_id] if source_message_id else [],
+            confidence=confidence,
+            importance=importance,
+            metadata=metadata,
+        )
+        episode = self.ingest_episode(
+            namespace,
+            content,
+            source_id=source_message_id,
+            role=subject,
+            metadata={"source": "memory.write"},
+        )
+        payload = _model_dump(candidate)
+        payload.setdefault("metadata", {})["episode_id"] = episode["episode_id"]
+        memory = self.upsert(namespace=namespace, **payload)
+        persisted = self.get_memory(namespace, memory["id"])
+        return {
+            "status": "persisted",
+            "memory": memory,
+            "episode": episode,
+            "read_after_write": {
+                "verified": bool(
+                    persisted
+                    and persisted.get("id") == memory.get("id")
+                    and persisted.get("status") == "active"
+                ),
+                "memory_id": memory.get("id", ""),
+                "namespace": namespace,
+                "canonical_key": memory.get("canonical_key", ""),
+            },
+        }
 
     def _extract_candidate(self, message, source_message_id, subject):
         if self.candidate_extractor is None:
@@ -752,25 +830,46 @@ def _blocks_memory_write(message):
 
 def build_memory_candidate_prompt(message, source_message_id="", subject="user"):
     schema = {
-        "should_write": False,
+        "should_write": "boolean",
         "memory_type": "semantic | episodic | procedural | preference",
-        "subject": subject,
+        "subject": "string",
         "content": "one durable, context-independent fact",
         "canonical_key": "stable snake_case key",
-        "confidence": 0.0,
-        "importance": 0.0,
+        "confidence": "number from 0 to 1",
+        "importance": "number from 0 to 1",
+        "source_message_ids": "array of strings",
+        "expires_at": "ISO timestamp or null",
+        "metadata": {"reason": "short decision reason"},
+    }
+    positive = {
+        "should_write": True,
+        "memory_type": "semantic",
+        "subject": subject,
+        "content": "用户的名字是小宇。",
+        "canonical_key": "user_name",
+        "confidence": 0.99,
+        "importance": 0.9,
         "source_message_ids": [source_message_id] if source_message_id else [],
         "expires_at": None,
-        "metadata": {"reason": ""},
+        "metadata": {"reason": "用户明确要求保存稳定身份事实"},
+    }
+    negative = {
+        "should_write": False,
+        "metadata": {"reason": "临时请求，不构成长期记忆"},
     }
     return (
         "你是长期记忆候选提取器，只输出一个 JSON 对象。\n"
         "只有稳定偏好、用户明确事实、长期决策或可复用流程才应写入。\n"
+        "用户明确要求记住且内容属于非敏感稳定事实时，应优先写入；姓名、称呼和回答偏好"
+        "属于可写入信息，不要因为语序变化而跳过。\n"
         "闲聊、临时任务、论文正文、未经证实的推测和敏感凭据不得写入。\n"
         "如果用户拒绝记忆，should_write 必须为 false。内容必须脱离当前轮次仍可理解，"
         "不得把外部论文结论伪装成用户事实。\n"
-        "Schema：{0}\n用户消息：{1}"
-    ).format(_json(schema), str(message or ""))
+        "Schema：{0}\n"
+        "正例输入：我叫小宇，请记住我的名字。\n正例输出：{1}\n"
+        "反例输入：帮我解释一下梯度下降。\n反例输出：{2}\n"
+        "用户消息：{3}"
+    ).format(_json(schema), _json(positive), _json(negative), str(message or ""))
 
 
 def _json(value):

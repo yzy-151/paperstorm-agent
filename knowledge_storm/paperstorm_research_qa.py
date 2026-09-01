@@ -212,7 +212,10 @@ def evaluate_evidence_sufficiency(
     # that topic. Otherwise the existing knowledge base is about something else
     # and we must not answer from it — escalate to fresh research instead.
     question_relevant = bool(meaningful_overlap) and (
-        not topic or bool(topic_anchor_overlap) or is_disambiguation_question
+        not topic
+        or bool(topic_anchor_overlap)
+        or len(meaningful_overlap) >= 2
+        or is_disambiguation_question
     )
     sufficient = (
         evidence_count > 0

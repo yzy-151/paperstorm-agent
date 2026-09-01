@@ -3,6 +3,7 @@ import json
 import hashlib
 import math
 import os
+import sys
 import re
 import tempfile
 import threading
@@ -198,15 +199,33 @@ class SentenceTransformerProvider:
                 "yes",
                 "on",
             }
+            allow_download = str(
+                os.getenv("PAPERSTORM_ALLOW_MODEL_DOWNLOAD", "0")
+            ).lower() in {"1", "true", "yes", "on"}
+            model_source = self.model_name
+            if (
+                not allow_download
+                and getattr(sys.modules.get("sentence_transformers"), "__file__", None)
+            ):
+                from huggingface_hub import snapshot_download
+
+                os.environ["HF_HUB_OFFLINE"] = "1"
+                os.environ["TRANSFORMERS_OFFLINE"] = "1"
+                model_source = snapshot_download(
+                    repo_id=self.model_name,
+                    revision=self.profile.revision,
+                    cache_dir=self.cache_folder,
+                    local_files_only=True,
+                )
             options = {
                 "cache_folder": self.cache_folder,
                 "device": self.device,
-                "local_files_only": offline,
+                "local_files_only": offline or not allow_download,
                 "trust_remote_code": self.profile.trust_remote_code,
             }
-            if self.profile.revision is not None:
+            if self.profile.revision is not None and model_source == self.model_name:
                 options["revision"] = self.profile.revision
-            self.model = SentenceTransformer(self.model_name, **options)
+            self.model = SentenceTransformer(model_source, **options)
         if self.profile.max_seq_length:
             self.model.max_seq_length = int(self.profile.max_seq_length)
         dimension_getter = getattr(
@@ -367,7 +386,7 @@ class CrossEncoderReranker:
             options = {
                 "cache_folder": self.cache_folder,
                 "device": self.device,
-                "local_files_only": offline,
+                "local_files_only": offline or not allow_download,
             }
             if self.profile.revision:
                 options["revision"] = self.profile.revision

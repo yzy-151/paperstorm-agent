@@ -90,12 +90,12 @@ def build_pipeline_config_from_task_state(state):
     )
 
 
-def run_paperstorm_pipeline_task(state):
+def run_paperstorm_pipeline_task(state, observation_parent=None):
     config = build_pipeline_config_from_task_state(state)
-    return run_paperstorm_pipeline(config)
+    return run_paperstorm_pipeline(config, observation_parent=observation_parent)
 
 
-def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
+def run_paperstorm_pipeline(config: PaperStormPipelineConfig, observation_parent=None):
     configure_paperstorm_logging(verbose=config.verbose)
     if os.path.exists("secrets.toml"):
         load_api_key(toml_file_path="secrets.toml")
@@ -104,7 +104,11 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
     article_dir.mkdir(parents=True, exist_ok=True)
     args = _config_to_namespace(config)
     settings = build_lm_settings(args)
-    trace = PaperStormTraceRecorder(str(article_dir), enabled=not config.disable_trace)
+    trace = PaperStormTraceRecorder(
+        str(article_dir),
+        enabled=not config.disable_trace,
+        observation_parent=observation_parent,
+    )
     trace.emit(
         "run_start",
         topic=config.topic,
@@ -131,7 +135,7 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
     )
 
     try:
-        lm_configs = _build_lm_configs(args)
+        lm_configs = _build_lm_configs(args, generation_observer=trace.generation)
         engine_args = STORMWikiRunnerArguments(
             output_dir=config.output_root,
             max_conv_turn=config.max_conv_turn,
@@ -224,6 +228,10 @@ def run_paperstorm_pipeline(config: PaperStormPipelineConfig):
                 "output_dir": str(article_dir),
             },
         )
+        # The first scorecard is an in-pipeline quality preview. Refresh it only
+        # after the authoritative run_end and summary have been persisted so the
+        # final artifact cannot report a successful run as failed.
+        _write_pipeline_scorecard(config)
         return {
             "success": True,
             "article_dir": str(article_dir),
@@ -405,7 +413,7 @@ def _config_to_namespace(config):
     )
 
 
-def _build_lm_configs(args):
+def _build_lm_configs(args, generation_observer=None):
     settings = build_lm_settings(args)
     token_limits = build_lm_token_limits()
     api_key = os.getenv(settings["api_env"])
@@ -417,33 +425,49 @@ def _build_lm_configs(args):
         "api_base": settings["api_base"],
         "temperature": 1.0,
         "top_p": 0.9,
+        "generation_observer": generation_observer,
     }
     model_name = settings["model"]
 
     lm_configs = STORMWikiLMConfigs()
     lm_configs.set_conv_simulator_lm(
         LitellmModel(
-            model=model_name, max_tokens=token_limits["conv_simulator"], **llm_kwargs
+            model=model_name,
+            max_tokens=token_limits["conv_simulator"],
+            generation_name="conv_simulator",
+            **llm_kwargs,
         )
     )
     lm_configs.set_question_asker_lm(
         LitellmModel(
-            model=model_name, max_tokens=token_limits["question_asker"], **llm_kwargs
+            model=model_name,
+            max_tokens=token_limits["question_asker"],
+            generation_name="question_asker",
+            **llm_kwargs,
         )
     )
     lm_configs.set_outline_gen_lm(
         LitellmModel(
-            model=model_name, max_tokens=token_limits["outline_gen"], **llm_kwargs
+            model=model_name,
+            max_tokens=token_limits["outline_gen"],
+            generation_name="outline_generation",
+            **llm_kwargs,
         )
     )
     lm_configs.set_article_gen_lm(
         LitellmModel(
-            model=model_name, max_tokens=token_limits["article_gen"], **llm_kwargs
+            model=model_name,
+            max_tokens=token_limits["article_gen"],
+            generation_name="article_generation",
+            **llm_kwargs,
         )
     )
     lm_configs.set_article_polish_lm(
         LitellmModel(
-            model=model_name, max_tokens=token_limits["article_polish"], **llm_kwargs
+            model=model_name,
+            max_tokens=token_limits["article_polish"],
+            generation_name="article_polishing",
+            **llm_kwargs,
         )
     )
     return lm_configs

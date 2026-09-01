@@ -1,4 +1,5 @@
 import copy
+import os
 import re
 from collections import OrderedDict
 from typing import Union, Optional, Any, List, Tuple, Dict
@@ -117,7 +118,24 @@ class StormInformationTable(InformationTable):
         if not self.collected_snippets:
             self.encoded_snippets = np.empty((0, 0))
             return
-        self.encoder = SentenceTransformer("paraphrase-MiniLM-L6-v2")
+        allow_download = str(
+            os.getenv("PAPERSTORM_ALLOW_MODEL_DOWNLOAD", "0")
+        ).lower() in {"1", "true", "yes", "on"}
+        model_name = "sentence-transformers/paraphrase-MiniLM-L6-v2"
+        if not allow_download:
+            from huggingface_hub import snapshot_download
+
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            model_name = snapshot_download(
+                repo_id=model_name,
+                cache_dir=os.getenv("PAPERSTORM_MODEL_CACHE") or os.getenv("HF_HOME"),
+                local_files_only=True,
+            )
+        self.encoder = SentenceTransformer(
+            model_name,
+            local_files_only=not allow_download,
+        )
         self.encoded_snippets = self.encoder.encode(self.collected_snippets)
 
     def retrieve_information(

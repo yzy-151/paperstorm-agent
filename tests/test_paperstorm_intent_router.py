@@ -1,7 +1,19 @@
+import json
 import unittest
 
 
 class PaperStormIntentRouterTest(unittest.TestCase):
+    def test_parser_reads_first_complete_json_object_without_greedy_matching(self):
+        from knowledge_storm.paperstorm_intent_router import parse_llm_router_json
+
+        decision = parse_llm_router_json(
+            '```json\n{"action":"respond","confidence":0.9}\n```\n'
+            '补充说明不属于结构化动作。\n{"ignored":true}'
+        )
+
+        self.assertEqual(decision["action"], "respond")
+        self.assertEqual(decision["confidence"], 0.9)
+
     def test_planner_routes_response_action_without_creative_intent_enum(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
 
@@ -35,7 +47,14 @@ class PaperStormIntentRouterTest(unittest.TestCase):
     def test_invalid_planner_json_exposes_typed_error_on_safe_fallback(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
 
-        decision = PaperStormIntentRouter(llm_router=lambda _prompt: "not-json").route(
+        decision = PaperStormIntentRouter(
+            llm_router=lambda _prompt: {
+                "content": "not-json",
+                "model": "router-model",
+                "usage": {"prompt_tokens": 20, "completion_tokens": 3},
+                "finish_reason": "stop",
+            }
+        ).route(
             message="继续写下去",
             session={},
             context_window=[{"role": "user", "content": "从前有一座城……"}],
@@ -44,6 +63,75 @@ class PaperStormIntentRouterTest(unittest.TestCase):
         self.assertEqual(decision["action"], "respond")
         self.assertEqual(decision["planner_status"], "fallback")
         self.assertEqual(decision["planner_error"]["type"], "invalid_response")
+        self.assertEqual(decision["planner_telemetry"]["model"], "router-model")
+        self.assertEqual(decision["planner_telemetry"]["usage"]["prompt_tokens"], 20)
+
+    def test_invalid_planner_never_falls_back_to_new_research(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        decision = PaperStormIntentRouter(
+            llm_router=lambda _prompt: {"content": "not-json"}
+        ).route(
+            message="请调研最近的小波神经网络论文",
+            session={},
+            context_window=[],
+        )
+
+        self.assertEqual(decision["action"], "respond")
+        self.assertEqual(decision["tool_calls"], [])
+        self.assertEqual(decision["planner_status"], "fallback")
+        self.assertEqual(decision["authorization"]["research.start"], "denied")
+
+    def test_new_research_requires_explicit_structured_authorization(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        def planner(policy):
+            return lambda _prompt: json.dumps(
+                {
+                    "action": "tool_call",
+                    "tool_calls": [{"name": "research.start", "arguments": {}}],
+                    "tool_policy": policy,
+                    "working_subject": "小波神经网络",
+                    "confidence": 0.99,
+                    "reason": "用户请求论文调研",
+                },
+                ensure_ascii=False,
+            )
+
+        denied = PaperStormIntentRouter(
+            llm_router=planner(
+                {"external_retrieval": "allow", "new_research": "deny"}
+            )
+        ).route("不要启动调研，只解释处理流程", session={}, context_window=[])
+        allowed = PaperStormIntentRouter(
+            llm_router=planner(
+                {"external_retrieval": "allow", "new_research": "allow"}
+            )
+        ).route("请启动一轮小波神经网络论文调研", session={}, context_window=[])
+
+        self.assertEqual(denied["action"], "respond")
+        self.assertEqual(denied["tool_calls"], [])
+        self.assertEqual(denied["planner_status"], "policy_denied")
+        self.assertEqual(denied["authorization"]["research.start"], "denied")
+        self.assertEqual(allowed["tool_calls"][0]["name"], "research.start")
+        self.assertEqual(allowed["authorization"]["research.start"], "allowed")
+
+    def test_existing_evidence_read_is_not_treated_as_external_research(self):
+        from knowledge_storm.paperstorm_intent_router import enforce_tool_authorization
+
+        decision = enforce_tool_authorization(
+            {
+                "action": "respond",
+                "tool_calls": [],
+                "tool_policy": {
+                    "external_retrieval": "deny",
+                    "new_research": "deny",
+                },
+            }
+        )
+
+        self.assertEqual(decision["authorization"]["evidence.search"], "allowed")
+        self.assertEqual(decision["authorization"]["research.start"], "denied")
 
     def test_rule_fallback_routes_registered_tools_not_content_types(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
@@ -56,6 +144,18 @@ class PaperStormIntentRouterTest(unittest.TestCase):
         self.assertEqual(evidence["tool_calls"][0]["name"], "evidence.search")
         self.assertEqual(research["action"], "tool_call")
         self.assertEqual(research["tool_calls"][0]["name"], "research.start")
+
+    def test_existing_task_evidence_question_reuses_evidence_before_research(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        decision = PaperStormIntentRouter().route(
+            "小波神经网络是什么？请基于论文证据回答并附原文链接。",
+            session={"task_id": "task-wavelet"},
+            context_window=[],
+        )
+
+        self.assertEqual("evidence.search", decision["tool_calls"][0]["name"])
+        self.assertEqual("research_qa", decision["intent"])
 
     def test_llm_planner_is_not_vetoed_by_topic_biased_keyword_rules(self):
         from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter

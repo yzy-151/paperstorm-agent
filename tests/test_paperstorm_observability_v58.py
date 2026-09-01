@@ -164,6 +164,167 @@ class PaperStormObservabilityV58Test(unittest.TestCase):
         self.assertTrue(root.ended)
         self.assertTrue(client.flushed)
 
+    def test_nested_span_and_generation_preserve_parent_and_usage(self):
+        from knowledge_storm.paperstorm_observability import PaperStormObservability
+
+        client = _FakeLangfuseClient()
+        with tempfile.TemporaryDirectory() as root:
+            observability = PaperStormObservability(
+                Path(root), enabled=True, langfuse_client=client
+            )
+            with observability.trace("paperstorm.research") as trace:
+                with trace.span("research_pipeline", as_type="chain") as pipeline:
+                    with pipeline.span("outline_generation", input={"topic": "RAG"}) as stage:
+                        with stage.generation(
+                            "outline_gen",
+                            model="deepseek/deepseek-chat",
+                            input={"messages": [{"role": "user", "content": "outline"}]},
+                        ) as generation:
+                            generation.end(
+                                output={"content": "# Outline"},
+                                usage={"prompt_tokens": 10, "completion_tokens": 4},
+                                cost_usd=0.002,
+                                finish_reason="stop",
+                            )
+                        stage.end(output={"sections": 3})
+                    pipeline.end(output={"status": "succeeded"})
+                trace.end(output={"status": "succeeded"})
+
+            rows = [
+                json.loads(line)
+                for line in observability.events_path.read_text(encoding="utf-8").splitlines()
+            ]
+
+        root_observation = client.roots[0]
+        pipeline = root_observation.children[0]
+        stage = pipeline.children[0]
+        generation = stage.children[0]
+        self.assertEqual(stage.name, "outline_generation")
+        self.assertEqual(generation.name, "outline_gen")
+        self.assertEqual(generation.payload["as_type"], "generation")
+        self.assertEqual(generation.payload["model"], "deepseek/deepseek-chat")
+        self.assertEqual(
+            generation.updates[-1]["usage_details"],
+            {"input": 10, "output": 4, "total": 14},
+        )
+        self.assertEqual(generation.updates[-1]["cost_details"]["total"], 0.002)
+        self.assertIn("generation.start", [row["event"] for row in rows])
+        self.assertIn("generation.end", [row["event"] for row in rows])
+
+    def test_litellm_model_exports_each_call_as_generation(self):
+        from knowledge_storm.lm import LitellmModel
+        from knowledge_storm.paperstorm_observability import PaperStormObservability
+
+        class Response(dict):
+            def json(self):
+                return dict(self)
+
+        response = Response(
+            choices=[{"text": "answer", "finish_reason": "stop"}],
+            usage={"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10},
+            _hidden_params={"response_cost": 0.001},
+        )
+        client = _FakeLangfuseClient()
+        with tempfile.TemporaryDirectory() as root:
+            observer = PaperStormObservability(Path(root), enabled=True, langfuse_client=client)
+            with observer.trace("paperstorm.research") as trace:
+                with trace.span("research_pipeline") as pipeline:
+                    model = LitellmModel(
+                        model="test/model",
+                        model_type="text",
+                        cache=False,
+                        generation_observer=pipeline.generation,
+                        generation_name="outline_generation",
+                    )
+                    with mock.patch("knowledge_storm.lm.litellm_text_completion", return_value=response):
+                        self.assertEqual(model(prompt="outline"), ["answer"])
+                    pipeline.end(output={"status": "succeeded"})
+                trace.end(output={"status": "succeeded"})
+
+        generation = client.roots[0].children[0].children[0]
+        self.assertEqual(generation.name, "outline_generation")
+        self.assertEqual(generation.payload["as_type"], "generation")
+        self.assertEqual(generation.updates[-1]["usage_details"]["total"], 10)
+        self.assertEqual(generation.updates[-1]["cost_details"]["total"], 0.001)
+
+    def test_trace_recorder_bridges_local_stages_to_nested_langfuse_spans(self):
+        from knowledge_storm.paperstorm_observability import PaperStormObservability
+        from knowledge_storm.paperstorm_trace import PaperStormTraceRecorder
+
+        client = _FakeLangfuseClient()
+        with tempfile.TemporaryDirectory() as root:
+            observability = PaperStormObservability(
+                Path(root), enabled=True, langfuse_client=client
+            )
+            with observability.trace("paperstorm.research") as trace:
+                with trace.span("research_pipeline") as pipeline:
+                    recorder = PaperStormTraceRecorder(
+                        str(Path(root) / "article"), observation_parent=pipeline
+                    )
+                    recorder.start_stage("persona", "generate perspectives", input={"topic": "RAG"})
+                    recorder.end_stage(output_summary={"perspective_count": 3})
+                    recorder.emit(
+                        "stage_start",
+                        stage="retrieval",
+                        invocation_id="query-1",
+                        operation="arxiv search",
+                        input={"queries": ["RAG"]},
+                    )
+                    recorder.emit(
+                        "stage_end",
+                        stage="retrieval",
+                        invocation_id="query-1",
+                        duration_ms=25,
+                        output_summary={"result_count": 5},
+                    )
+                    pipeline.end(output={"status": "succeeded"})
+                trace.end(output={"status": "succeeded"})
+
+        pipeline = client.roots[0].children[0]
+        self.assertEqual([item.name for item in pipeline.children], ["persona", "retrieval"])
+        self.assertEqual(
+            pipeline.children[1].updates[-1]["output"]["result_count"], 5
+        )
+
+    def test_chat_spans_export_router_memory_and_generation_details(self):
+        from knowledge_storm.paperstorm_observability import PaperStormObservability
+        from knowledge_storm.paperstorm_service import PaperStormTaskService
+
+        client = _FakeLangfuseClient()
+        with tempfile.TemporaryDirectory() as root:
+            observer = PaperStormObservability(Path(root), enabled=True, langfuse_client=client)
+            service = PaperStormTaskService(Path(root), observability=observer)
+            session = service.create_chat_session(run_mode="fake", user_id="alice")
+            service.send_chat_message(session["chat_id"], "请记住：回答先给结论")
+
+        root_trace = next(item for item in client.roots if item.name == "paperstorm.chat")
+        spans = {item.name: item for item in root_trace.children}
+        self.assertIn("classify", spans)
+        self.assertIn("memory_candidate_write", spans)
+        memory_output = spans["memory_candidate_write"].updates[-1]["output"]
+        self.assertIn("memory_write", memory_output)
+        self.assertIn(memory_output["memory_write"]["status"], {"persisted", "queued", "skipped"})
+        classify_output = spans["classify"].updates[-1]["output"]
+        self.assertIn("router_decision", classify_output)
+        score_names = {item["name"] for item in root_trace.scores}
+        self.assertIn("planner_fallback", score_names)
+        self.assertIn("memory_write_success", score_names)
+
+    def test_regular_chat_does_not_score_skipped_memory_as_failure(self):
+        from knowledge_storm.paperstorm_observability import PaperStormObservability
+        from knowledge_storm.paperstorm_service import PaperStormTaskService
+
+        client = _FakeLangfuseClient()
+        with tempfile.TemporaryDirectory() as root:
+            observer = PaperStormObservability(Path(root), enabled=True, langfuse_client=client)
+            service = PaperStormTaskService(Path(root), observability=observer)
+            session = service.create_chat_session(run_mode="fake", user_id="alice")
+            service.send_chat_message(session["chat_id"], "你好")
+
+        root_trace = next(item for item in client.roots if item.name == "paperstorm.chat")
+        score_names = {item["name"] for item in root_trace.scores}
+        self.assertNotIn("memory_write_success", score_names)
+
     def test_factory_is_disabled_without_credentials(self):
         from knowledge_storm.paperstorm_observability import build_observability
 

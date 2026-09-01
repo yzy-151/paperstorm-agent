@@ -11,6 +11,7 @@ aiosqlite>=0.20,<1.0
 sqlite-vec>=0.1,<1.0
 websockets>=14,<16
 trafilatura
+beautifulsoup4>=4.12,<5.0
 langchain-huggingface>=1.0,<2.0
 qdrant-client
 langchain-qdrant

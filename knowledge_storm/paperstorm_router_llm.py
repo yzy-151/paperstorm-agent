@@ -12,6 +12,7 @@ Env knobs:
     PAPERSTORM_ROUTER_MODEL       deepseek-v4-flash (default)
     PAPERSTORM_ROUTER_API_KEY     falls back to DEEPSEEK_API_KEY
     PAPERSTORM_ROUTER_API_BASE    falls back to DEEPSEEK_API_BASE
+    PAPERSTORM_ROUTER_MAX_TOKENS  structured planner output budget (default 2048)
 """
 
 import functools
@@ -35,6 +36,17 @@ def _router_cache_size() -> int:
         return 512
 
 
+def _router_output_tokens() -> int:
+    """Return a bounded budget for the planner's structured JSON response."""
+    try:
+        return min(
+            8_192,
+            max(768, int(os.getenv("PAPERSTORM_ROUTER_MAX_TOKENS", "2048"))),
+        )
+    except ValueError:
+        return 2_048
+
+
 @functools.lru_cache(maxsize=_router_cache_size())
 def _cached_router_completion(
     model_name: str, prompt: str, api_key: str, api_base: str
@@ -51,13 +63,27 @@ def _cached_router_completion(
     try:
         response = litellm.completion(
             model=model_name,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Always call submit_turn_plan exactly once. "
+                        "Do not answer the user and do not emit free-form text."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
             api_key=api_key,
             api_base=api_base,
             temperature=0.0,
-            max_tokens=512,
-            timeout=20,
-            response_format={"type": "json_object"},
+            max_tokens=_router_output_tokens(),
+            timeout=30,
+            tools=[_router_function_tool()],
+            tool_choice={
+                "type": "function",
+                "function": {"name": "submit_turn_plan"},
+            },
+            extra_body={"thinking": {"type": "disabled"}},
             cache={"no-cache": True, "no-store": True},
         )
         result = _completion_result(response, model_name)
@@ -407,13 +433,133 @@ def classify_llm_error(error) -> str:
 def _completion_result(response, model):
     choice = response["choices"][0]
     message = choice.get("message") or {}
+    content = str(message.get("content") or "")
+    structured_output = "text"
+    for call in message.get("tool_calls") or []:
+        function = call.get("function") or {}
+        if function.get("name") == "submit_turn_plan":
+            content = str(function.get("arguments") or "")
+            structured_output = "function_call"
+            break
     usage = _usage_dict(response.get("usage") or {})
     return {
-        "content": str(message.get("content") or ""),
+        "content": content,
         "finish_reason": str(choice.get("finish_reason") or "unknown"),
         "usage": usage,
         "cost_usd": _estimate_cost(model, usage),
+        "structured_output": structured_output,
         "error": None,
+    }
+
+
+def _router_function_tool():
+    return {
+        "type": "function",
+        "function": {
+            "name": "submit_turn_plan",
+            "description": "Submit one structured PaperStorm turn plan.",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["respond", "tool_call", "clarify"],
+                    },
+                    "tool_calls": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "enum": [
+                                        "memory.search",
+                                        "memory.write",
+                                        "evidence.search",
+                                        "research.start",
+                                    ],
+                                },
+                                "arguments": {
+                                    "type": "object",
+                                    "properties": {
+                                        "query": {"type": "string"},
+                                        "mode": {
+                                            "type": "string",
+                                            "enum": ["context", "answer"],
+                                        },
+                                        "content": {"type": "string"},
+                                        "canonical_key": {"type": "string"},
+                                        "memory_type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "semantic",
+                                                "episodic",
+                                                "procedural",
+                                                "preference",
+                                            ],
+                                        },
+                                        "confidence": {"type": "number"},
+                                        "importance": {"type": "number"},
+                                    },
+                                },
+                            },
+                            "required": ["name", "arguments"],
+                        },
+                    },
+                    "working_subject": {"type": "string"},
+                    "response_contract": {
+                        "type": "object",
+                        "properties": {
+                            "task": {"type": "string"},
+                            "continue_previous": {"type": "boolean"},
+                            "requires_citations": {
+                                "type": "boolean",
+                                "description": (
+                                    "True whenever the user asks for citations, "
+                                    "sources, paper facts, or evidence-grounded output."
+                                ),
+                            },
+                            "requested_output_tokens": {"type": "integer"},
+                            "style_notes": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                        "required": [
+                            "task",
+                            "continue_previous",
+                            "requires_citations",
+                            "requested_output_tokens",
+                            "style_notes",
+                        ],
+                    },
+                    "tool_policy": {
+                        "type": "object",
+                        "properties": {
+                            "external_retrieval": {
+                                "type": "string",
+                                "enum": ["allow", "deny", "unspecified"],
+                            },
+                            "new_research": {
+                                "type": "string",
+                                "enum": ["allow", "deny"],
+                            },
+                        },
+                        "required": ["external_retrieval", "new_research"],
+                    },
+                    "confidence": {"type": "number"},
+                    "reason": {"type": "string"},
+                },
+                "required": [
+                    "action",
+                    "tool_calls",
+                    "tool_policy",
+                    "confidence",
+                    "reason",
+                ],
+            },
+        },
     }
 
 

@@ -30,6 +30,20 @@ class PaperStormMemoryV43Test(unittest.TestCase):
             self.assertEqual(remembered["memory"]["source_message_ids"], ["m-memory"])
             self.assertEqual(len(service.list_memories("user/alice")), 1)
 
+    def test_policy_persists_explicit_answer_preference_without_exact_colon_form(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = self.make_service(temp_dir)
+
+            result = service.ingest_message(
+                namespace="user/alice",
+                message="请记住我的回答偏好：先给结论，再给证据。",
+                source_message_id="m-preference",
+            )
+
+            self.assertEqual(result["status"], "persisted")
+            self.assertEqual(result["memory"]["memory_type"], "preference")
+            self.assertIn("先给结论", result["memory"]["content"])
+
     def test_conflict_supersedes_old_fact_without_destroying_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             service = self.make_service(temp_dir)

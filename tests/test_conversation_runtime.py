@@ -38,6 +38,122 @@ class FlakyDeepResearchTool:
     },
 )
 class PaperStormLangGraphV44Test(unittest.TestCase):
+    def test_structured_tool_query_is_used_for_contextual_evidence_followup(self):
+        from knowledge_storm.conversation_runtime import _tool_query
+
+        decision = {
+            "tool_calls": [
+                {
+                    "name": "evidence.search",
+                    "arguments": {
+                        "query": "wavelet neural network versus feedforward network"
+                    },
+                }
+            ]
+        }
+
+        self.assertEqual(
+            _tool_query(decision, "evidence.search"),
+            "wavelet neural network versus feedforward network",
+        )
+
+    def test_citation_contract_binds_existing_evidence_without_phrase_rules(self):
+        from knowledge_storm.conversation_runtime import _enforce_response_contract
+
+        decision = {
+            "action": "respond",
+            "tool_calls": [],
+            "rewritten_query": "wavelet neural network comparison",
+            "response_contract": {"requires_citations": True},
+            "authorization": {"evidence.search": "allowed"},
+        }
+
+        adjusted = _enforce_response_contract(
+            decision, task_id="task-wavelet", message="继续比较并附引用"
+        )
+
+        self.assertEqual(adjusted["action"], "tool_call")
+        self.assertEqual(adjusted["tool_calls"][0]["name"], "evidence.search")
+        self.assertEqual(
+            adjusted["tool_calls"][0]["arguments"]["query"],
+            "wavelet neural network comparison",
+        )
+        self.assertIn("citation_contract", adjusted["runtime_adjustments"])
+
+    def test_structured_memory_write_updates_durable_fact_without_phrase_rules(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        planner_output = json.dumps(
+            {
+                "action": "tool_call",
+                "tool_calls": [
+                    {
+                        "name": "memory.write",
+                        "arguments": {
+                            "content": "用户希望回答先给一句结论，再列三条依据。",
+                            "canonical_key": "answer_format_preference",
+                            "memory_type": "preference",
+                        },
+                    }
+                ],
+                "tool_policy": {
+                    "external_retrieval": "deny",
+                    "new_research": "deny",
+                },
+                "confidence": 0.99,
+                "reason": "persist durable preference update",
+                "response_contract": {
+                    "task": "确认偏好已更新",
+                    "requires_citations": False,
+                },
+            },
+            ensure_ascii=False,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                intent_router=PaperStormIntentRouter(
+                    llm_router=lambda _prompt: planner_output
+                ),
+                chat_llm=lambda _prompt, **_kwargs: "好的，已更新。",
+            )
+            result = runtime.invoke(
+                thread_id="thread-memory-update",
+                request_id="request-memory-update",
+                user_id="alice",
+                message="更新我的回答偏好。",
+                run_mode="fake",
+            )
+            memories = runtime.memory_service.list_memories("user/alice")
+
+        self.assertEqual(result["memory_write"]["status"], "persisted")
+        self.assertTrue(result["memory_write"]["read_after_write"]["verified"])
+        self.assertEqual(memories[0]["canonical_key"], "answer_format_preference")
+        self.assertIn("三条依据", memories[0]["content"])
+
+    def test_multilingual_topic_does_not_reject_strong_query_evidence_overlap(self):
+        from knowledge_storm.paperstorm_research_qa import (
+            evaluate_evidence_sufficiency,
+        )
+
+        grade = evaluate_evidence_sufficiency(
+            question="wavelet neural network vs feedforward neural network difference",
+            topic="小波神经网络",
+            evidence=[
+                {
+                    "title": "Wavelet neural networks",
+                    "content": (
+                        "Wavelet neural network activation differs from a "
+                        "feedforward neural network through scale and translation."
+                    ),
+                }
+            ],
+            citations=[{"url": "https://example.org/paper"}],
+        )
+
+        self.assertTrue(grade["sufficient"])
+
     def test_continuation_uses_respond_action_and_exposes_llm_telemetry(self):
         def chat_llm(_prompt, **_kwargs):
             return {
@@ -187,6 +303,44 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             self.assertIn("deep_research", result["executed_nodes"])
             self.assertEqual(result["route"], "deep_research")
             self.assertTrue(result["answer"])
+
+    def test_response_model_cannot_start_research_without_planner_authorization(self):
+        from knowledge_storm.conversation_runtime import RETRIEVE_MARKER
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        planner = PaperStormIntentRouter(
+            llm_router=lambda _prompt: json.dumps(
+                {
+                    "action": "respond",
+                    "tool_calls": [],
+                    "tool_policy": {
+                        "external_retrieval": "deny",
+                        "new_research": "deny",
+                    },
+                    "confidence": 0.99,
+                    "reason": "直接解释处理流程",
+                },
+                ensure_ascii=False,
+            )
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                intent_router=planner,
+                chat_llm=lambda _prompt, **_kwargs: RETRIEVE_MARKER,
+            )
+            result = runtime.invoke(
+                thread_id="thread-denied-research",
+                request_id="request-denied-research",
+                user_id="alice",
+                message="解释论文观点冲突时如何处理，不要启动调研",
+                run_mode="fake",
+            )
+
+        self.assertNotIn("deep_research", result["executed_nodes"])
+        self.assertNotIn("knowledge_retrieval", result["executed_nodes"])
+        self.assertFalse(result["retrieval_triggered"])
+        self.assertTrue(result["answer"])
 
     def test_meta_question_never_escalates_even_if_llm_emits_marker(self):
         from knowledge_storm.conversation_runtime import RETRIEVE_MARKER
@@ -432,9 +586,102 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             )
 
             self.assertEqual(written["memory_write"]["status"], "persisted")
-            self.assertEqual(recalled["route"], "memory_answer")
+            self.assertEqual(recalled["route"], "casual_chat")
             self.assertIn("中文", recalled["answer"])
             self.assertEqual(isolated["memory_recall"]["results"], [])
+
+    def test_recalled_preference_is_context_for_substantive_task_not_terminal_answer(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        def planner(_prompt):
+            return (
+                '{"action":"call_tool","tool_calls":[{"name":"memory.search",'
+                '"arguments":{"query":"回答偏好"}}],"rewritten_query":"解释梯度下降",'
+                '"working_subject":"梯度下降","confidence":0.98,'
+                '"reason":"use preference","response_contract":{"task":"解释梯度下降",'
+                '"requires_citations":false}}'
+            )
+
+        captured = {}
+
+        def chat_llm(prompt, **_kwargs):
+            captured["prompt"] = prompt
+            return "结论：梯度下降通过沿负梯度方向更新参数来降低损失。"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                intent_router=PaperStormIntentRouter(llm_router=planner),
+                chat_llm=chat_llm,
+            )
+            runtime.memory_service.ingest_message(
+                namespace="user/alice",
+                message="请记住我的回答偏好：先给结论，再给证据。",
+                source_message_id="preference-1",
+                subject="alice",
+            )
+            result = runtime.invoke(
+                thread_id="thread-preference",
+                request_id="request-preference",
+                user_id="alice",
+                message="按照我的偏好解释梯度下降，不要检索论文。",
+                run_mode="fake",
+            )
+
+        self.assertEqual(result["route"], "casual_chat")
+        self.assertIn("梯度下降", result["answer"])
+        self.assertIn("先给结论", captured["prompt"])
+
+    def test_memory_tool_mode_drives_behavior_without_phrase_classification(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        planner = PaperStormIntentRouter(
+            llm_router=lambda _prompt: json.dumps(
+                {
+                    "action": "tool_call",
+                    "tool_calls": [
+                        {
+                            "name": "memory.search",
+                            "arguments": {"query": "回答偏好", "mode": "answer"},
+                        }
+                    ],
+                    "tool_policy": {
+                        "external_retrieval": "deny",
+                        "new_research": "deny",
+                    },
+                    "confidence": 0.99,
+                    "reason": "读取长期记忆后回答",
+                },
+                ensure_ascii=False,
+            )
+        )
+        captured = {}
+
+        def chat_llm(prompt, **_kwargs):
+            captured["prompt"] = prompt
+            return "我记得你偏好先给结论，再给证据。"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(
+                temp_dir, intent_router=planner, chat_llm=chat_llm
+            )
+            runtime.memory_service.ingest_message(
+                namespace="user/alice",
+                message="请记住我的回答偏好：先给结论，再给证据。",
+                source_message_id="preference-mode",
+                subject="alice",
+            )
+            result = runtime.invoke(
+                thread_id="thread-memory-mode",
+                request_id="request-memory-mode",
+                user_id="alice",
+                message="从长期记忆复述我的偏好，且不要调用外部工具。",
+                run_mode="fake",
+            )
+
+        self.assertEqual(result["route"], "casual_chat")
+        self.assertIn("先给结论", result["answer"])
+        self.assertIn("先给结论", captured["prompt"])
 
     def test_deep_research_is_an_isolated_tool_with_artifact_contract(self):
         from knowledge_storm.conversation_runtime import StormDeepResearchTool

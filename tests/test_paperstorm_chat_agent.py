@@ -15,6 +15,20 @@ from unittest import mock
     },
 )
 class PaperStormChatAgentTest(unittest.TestCase):
+    def test_http_chat_session_preserves_bound_research_task_id(self):
+        from fastapi.testclient import TestClient
+        from examples.storm_examples.paperstorm_service_api import create_app
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            client = TestClient(create_app(service_root=temp_dir))
+            response = client.post(
+                "/chat/sessions",
+                json={"topic": "小波神经网络", "task_id": "task-wavelet"},
+            )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("task-wavelet", response.json()["task_id"])
+
     def test_chat_session_persists_explicit_memory_retrieval_mode(self):
         service = self.make_service()
         session = service.create_chat_session(

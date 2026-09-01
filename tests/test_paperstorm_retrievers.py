@@ -183,6 +183,19 @@ class PaperStormRetrieversTest(unittest.TestCase):
         self.assertEqual([item["title"] for item in results], ["Muon is Scalable for LLM Training"])
         self.assertEqual(results[0]["meta"]["authors"], ["Optimizer Researcher"])
 
+    def test_arxiv_rm_compiles_wavelet_neural_network_queries_in_english(self):
+        queries = ArxivRM._compile_queries_for_arxiv("小波神经网络 核心结构")
+
+        self.assertGreaterEqual(len(queries), 1)
+        self.assertTrue(all("wavelet" in query.lower() for query in queries))
+        self.assertTrue(all("neural network" in query.lower() for query in queries))
+
+    def test_arxiv_rm_rejects_generic_neural_network_results_for_wavelet_query(self):
+        rm = ArxivRM(k=3)
+        rm.request = lambda _query: ARXIV_SAMPLE
+
+        self.assertEqual(rm.forward("小波神经网络"), [])
+
     def test_arxiv_rm_rejects_neural_network_paper_without_muon_optimizer_method(self):
         rm = ArxivRM(k=3)
         response = ARXIV_MUON_AMBIGUOUS_SAMPLE.replace(

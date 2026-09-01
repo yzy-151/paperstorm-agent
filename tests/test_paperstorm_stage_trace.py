@@ -314,7 +314,12 @@ class PaperStormStageTraceTest(unittest.TestCase):
                 article_dir=str(Path(temp_dir) / "run"),
             )
 
+            scorecard_write_states = []
+
             def write_scorecard(current_config):
+                scorecard_write_states.append(
+                    (Path(current_config.article_dir) / "run_summary.json").exists()
+                )
                 Path(current_config.article_dir, "scorecard.json").write_text(
                     '{"scores":{"total":88}}', encoding="utf-8"
                 )
@@ -329,10 +334,15 @@ class PaperStormStageTraceTest(unittest.TestCase):
                 "knowledge_storm.paperstorm_pipeline.STORMWikiRunner",
                 FakeRunner,
             ), mock.patch(
+                "knowledge_storm.paperstorm_pipeline.ensure_research_sources",
+                return_value=1,
+            ), mock.patch(
                 "knowledge_storm.paperstorm_pipeline._write_pipeline_scorecard",
                 side_effect=write_scorecard,
             ):
                 result = run_paperstorm_pipeline(config)
+
+            self.assertTrue(scorecard_write_states[-1])
 
             self.assertTrue(result["success"])
             events = [

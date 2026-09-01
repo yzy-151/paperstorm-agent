@@ -33,6 +33,15 @@ class CountingEmbedding(KeywordEmbedding):
 
 
 class PaperStormMemoryV56Tests(unittest.TestCase):
+    def test_memory_extractor_prompt_treats_explicit_name_as_positive_example(self):
+        from knowledge_storm.memory_store import build_memory_candidate_prompt
+
+        prompt = build_memory_candidate_prompt("我叫小宇，请记住我的名字。")
+
+        self.assertIn("我叫小宇，请记住我的名字", prompt)
+        self.assertIn('"should_write": true', prompt)
+        self.assertIn("姓名、称呼和回答偏好", prompt)
+
     def test_lexical_mode_never_calls_embedding_provider(self):
         from knowledge_storm.memory_store import LongTermMemoryService
 
@@ -118,6 +127,29 @@ class PaperStormMemoryV56Tests(unittest.TestCase):
             self.assertEqual(result["status"], "persisted")
             self.assertEqual(result["memory"]["canonical_key"], "answer_language")
             self.assertEqual(result["memory"]["metadata"]["extractor"], "llm_structured")
+
+    def test_structured_memory_write_normalizes_provider_enum_drift(self):
+        from knowledge_storm.memory_store import LongTermMemoryService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = LongTermMemoryService(
+                Path(temp_dir) / "memory",
+                embedding_provider=KeywordEmbedding(),
+            )
+            result = service.ingest_structured(
+                "tenant:user",
+                content="用户姓名是小宇",
+                canonical_key="user_name",
+                memory_type="user_fact",
+                source_message_id="message-enum-drift",
+            )
+
+            self.assertEqual(result["status"], "persisted")
+            self.assertEqual(result["memory"]["memory_type"], "semantic")
+            self.assertEqual(
+                result["memory"]["metadata"]["normalized_memory_type_from"],
+                "user_fact",
+            )
 
     def test_negative_memory_instruction_blocks_llm_candidate(self):
         from knowledge_storm.memory_store import LongTermMemoryService

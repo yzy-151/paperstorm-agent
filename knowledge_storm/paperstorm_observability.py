@@ -192,6 +192,15 @@ class TraceHandle(AbstractContextManager):
     def span(self, name, input=None, metadata=None, as_type="span"):
         return SpanHandle(self, name, input or {}, metadata or {}, as_type)
 
+    def generation(self, name, model="", input=None, metadata=None):
+        return GenerationHandle(
+            self,
+            name=name,
+            model=model,
+            input=input or {},
+            metadata=metadata or {},
+        )
+
     def score(self, name, value, comment=""):
         payload = {"name": str(name), "value": value, "comment": str(comment or "")}
         self.owner._record("score", trace_id=self.trace_id, **payload)
@@ -219,9 +228,10 @@ class TraceHandle(AbstractContextManager):
 
 
 class SpanHandle(AbstractContextManager):
-    def __init__(self, trace, name, input, metadata, as_type):
-        self.trace = trace
-        self.owner = trace.owner
+    def __init__(self, parent, name, input, metadata, as_type):
+        self.parent = parent
+        self.trace = parent.trace if isinstance(parent, SpanHandle) else parent
+        self.owner = self.trace.owner
         self.name = str(name)
         self.span_id = uuid.uuid4().hex
         self.input = sanitize_payload(input)
@@ -235,15 +245,16 @@ class SpanHandle(AbstractContextManager):
             "span.start",
             trace_id=self.trace.trace_id,
             span_id=self.span_id,
-            parent_id=self.trace.trace_id,
+            parent_id=_observation_id(self.parent),
             name=self.name,
             as_type=self.as_type,
             input=self.input,
             metadata=self.metadata,
         )
-        if self.trace.remote is not None:
+        remote_parent = getattr(self.parent, "remote", None)
+        if remote_parent is not None:
             self.remote = self.owner._remote(
-                lambda: self.trace.remote.start_observation(
+                lambda: remote_parent.start_observation(
                     name=self.name,
                     as_type=self.as_type,
                     input=self.input,
@@ -251,6 +262,18 @@ class SpanHandle(AbstractContextManager):
                 )
             )
         return self
+
+    def span(self, name, input=None, metadata=None, as_type="span"):
+        return SpanHandle(self, name, input or {}, metadata or {}, as_type)
+
+    def generation(self, name, model="", input=None, metadata=None):
+        return GenerationHandle(
+            self,
+            name=name,
+            model=model,
+            input=input or {},
+            metadata=metadata or {},
+        )
 
     def end(self, output=None, error=None, metadata=None):
         if self.closed:
@@ -264,7 +287,7 @@ class SpanHandle(AbstractContextManager):
             "span.end",
             trace_id=self.trace.trace_id,
             span_id=self.span_id,
-            parent_id=self.trace.trace_id,
+            parent_id=_observation_id(self.parent),
             name=self.name,
             **payload,
         )
@@ -277,6 +300,114 @@ class SpanHandle(AbstractContextManager):
         if not self.closed:
             self.end(error=exc if exc is not None else None)
         return False
+
+
+class GenerationHandle(AbstractContextManager):
+    """One model invocation nested below a trace or business-stage span."""
+
+    def __init__(self, parent, name, model, input, metadata):
+        self.parent = parent
+        self.trace = parent.trace if isinstance(parent, SpanHandle) else parent
+        self.owner = self.trace.owner
+        self.name = str(name)
+        self.model = str(model or "")
+        self.generation_id = uuid.uuid4().hex
+        self.input = sanitize_payload(input)
+        self.metadata = sanitize_payload(metadata)
+        self.remote = None
+        self.closed = False
+
+    def __enter__(self):
+        self.owner._record(
+            "generation.start",
+            trace_id=self.trace.trace_id,
+            generation_id=self.generation_id,
+            parent_id=_observation_id(self.parent),
+            name=self.name,
+            model=self.model,
+            input=self.input,
+            metadata=self.metadata,
+        )
+        remote_parent = getattr(self.parent, "remote", None)
+        if remote_parent is not None:
+            self.remote = self.owner._remote(
+                lambda: remote_parent.start_observation(
+                    name=self.name,
+                    as_type="generation",
+                    model=self.model or None,
+                    input=self.input,
+                    metadata={
+                        **self.metadata,
+                        "paperstorm_generation_id": self.generation_id,
+                    },
+                )
+            )
+        return self
+
+    def end(
+        self,
+        output=None,
+        usage=None,
+        cost_usd=None,
+        finish_reason="",
+        error=None,
+        metadata=None,
+    ):
+        if self.closed:
+            return
+        usage_details = _usage_details(usage or {})
+        payload = {
+            "output": sanitize_payload(output or {}),
+            "usage_details": usage_details,
+            "cost_usd": float(cost_usd) if isinstance(cost_usd, (int, float)) else None,
+            "finish_reason": str(finish_reason or ""),
+            "metadata": sanitize_payload(metadata or {}),
+            "error": sanitize_payload(str(error), 1000) if error else "",
+        }
+        self.owner._record(
+            "generation.end",
+            trace_id=self.trace.trace_id,
+            generation_id=self.generation_id,
+            parent_id=_observation_id(self.parent),
+            name=self.name,
+            model=self.model,
+            **payload,
+        )
+        if self.remote is not None:
+            update = {
+                "output": payload["output"],
+                "usage_details": usage_details,
+                "metadata": {
+                    **payload["metadata"],
+                    "finish_reason": payload["finish_reason"],
+                },
+            }
+            if payload["cost_usd"] is not None:
+                update["cost_details"] = {"total": payload["cost_usd"]}
+            if payload["error"]:
+                update["level"] = "ERROR"
+                update["status_message"] = payload["error"]
+            self.owner._remote(lambda: self.remote.update(**update))
+            self.owner._remote(lambda: self.remote.end())
+        self.closed = True
+
+    def __exit__(self, exc_type, exc, _traceback):
+        if not self.closed:
+            self.end(error=exc if exc is not None else None)
+        return False
+
+
+def _observation_id(parent):
+    return getattr(parent, "span_id", None) or getattr(parent, "trace_id", "")
+
+
+def _usage_details(usage):
+    prompt = int(usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0)
+    completion = int(
+        usage.get("completion_tokens", usage.get("output_tokens", 0)) or 0
+    )
+    total = int(usage.get("total_tokens", prompt + completion) or prompt + completion)
+    return {"input": prompt, "output": completion, "total": total}
 
 
 def build_observability(root_dir, langfuse_client=None):

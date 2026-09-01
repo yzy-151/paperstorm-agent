@@ -83,7 +83,24 @@ class LongTermMemoryService:
             _append_jsonl(self.pending_path, queued)
             return {"status": "queued", "candidate": queued}
         memory = self.upsert(namespace=namespace, **payload)
-        return {"status": "persisted", "memory": memory}
+        persisted = next(
+            (
+                item
+                for item in self.list_memories(namespace)
+                if item.get("id") == memory.get("id")
+            ),
+            None,
+        )
+        return {
+            "status": "persisted",
+            "memory": memory,
+            "read_after_write": {
+                "verified": persisted is not None,
+                "memory_id": memory.get("id", ""),
+                "namespace": namespace,
+                "canonical_key": memory.get("canonical_key", ""),
+            },
+        }
 
     def upsert(
         self,

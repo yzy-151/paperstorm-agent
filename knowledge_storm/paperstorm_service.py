@@ -12,6 +12,109 @@ from .paperstorm_qa import PaperStormKnowledgeBase, write_qa_artifact
 from . import __version__
 
 
+def _chat_node_observation(node, message, graph_run, event):
+    """Return sanitized business input/output for one conversation graph node."""
+    details = dict(event.get("details") or {})
+    common_input = {"message": message}
+    common_output = {
+        "status": event.get("status", "success"),
+        "duration_ms": event.get("duration_ms"),
+    }
+    if node == "classify":
+        return common_input, {
+            **common_output,
+            "router_decision": graph_run.get("router_decision") or {},
+        }, details
+    if node == "memory_recall":
+        return common_input, {
+            **common_output,
+            "memory_recall": graph_run.get("memory_recall") or {},
+        }, details
+    if node == "memory_candidate_write":
+        return common_input, {
+            **common_output,
+            "memory_write": graph_run.get("memory_write")
+            or {"status": "not_evaluated"},
+        }, details
+    if node == "knowledge_retrieval":
+        evidence = graph_run.get("evidence") or []
+        return common_input, {
+            **common_output,
+            "evidence_count": len(evidence),
+            "evidence": evidence,
+            "retrieval_stack": graph_run.get("retrieval_stack", ""),
+            "retrieval_metadata": graph_run.get("retrieval_metadata") or {},
+        }, details
+    if node == "evidence_grade":
+        return {"evidence_count": len(graph_run.get("evidence") or [])}, {
+            **common_output,
+            "evidence_grade": graph_run.get("evidence_grade") or {},
+        }, details
+    if node == "deep_research":
+        return common_input, {
+            **common_output,
+            "used_task_id": graph_run.get("used_task_id", ""),
+            "retrieval_triggered": bool(graph_run.get("retrieval_triggered")),
+            "artifact_uri": graph_run.get("artifact_uri", ""),
+        }, details
+    if node in {"casual_chat", "memory_answer", "answer_with_citations"}:
+        return common_input, {
+            **common_output,
+            "answer": graph_run.get("answer", ""),
+            "citation_count": len(graph_run.get("citations") or []),
+            "citations": graph_run.get("citations") or [],
+            "grounded": bool(graph_run.get("grounded")),
+        }, details
+    if node == "final_trace":
+        return {}, {
+            **common_output,
+            "route": graph_run.get("route", ""),
+            "executed_nodes": graph_run.get("executed_nodes") or [],
+        }, details
+    return common_input, common_output, details
+
+
+def _export_chat_generations(span, node, message, graph_run):
+    if node == "classify":
+        decision = graph_run.get("router_decision") or {}
+        telemetry = decision.get("planner_telemetry") or {}
+        if telemetry:
+            with span.generation(
+                "intent_router",
+                model=str(telemetry.get("model") or "configured-router-model"),
+                input={"message": message},
+                metadata={"planner_status": decision.get("planner_status", "")},
+            ) as generation:
+                generation.end(
+                    output={"router_decision": decision},
+                    usage=telemetry.get("usage") or {},
+                    cost_usd=telemetry.get("cost_usd"),
+                    finish_reason=telemetry.get("finish_reason", ""),
+                    error=(telemetry.get("error") or {}).get("message")
+                    if isinstance(telemetry.get("error"), dict)
+                    else telemetry.get("error"),
+                    metadata={"latency_ms": telemetry.get("latency_ms")},
+                )
+    if node in {"casual_chat", "memory_answer", "answer_with_citations"}:
+        llm_call = graph_run.get("llm_call") or {}
+        if llm_call:
+            with span.generation(
+                "answer_generation",
+                model=str(llm_call.get("model") or "configured-chat-model"),
+                input={"message": message},
+            ) as generation:
+                generation.end(
+                    output={"content": graph_run.get("answer", "")},
+                    usage=llm_call.get("usage") or {},
+                    cost_usd=llm_call.get("cost_usd"),
+                    finish_reason=llm_call.get("finish_reason", ""),
+                    error=(llm_call.get("error") or {}).get("message")
+                    if isinstance(llm_call.get("error"), dict)
+                    else llm_call.get("error"),
+                    metadata={"latency_ms": llm_call.get("latency_ms")},
+                )
+
+
 class PaperStormTaskService:
     """File-backed service core for PaperStorm task APIs."""
 
@@ -147,14 +250,30 @@ class PaperStormTaskService:
                         trace.end(output={"status": "running"})
                         return state
                     if state.get("run_mode") == "paperstorm":
-                        self._run_paperstorm_pipeline(state)
+                        self._run_paperstorm_pipeline(
+                            state, observation_parent=pipeline_span
+                        )
                     elif state.get("run_mode") != "fake":
                         raise ValueError(
                             "Supported run modes are 'fake', 'paperstorm', 'manual', and 'fail'."
                         )
                     else:
                         self._run_fake_research(state)
-                    self._maybe_generate_pdf(state)
+                    with pipeline_span.span(
+                        "pdf_export",
+                        input={
+                            "generate_pdf": bool(
+                                (state.get("options") or {}).get("generate_pdf", False)
+                            )
+                        },
+                        as_type="chain",
+                    ) as pdf_span:
+                        self._maybe_generate_pdf(state)
+                        pdf_span.end(
+                            output={
+                                "pdf": (state.get("artifacts") or {}).get("pdf", {})
+                            }
+                        )
                     pipeline_span.end(
                         output={
                             "status": "succeeded",
@@ -677,15 +796,45 @@ class PaperStormTaskService:
                 event_by_node = {event.get("node"): event for event in events}
                 for node in graph_run.get("executed_nodes") or []:
                     event = event_by_node.get(node) or {}
+                    span_input, span_output, span_metadata = _chat_node_observation(
+                        node=node,
+                        message=message,
+                        graph_run=graph_run,
+                        event=event,
+                    )
                     with trace.span(
                         node,
+                        input=span_input,
                         metadata={
                             "status": event.get("status", "success"),
                             "duration_ms": event.get("duration_ms"),
+                            **span_metadata,
                         },
                         as_type="chain",
                     ) as span:
-                        span.end(output={"status": event.get("status", "success")})
+                        _export_chat_generations(span, node, message, graph_run)
+                        span.end(output=span_output)
+                router = graph_run.get("router_decision") or {}
+                planner_status = str(router.get("planner_status") or "")
+                trace.score(
+                    "planner_fallback",
+                    1.0
+                    if planner_status
+                    in {"fallback", "guarded_fallback", "offline_fallback"}
+                    else 0.0,
+                    comment=str((router.get("planner_error") or {}).get("message") or ""),
+                )
+                memory_write = graph_run.get("memory_write") or {}
+                if router.get("intent") == "memory_write":
+                    trace.score(
+                        "memory_write_success",
+                        1.0 if memory_write.get("status") == "persisted" else 0.0,
+                        comment=str(
+                            memory_write.get("reason")
+                            or memory_write.get("status")
+                            or "not_evaluated"
+                        ),
+                    )
                 trace.score(
                     "trajectory_success",
                     1.0 if graph_run.get("status") == "succeeded" else 0.0,
@@ -1040,13 +1189,15 @@ class PaperStormTaskService:
             or _read_text(output_dir / "raw_search_results.json"),
         }
 
-    def _run_paperstorm_pipeline(self, state: Dict):
+    def _run_paperstorm_pipeline(self, state: Dict, observation_parent=None):
         runner = self.pipeline_runner
         if runner is None:
             from .paperstorm_pipeline import run_paperstorm_pipeline_task
 
-            runner = run_paperstorm_pipeline_task
-        runner(state)
+            return run_paperstorm_pipeline_task(
+                state, observation_parent=observation_parent
+            )
+        return runner(state)
 
     def _maybe_generate_pdf(self, state: Dict):
         options = state.get("options") or {}

@@ -155,7 +155,13 @@ def evaluate_run(run_dir, case: EvalCase):
     forbidden_hits = _count_keyword_hits(article_and_retrieval, case.forbidden_keywords)
     offtopic_result_count = _count_offtopic_results(raw_results, case.forbidden_keywords)
     chinese_ratio = _chinese_char_ratio(article)
-    source_count = len(raw_results) if isinstance(raw_results, list) else 0
+    if isinstance(raw_results, list):
+        source_count = len(raw_results)
+    elif isinstance(raw_results, dict):
+        # STORM persists raw_search_results.json as URL -> source metadata.
+        source_count = len(raw_results.get("url_to_info") or raw_results)
+    else:
+        source_count = 0
 
     checks = {
         "has_article": bool(article.strip()),

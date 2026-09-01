@@ -383,9 +383,13 @@ class LitellmModel(LM):
         model: str = "openai/gpt-4o-mini",
         api_key: Optional[str] = None,
         model_type: Literal["chat", "text"] = "chat",
+        generation_observer=None,
+        generation_name: str = "llm_call",
         **kwargs,
     ):
         super().__init__(model=model, api_key=api_key, model_type=model_type, **kwargs)
+        self.generation_observer = generation_observer
+        self.generation_name = str(generation_name or "llm_call")
         # token 统计: 线程安全的计数器（因为 STORM 可能多线程并发调 LLM）
         self._token_usage_lock = threading.Lock()
         self.prompt_tokens = 0
@@ -441,9 +445,30 @@ class LitellmModel(LM):
                 cached_litellm_text_completion if cache else litellm_text_completion
             )
 
-        response = completion(
-            ujson.dumps(dict(model=self.model, messages=messages, **kwargs))
-        )
+        generation = None
+        if self.generation_observer is not None:
+            try:
+                generation = self.generation_observer(
+                    name=self.generation_name,
+                    model=self.model,
+                    input={"messages": messages},
+                    metadata={
+                        "temperature": kwargs.get("temperature"),
+                        "max_tokens": kwargs.get("max_tokens"),
+                    },
+                )
+                if generation is not None:
+                    generation.__enter__()
+            except Exception:
+                generation = None
+        try:
+            response = completion(
+                ujson.dumps(dict(model=self.model, messages=messages, **kwargs))
+            )
+        except Exception as error:
+            if generation is not None:
+                generation.end(error=error)
+            raise
         response_dict = response.json()
         self.log_usage(response_dict)
         outputs = [
@@ -460,6 +485,20 @@ class LitellmModel(LM):
             **entry, cost=response.get("_hidden_params", {}).get("response_cost")
         )
         self.history.append(entry)
+
+        if generation is not None:
+            first_choice = (response_dict.get("choices") or [{}])[0]
+            finish_reason = (
+                first_choice.get("finish_reason", "")
+                if isinstance(first_choice, dict)
+                else getattr(first_choice, "finish_reason", "")
+            )
+            generation.end(
+                output={"content": outputs[0] if outputs else ""},
+                usage=entry.get("usage") or {},
+                cost_usd=entry.get("cost"),
+                finish_reason=finish_reason,
+            )
 
         return outputs
 

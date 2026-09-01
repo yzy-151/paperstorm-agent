@@ -5,6 +5,63 @@ from unittest import mock
 
 
 class PaperStormRouterLLMTest(unittest.TestCase):
+    def test_router_tool_schema_constrains_memory_and_response_contract(self):
+        from knowledge_storm.paperstorm_router_llm import _router_function_tool
+
+        parameters = _router_function_tool()["function"]["parameters"]
+        tool_call = parameters["properties"]["tool_calls"]["items"]
+        arguments = tool_call["properties"]["arguments"]
+        contract = parameters["properties"]["response_contract"]
+
+        self.assertEqual(
+            arguments["properties"]["memory_type"]["enum"],
+            ["semantic", "episodic", "procedural", "preference"],
+        )
+        self.assertIn("requires_citations", contract["properties"])
+        self.assertIn("requires_citations", contract["required"])
+
+    def test_router_completion_uses_function_arguments_as_structured_content(self):
+        from knowledge_storm.paperstorm_router_llm import _completion_result
+
+        response = {
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "submit_turn_plan",
+                                    "arguments": '{"action":"respond","confidence":0.9}',
+                                }
+                            }
+                        ],
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+
+        result = _completion_result(response, "openai/deepseek-v4-flash")
+
+        self.assertIn('"action":"respond"', result["content"])
+        self.assertEqual(result["structured_output"], "function_call")
+
+    def test_router_output_budget_is_large_enough_for_complete_json_and_bounded(self):
+        from knowledge_storm.paperstorm_router_llm import _router_output_tokens
+
+        with mock.patch.dict("os.environ", {}, clear=False):
+            self.assertEqual(2048, _router_output_tokens())
+        with mock.patch.dict(
+            "os.environ", {"PAPERSTORM_ROUTER_MAX_TOKENS": "256"}
+        ):
+            self.assertEqual(768, _router_output_tokens())
+        with mock.patch.dict(
+            "os.environ", {"PAPERSTORM_ROUTER_MAX_TOKENS": "99999"}
+        ):
+            self.assertEqual(8192, _router_output_tokens())
+
     def test_rewrite_query_preserves_original_without_calling_search_planner(self):
         from knowledge_storm.paperstorm_intent_router import rewrite_query
         from knowledge_storm.search_planning import SearchPlanner

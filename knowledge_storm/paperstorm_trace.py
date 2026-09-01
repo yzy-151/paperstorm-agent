@@ -78,7 +78,12 @@ def sanitize_trace_value(value, key="", max_string_length=512):
 
 
 class PaperStormTraceRecorder:
-    def __init__(self, article_dir: str, enabled: bool = True):
+    def __init__(
+        self,
+        article_dir: str,
+        enabled: bool = True,
+        observation_parent=None,
+    ):
         self.article_dir = article_dir
         self.enabled = enabled
         self.trace_path = str(Path(article_dir) / "paperstorm_trace.jsonl")
@@ -88,6 +93,8 @@ class PaperStormTraceRecorder:
         self.current_stage = None
         self._stage_started_at = None
         self._write_lock = threading.RLock()
+        self.observation_parent = observation_parent
+        self._observation_stages = {}
         if self.enabled:
             Path(article_dir).mkdir(parents=True, exist_ok=True)
             Path(self.trace_path).write_text("", encoding="utf-8")
@@ -108,7 +115,76 @@ class PaperStormTraceRecorder:
             self.events.append(record)
             with open(self.trace_path, "a", encoding="utf-8") as stream:
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._export_observation_event(record)
         return record
+
+    def generation(self, name: str, model: str = "", input=None, metadata=None):
+        """Create a Generation under the currently active business stage."""
+        parent = self._current_observation_parent()
+        if parent is None:
+            return None
+        return parent.generation(
+            name=name,
+            model=model,
+            input=input or {},
+            metadata=metadata or {},
+        )
+
+    def _current_observation_parent(self):
+        if self.current_stage:
+            candidates = [
+                handle
+                for key, handle in self._observation_stages.items()
+                if key[0] == self.current_stage
+            ]
+            if candidates:
+                return candidates[-1]
+        return self.observation_parent
+
+    def _export_observation_event(self, record):
+        if self.observation_parent is None:
+            return
+        try:
+            event = record.get("event")
+            if event == "stage_start":
+                key = _observation_stage_key(record)
+                previous = self._observation_stages.pop(key, None)
+                if previous is not None:
+                    previous.end(
+                        output={"status": "superseded"},
+                        metadata={"reason": "duplicate stage start"},
+                    )
+                handle = self.observation_parent.span(
+                    record.get("stage") or "stage",
+                    input=record.get("input") or {},
+                    metadata=_stage_metadata(record),
+                    as_type="chain",
+                )
+                handle.__enter__()
+                self._observation_stages[key] = handle
+            elif event in {"stage_end", "stage_error"}:
+                key = _observation_stage_key(record)
+                handle = self._observation_stages.pop(key, None)
+                if handle is None:
+                    matching = [
+                        item
+                        for item in self._observation_stages
+                        if item[0] == record.get("stage")
+                    ]
+                    if matching:
+                        handle = self._observation_stages.pop(matching[-1])
+                if handle is not None:
+                    handle.end(
+                        output=record.get("output_summary")
+                        or {"status": "failed" if event == "stage_error" else "completed"},
+                        error=record.get("error_message") if event == "stage_error" else None,
+                        metadata=_stage_metadata(record),
+                    )
+        except Exception:
+            # Observability must not affect research execution. Remote failures are
+            # already counted by PaperStormObservability; bridge shape errors are
+            # intentionally fail-open as well.
+            return
 
     def start_stage(self, stage: str, operation: str, input=None, **telemetry):
         if self.current_stage:
@@ -174,6 +250,12 @@ class PaperStormTraceRecorder:
     def write_summary(self, success: bool, artifacts=None, error=None, extra=None):
         if not self.enabled:
             return
+        for key, handle in list(self._observation_stages.items()):
+            handle.end(
+                output={"status": "closed_at_run_end"},
+                metadata={"stage": key[0]},
+            )
+            self._observation_stages.pop(key, None)
         artifacts = artifacts or []
         retrieval_starts = [
             event for event in self.events if event["event"] == "retrieval_start"
@@ -201,6 +283,18 @@ class PaperStormTraceRecorder:
             json.dumps(summary, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+
+def _observation_stage_key(record):
+    return (
+        str(record.get("stage") or "stage"),
+        str(record.get("invocation_id") or ""),
+    )
+
+
+def _stage_metadata(record):
+    ignored = {"ts", "event", "stage", "input", "output_summary", "error_message"}
+    return {key: value for key, value in record.items() if key not in ignored}
 
 
 class PaperStormStageCallback:

@@ -233,10 +233,6 @@ Web Dashboard 包含三个工作区：
 
 ![PaperStorm 研究问答](docs/screenshots/dashboard-chat-v64.png)
 
-![PaperStorm 问答演示](docs/screenshots/paperstorm-chat-flow-v65.gif)
-
-![PaperStorm Benchmark 控制台](docs/screenshots/dashboard-developer-v64.png)
-
 ### 如何复现公开 Benchmark
 
 以下命令分别用于确定性 smoke 和真实论文质量评测。真实论文质量结论必须使用冻结数据 split、
@@ -271,10 +267,12 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_pim_domain_
   --top-k 5
 ```
 
-## Langfuse 可观测性与 5 分钟 Bad Case 演示
+## Langfuse 可观测性与 Bad Case 定位
 
-Langfuse 是可选分析后端。固定复合 RAG bad case 会先生成本地可复核事件，再按需导出远程 trace；
-密钥只从运行环境读取，不应写入 README、脚本、提交记录或结果文件。
+Langfuse 是可选分析后端，不替代本地事件审计或固定 Benchmark evaluator。系统将一次调研或一轮
+对话映射为 Trace；调研阶段、路由、检索、记忆与交付映射为嵌套 Span；每次 LLM 调用记录为
+Generation，并上报模型、输入/输出摘要、Token、耗时、成本、结束原因和错误。密钥只从运行环境读取，
+不得写入 README、脚本、提交记录或结果文件。
 
 ```powershell
 D:\SOFTWARE\spyder\envs\storm\python.exe -m pip install -e ".[observability]"
@@ -287,11 +285,28 @@ D:\SOFTWARE\spyder\envs\storm\python.exe examples\storm_examples\run_langfuse_ba
   --output-dir .\results\langfuse_badcase_demo
 ```
 
-在 Langfuse 中先按 `badcase` 与分类 tags（如 `retrieval_miss`、`invalid_citation`）筛选，
-再按 `retrieval_recall_at_5`、`citation_validity`、`answer_groundedness` 等 scores 缩小范围；
-使用 `case_id` 关联固定用例。报告中的 `remote_trace_id` 仅在 SDK 返回时出现，不能假定其与
-PaperStorm 本地 trace ID 等价。未配置、不可达或降级时，仍可在
-`<output-dir>/observability/events.jsonl` 审计同一事件链路。
+### 观测模型与排查路径
+
+| 业务操作 | Trace / Span | Generation 与关键 Score | 可定位的问题 |
+| --- | --- | --- | --- |
+| 深度调研 | `paperstorm.research`；`persona_generation`、`query_planning`、`retrieve_arxiv`、`knowledge_curation`、`outline_generation`、`article_generation`、`polish`、`pdf_export` | 多角色 LLM 的 Token、延迟、成本与 provider error；`run_success`、`run_score` | 哪个阶段慢、空检索、生成失败、PDF 交付失败 |
+| 多轮问答 | `paperstorm.chat`；`classify`、`memory_recall`、`knowledge_retrieval`、`evidence_grade`、`deep_research`、`answer_with_citations` | `intent_router`、`answer_generation`；`planner_fallback`、`trajectory_success`、`retrieval_triggered` | 意图误判、路由 JSON 解析失败、不该检索却发起调研、引用回答异常 |
+| 长期记忆 | `memory_candidate_write`、`memory_recall` | `memory_write_success`、写入原因与候选摘要 | 显式记忆请求被跳过、跨会话召回不足、记忆污染 |
+| Benchmark | `paperstorm.benchmark` | `metrics.json` 对应的 Recall、nDCG、F1、P95 与 run success | 版本回归、质量/延迟权衡、bad case 是否修复 |
+
+推荐的闭环是：
+
+1. 在 **Tracing** 按 Trace 名、版本、环境或 `badcase` 标签筛选；先看失败率、P95、成本和 Score。
+2. 打开单条 Trace，沿 Span 树找耗时最长或 error 非空的阶段；再打开其 Generation 核验模型、Prompt 摘要、Token、finish reason 与 provider error。
+3. 将输入、路由决策、检索候选、证据分数和最终回答导出为固定 `case_id`；写入 Dataset 后在离线 Eval Harness 回归。
+4. 以相同数据指纹与检索配置重跑 Benchmark；只有指标和 bad case 均通过才进入发布候选。
+
+典型信号：`planner_fallback=1` 表示 Planner 输出未通过结构化解析，需检查 `intent_router` Generation；
+`memory_write_success=0` 且存在显式“请记住”输入，需查看 `memory_candidate_write` 的跳过原因；
+`run_success=1` 但 `run_score` 偏低，代表任务交付成功但引用或证据质量仍需优化，而不是“系统完全正常”。
+
+报告中的 `remote_trace_id` 仅在 SDK 返回时出现，不能假定其与 PaperStorm 本地 trace ID 等价。
+未配置、不可达或 exporter 降级时，仍可在 `<output-dir>/observability/events.jsonl` 审计同一事件链路。
 
 完整的输入合同、筛选步骤与本地 events 降级说明见
 [LANGFUSE_BADCASE_GUIDE.md](docs/LANGFUSE_BADCASE_GUIDE.md)。
