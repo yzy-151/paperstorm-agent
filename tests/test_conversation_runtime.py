@@ -391,6 +391,47 @@ class PaperStormLangGraphV44Test(unittest.TestCase):
             self.assertIn("deep_research", result["executed_nodes"])
             self.assertEqual(result["route"], "deep_research")
 
+    def test_authorized_evidence_search_escalates_when_no_evidence_exists(self):
+        from knowledge_storm.paperstorm_intent_router import PaperStormIntentRouter
+
+        planner_output = json.dumps(
+            {
+                "action": "tool_call",
+                "tool_calls": [
+                    {
+                        "name": "evidence.search",
+                        "arguments": {"query": "小波神经网络最新研究进展"},
+                    }
+                ],
+                "tool_policy": {
+                    "external_retrieval": "allow",
+                    "new_research": "allow",
+                },
+                "confidence": 0.99,
+                "reason": "先复用证据，不足时允许调研",
+            },
+            ensure_ascii=False,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime, _ = self.make_runtime(
+                temp_dir,
+                intent_router=PaperStormIntentRouter(
+                    llm_router=lambda _prompt: planner_output
+                ),
+            )
+            result = runtime.invoke(
+                thread_id="thread-authorized-escalation",
+                request_id="request-authorized-escalation",
+                user_id="alice",
+                message="小波神经网络有哪些最新研究进展？",
+                run_mode="fake",
+            )
+
+        self.assertTrue(result["retrieval_triggered"])
+        self.assertIn("knowledge_retrieval", result["executed_nodes"])
+        self.assertIn("deep_research", result["executed_nodes"])
+        self.assertEqual(result["route"], "deep_research")
+
     def test_evidence_judge_can_accept_existing_kb(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             from knowledge_storm.paperstorm_service import PaperStormTaskService

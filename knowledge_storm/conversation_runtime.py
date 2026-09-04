@@ -1261,10 +1261,11 @@ def _research_is_authorized(state: ConversationState) -> bool:
     decision = state.get("router_decision") or {}
     if (decision.get("planner_status") or "") == "offline_fallback":
         return True
-    return (
-        _first_tool_name(decision) == "research.start"
-        and _tool_is_authorized(decision, "research.start")
-    )
+    # The planner may deliberately search existing evidence first while also
+    # authorizing a fresh research task if the evidence grader rejects it.
+    # Authorization is the execution boundary; the first selected tool only
+    # determines the initial node and must not cancel that staged permission.
+    return _tool_is_authorized(decision, "research.start")
 
 
 def _can_escalate_to_retrieval(state: ConversationState) -> bool:
